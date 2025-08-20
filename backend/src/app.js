@@ -1,3 +1,4 @@
+// backend/src/app.js
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
@@ -13,15 +14,30 @@ const FRONTEND_URLS = (process.env.FRONTEND_URL || 'http://localhost:5173')
   .map(s => s.trim())
   .filter(Boolean);
 
-app.use(cors({
+// Opciones CORS (incluye preflight completo)
+const corsOptions = {
   origin: (origin, cb) => {
     if (!origin || FRONTEND_URLS.includes(origin)) return cb(null, true);
     return cb(new Error(`Origen no permitido por CORS: ${origin}`));
   },
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'x-user-id'],
-}));
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD'],
+  allowedHeaders: [
+    'Content-Type',
+    'Authorization',
+    'X-Requested-With',
+    'Accept',
+    'Origin',
+    'x-user-id'
+  ],
+  exposedHeaders: ['Content-Disposition'],
+  optionsSuccessStatus: 204, // algunos navegadores esperan 204 en preflight
+};
+
+// CORS SIEMPRE antes de las rutas:
+app.use(cors(corsOptions));
+// Responder explícitamente todos los preflight:
+app.options('*', cors(corsOptions));
 
 if (process.env.TRUST_PROXY === '1') app.set('trust proxy', 1);
 
@@ -31,7 +47,6 @@ app.use(express.urlencoded({ extended: true, limit: '15mb' }));
 /* =========================
    Archivos estáticos
    ========================= */
-// ⬇️ 2 raíces distintas
 const tiendaUploadsDir = process.env.TIENDA_UPLOADS_DIR || path.join(process.cwd(), 'TiendaUploads');
 const userUploadsDir   = process.env.USER_UPLOADS_DIR   || path.join(process.cwd(), 'uploads');
 
@@ -39,13 +54,11 @@ for (const d of [tiendaUploadsDir, userUploadsDir]) {
   if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true });
 }
 
-// /TiendaUploads -> imágenes de tienda
 app.use('/TiendaUploads', express.static(tiendaUploadsDir, {
   maxAge: '7d',
   setHeaders: (res) => res.setHeader('Access-Control-Allow-Origin', FRONTEND_URLS[0] || '*'),
 }));
 
-// /uploads -> fotos de perfil de usuario
 app.use('/uploads', express.static(userUploadsDir, {
   maxAge: '7d',
   setHeaders: (res) => res.setHeader('Access-Control-Allow-Origin', FRONTEND_URLS[0] || '*'),

@@ -3,7 +3,7 @@ services:
     name: svkp-backend
     env: node
     rootDir: backend
-    plan: free
+    plan: starter        # <<--- PAGO, permite disk
     buildCommand: |
       npm ci
       npx prisma generate
@@ -16,7 +16,6 @@ services:
         value: "1"
       - key: PORT
         value: "5000"
-      # Conecta automáticamente la DATABASE_URL a la base declarada abajo
       - key: DATABASE_URL
         fromDatabase:
           name: svkp-postgres
@@ -34,7 +33,7 @@ services:
     disk:
       name: svkp-uploads
       mountPath: /opt/render/project/src/backend
-      sizeGB: 1
+      sizeGB: 10   # sube a 10GB (o lo que necesites)
 
   - type: web
     name: svkp-frontend

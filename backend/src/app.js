@@ -37,7 +37,7 @@ const corsOptions = {
 // CORS SIEMPRE antes de las rutas:
 app.use(cors(corsOptions));
 // Responder explícitamente todos los preflight:
-app.options('*', cors(corsOptions));
+ app.options('/(.*)', cors(corsOptions));
 
 if (process.env.TRUST_PROXY === '1') app.set('trust proxy', 1);
 

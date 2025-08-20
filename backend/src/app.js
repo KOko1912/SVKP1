@@ -28,7 +28,7 @@ const corsOptions = {
     'X-Requested-With',
     'Accept',
     'Origin',
-    'x-user-id'
+    'x-user-id',
   ],
   exposedHeaders: ['Content-Disposition'],
   optionsSuccessStatus: 204, // algunos navegadores esperan 204 en preflight
@@ -36,8 +36,8 @@ const corsOptions = {
 
 // CORS SIEMPRE antes de las rutas:
 app.use(cors(corsOptions));
-// Responder explícitamente todos los preflight:
- app.options('/(.*)', cors(corsOptions));
+// Responder explícitamente todos los preflight (Express 5: usar RegExp, no '*')
+app.options(/.*/, cors(corsOptions));
 
 if (process.env.TRUST_PROXY === '1') app.set('trust proxy', 1);
 

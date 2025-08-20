@@ -1,0 +1,53 @@
+services:
+  - type: web
+    name: svkp-backend
+    env: node
+    rootDir: backend
+    plan: free
+    buildCommand: |
+      npm ci
+      npx prisma generate
+      npx prisma migrate deploy
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: TRUST_PROXY
+        value: "1"
+      - key: PORT
+        value: "5000"
+      # Conecta automáticamente la DATABASE_URL a la base declarada abajo
+      - key: DATABASE_URL
+        fromDatabase:
+          name: svkp-postgres
+          property: connectionString
+      - key: JWT_SECRET
+        sync: false
+      - key: ADMIN_SECRET
+        sync: false
+      - key: FRONTEND_URL
+        value: https://svkp-frontend.onrender.com
+      - key: USER_UPLOADS_DIR
+        value: /opt/render/project/src/backend/uploads
+      - key: TIENDA_UPLOADS_DIR
+        value: /opt/render/project/src/backend/TiendaUploads
+    disk:
+      name: svkp-uploads
+      mountPath: /opt/render/project/src/backend
+      sizeGB: 1
+
+  - type: web
+    name: svkp-frontend
+    env: static
+    rootDir: frontend
+    plan: free
+    buildCommand: npm ci && npm run build
+    staticPublishPath: dist
+    envVars:
+      - key: VITE_API_URL
+        value: https://svkp-backend.onrender.com
+      - key: VITE_FILES_BASE
+        value: https://svkp-backend.onrender.com
+
+databases:
+  - name: svkp-postgres

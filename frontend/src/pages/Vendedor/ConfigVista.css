@@ -1,0 +1,74 @@
+
+/* ============================================ */
+/* Styles – frontend/src/pages/Vendedor/ConfigVista.css */
+/* Crea/edita este archivo, ya importado arriba */
+/* ============================================ */
+
+/* Contenedor del lienzo */
+.pv-canvas{ position: relative; }
+
+/* Item del grid */
+.pv-item{ transition: var(--transition); }
+.pv-item.is-selected{ outline: 2px dashed var(--primary-color); outline-offset: 2px; }
+
+.pv-item .react-resizable-handle{ z-index: 10; }
+
+/* Tarjeta visual del bloque */
+.pv-item-content{ background: var(--bg-light); border-radius: var(--border-radius); box-shadow: var(--box-shadow); height: 100%; display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--border-color); }
+
+.pv-head{ display:flex; align-items:center; justify-content:space-between; padding:.5rem .75rem; background: rgba(0,0,0,.03); border-bottom:1px solid var(--border-color); }
+.pv-handle{ display:flex; align-items:center; gap:.5rem; cursor: move; user-select:none; font-weight:600; }
+.pv-actions{ display:flex; gap:.25rem; }
+.pv-icon{ background: transparent; border: none; padding: .4rem; border-radius: 8px; cursor: pointer; transition: var(--transition); }
+.pv-icon:hover{ background: rgba(0,0,0,.06); }
+.pv-icon.danger:hover{ background: rgba(239,68,68,.15); color: #b91c1c; }
+
+.pv-body{ padding: .75rem; overflow: auto; }
+
+/* Hero */
+.pv-hero{ position:relative; border-radius: calc(var(--border-radius) - 2px); background-size:cover; background-position:center; min-height:140px; display:flex; align-items:center; justify-content:center; color:#fff; text-align:center; text-shadow:0 1px 2px rgba(0,0,0,.35); }
+.pv-hero::before{ content:''; position:absolute; inset:0; background:rgba(0,0,0,.25); border-radius:inherit; }
+.pv-hero-logo{ position:relative; z-index:1; height:72px; width:72px; object-fit:contain; margin-right:.75rem; border-radius:12px; background:#fff; padding:.3rem; box-shadow:var(--box-shadow); border:1px solid rgba(255,255,255,.8); }
+.pv-hero .pv-hero-text{ position:relative; z-index:1; max-width: 780px; }
+.pv-hero h3{ margin:.25rem 0; font-size:1.6rem; }
+.pv-hero p{ margin:0; }
+.pv-hero.align-left{ justify-content:flex-start; padding-left:1rem; }
+.pv-hero.align-right{ justify-content:flex-end; padding-right:1rem; }
+
+/* Grids de productos */
+.pv-section-title{ margin:.2rem 0 1rem; color: var(--primary-color); }
+.pv-grid{ display:grid; grid-template-columns: repeat(auto-fill, minmax(180px,1fr)); gap:.75rem; }
+.pv-grid.one{ grid-template-columns: 1fr; }
+.pv-empty{ padding:1rem; text-align:center; color: var(--text-muted); background: var(--bg-subtle); border:1px dashed var(--border-color); border-radius: var(--border-radius); }
+
+.pv-card{ background:#fff; border:1px solid var(--border-color); border-radius: 12px; overflow:hidden; box-shadow: var(--shadow-sm); display:flex; flex-direction:column; }
+.pv-card-cover{ height:140px; background:#f3f4f6; background-size:cover; background-position:center; }
+.pv-card-info{ padding:.6rem .8rem; }
+.pv-card-title{ margin:.1rem 0; font-size:1rem; }
+.pv-card-price{ color:#111827; font-weight:700; }
+.pv-muted{ color: var(--text-muted); font-weight:500; }
+
+/* Banner */
+.pv-banner{ position:relative; min-height:120px; background:#f3f4f6; background-size:cover; background-position:center; border-radius:12px; display:grid; place-items:center; }
+.pv-banner::after{ content:''; position:absolute; inset:0; background:rgba(0,0,0,.25); border-radius:12px; }
+.pv-banner-content{ position:relative; z-index:1; color:#fff; display:flex; gap:.75rem; align-items:center; font-size:1.25rem; }
+
+/* Logo */
+.pv-logo{ display:grid; place-items:center; height:100%; border:1px dashed var(--border-color); background:var(--bg-subtle); }
+.pv-logo img{ max-width: 70%; max-height: 70%; object-fit:contain; filter: drop-shadow(0 4px 12px rgba(0,0,0,.15)); }
+.pv-circle img{ border-radius:999px; }
+.pv-square img{ border-radius:6px; }
+.pv-rounded img{ border-radius:16px; }
+.pv-squircle img{ border-radius:32% / 24%; }
+.pv-thick{ border:3px solid rgba(0,0,0,.15); }
+.pv-thin{ border:1px solid rgba(0,0,0,.12); }
+
+/* Toolbar y props */
+.pv-toolbar{ display:flex; align-items:center; justify-content:space-between; margin-bottom: .75rem; }
+.pv-props.closed{ display:none; }
+.pv-props.open{ display:block; }
+
+/* Util */
+.pv-grow{ flex:1; }
+
+/* Breakpoints fin */

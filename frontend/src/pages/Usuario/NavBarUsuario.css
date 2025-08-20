@@ -1,0 +1,307 @@
+:root {
+  /* Colores modo claro */
+  --light-bg: #ffffff;
+  --light-text: #333333;
+  --light-primary: #0066ff;
+  --light-primary-hover: #0052cc;
+  --light-hover: rgba(0, 102, 255, 0.1);
+  --light-border: #e2e8f0;
+  --light-card: #f8fafc;
+  
+  /* Colores modo oscuro */
+  --dark-bg: #121212;
+  --dark-text: #f5f5f5;
+  --dark-primary: #4dabf7;
+  --dark-primary-hover: #3d8fd6;
+  --dark-hover: rgba(77, 171, 247, 0.1);
+  --dark-border: #333333;
+  --dark-card: #1e1e1e;
+  
+  /* Transiciones */
+  --transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+  
+  /* Sombras */
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.12);
+  --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.1);
+  --shadow-lg: 0 10px 25px rgba(0, 0, 0, 0.15);
+  --shadow-xl: 0 20px 40px rgba(0, 0, 0, 0.2);
+  
+  /* Bordes */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+  --radius-full: 9999px;
+}
+
+/* ===== NAVBAR DESKTOP ===== */
+.desktop-nav {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 72px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 32px;
+  z-index: 1000;
+  transition: var(--transition);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-bottom: 1px solid;
+}
+
+.desktop-nav.light {
+  background-color: rgba(255, 255, 255, 0.9);
+  color: var(--light-text);
+  border-bottom-color: var(--light-border);
+}
+
+.desktop-nav.dark {
+  background-color: rgba(18, 18, 18, 0.9);
+  color: var(--dark-text);
+  border-bottom-color: var(--dark-border);
+}
+
+.nav-logo-container {
+  flex: 1;
+}
+
+.nav-logo {
+  height: 40px;
+  width: auto;
+  transition: var(--transition);
+}
+
+.nav-logo:hover {
+  transform: scale(1.05);
+}
+
+.nav-center {
+  flex: 2;
+  display: flex;
+  justify-content: center;
+}
+
+.nav-links {
+  display: flex;
+  gap: 8px;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.nav-links a {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px 16px;
+  border-radius: var(--radius-md);
+  text-decoration: none;
+  color: inherit;
+  transition: var(--transition);
+  position: relative;
+  width: 48px;
+  height: 48px;
+}
+
+.desktop-nav.light .nav-links a:hover,
+.desktop-nav.light .nav-links a.active {
+  background-color: var(--light-hover);
+  color: var(--light-primary);
+}
+
+.desktop-nav.dark .nav-links a:hover,
+.desktop-nav.dark .nav-links a.active {
+  background-color: var(--dark-hover);
+  color: var(--dark-primary);
+}
+
+.nav-tooltip {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: var(--light-primary);
+  color: white;
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 0.8rem;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 1001;
+}
+
+.desktop-nav.dark .nav-tooltip {
+  background-color: var(--dark-primary);
+}
+
+.nav-actions {
+  flex: 1;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 16px;
+}
+
+.theme-toggle {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: inherit;
+  padding: 8px;
+  border-radius: var(--radius-full);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: var(--transition);
+}
+
+.desktop-nav.light .theme-toggle:hover {
+  background-color: var(--light-hover);
+  color: var(--light-primary);
+}
+
+.desktop-nav.dark .theme-toggle:hover {
+  background-color: var(--dark-hover);
+  color: var(--dark-primary);
+}
+
+.logout-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-radius: var(--radius-md);
+  background: none;
+  border: none;
+  cursor: pointer;
+  transition: var(--transition);
+  font-weight: 500;
+}
+
+.desktop-nav.light .logout-btn {
+  color: #ef4444;
+}
+
+.desktop-nav.dark .logout-btn {
+  color: #f87171;
+}
+
+.desktop-nav.light .logout-btn:hover {
+  background-color: rgba(239, 68, 68, 0.1);
+}
+
+.desktop-nav.dark .logout-btn:hover {
+  background-color: rgba(248, 113, 113, 0.1);
+}
+
+/* ===== NAVBAR MOBILE ===== */
+.mobile-nav {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 80px;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  transition: var(--transition);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-top: 1px solid;
+  padding: 0 16px;
+}
+
+.mobile-nav.light {
+  background-color: rgba(255, 255, 255, 0.95);
+  color: var(--light-text);
+  border-top-color: var(--light-border);
+}
+
+.mobile-nav.dark {
+  background-color: rgba(18, 18, 18, 0.95);
+  color: var(--dark-text);
+  border-top-color: var(--dark-border);
+}
+
+.mobile-nav-links {
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+  width: 100%;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  gap: 4px;
+}
+
+.mobile-nav-links a {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 12px;
+  border-radius: var(--radius-md);
+  text-decoration: none;
+  color: inherit;
+  transition: var(--transition);
+  flex: 1;
+  min-width: 60px;
+  max-width: 80px;
+  height: 64px;
+}
+
+.mobile-nav.light .mobile-nav-links a:hover,
+.mobile-nav.light .mobile-nav-links a.active {
+  color: var(--light-primary);
+}
+
+.mobile-nav.dark .mobile-nav-links a:hover,
+.mobile-nav.dark .mobile-nav-links a.active {
+  color: var(--dark-primary);
+}
+
+.mobile-nav-links a span {
+  font-size: 0.7rem;
+  margin-top: 4px;
+  text-align: center;
+}
+
+/* Efecto activo para mobile */
+.mobile-nav-links a.active {
+  position: relative;
+}
+
+.mobile-nav-links a.active::after {
+  content: '';
+  position: absolute;
+  top: -8px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 4px;
+  height: 4px;
+  border-radius: var(--radius-full);
+}
+
+.mobile-nav.light .mobile-nav-links a.active::after {
+  background-color: var(--light-primary);
+}
+
+.mobile-nav.dark .mobile-nav-links a.active::after {
+  background-color: var(--dark-primary);
+}
+
+/* Responsive */
+@media (max-width: 767px) {
+  .desktop-nav {
+    display: none;
+  }
+}
+
+@media (min-width: 768px) {
+  .mobile-nav {
+    display: none;
+  }
+}

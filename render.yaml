@@ -3,7 +3,7 @@ services:
     name: svkp-backend
     env: node
     rootDir: backend
-    plan: starter        # <<--- PAGO, permite disk
+    plan: free
     buildCommand: |
       npm ci
       npx prisma generate
@@ -27,13 +27,9 @@ services:
       - key: FRONTEND_URL
         value: https://svkp-frontend.onrender.com
       - key: USER_UPLOADS_DIR
-        value: /opt/render/project/src/backend/uploads
+        value: ./uploads
       - key: TIENDA_UPLOADS_DIR
-        value: /opt/render/project/src/backend/TiendaUploads
-    disk:
-      name: svkp-uploads
-      mountPath: /opt/render/project/src/backend
-      sizeGB: 10   # sube a 10GB (o lo que necesites)
+        value: ./TiendaUploads
 
   - type: web
     name: svkp-frontend

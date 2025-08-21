@@ -1,5 +1,5 @@
 // backend/src/modules/sdkadmin/service.js
-const bcrypt = require('bcrypt');
+const bcrypt = require('bcryptjs');
 const prisma = require('../../config/db');
 
 const ADMIN_ID = 1;

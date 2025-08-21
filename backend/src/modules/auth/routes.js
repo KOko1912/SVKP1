@@ -1,4 +1,3 @@
-// backend/src/modules/auth/routes.js
 const express = require('express');
 const prisma = require('../../config/db');
 let bcrypt;
@@ -25,16 +24,26 @@ router.post('/login', async (req, res) => {
     });
     if (!user) return res.status(401).json({ error: 'Credenciales inválidas' });
 
-    const stored = user.password ?? user.contrasena ?? '';
+    // cubrimos distintos nombres de columna que pueda mapear Prisma
+    const stored =
+      user.password ??
+      user.contrasena ??
+      user['contraseña'] ??
+      '';
+
     let ok = false;
-    if (stored && bcrypt && stored.startsWith('$2')) {
+    if (stored && stored.startsWith('$2')) {
+      // hash bcrypt -> necesitamos bcryptjs instalado
+      if (!bcrypt) bcrypt = require('bcryptjs');
       ok = await bcrypt.compare(String(password), stored);
     } else {
+      // contraseña en texto plano (casos legacy)
       ok = String(password) === String(stored);
     }
+
     if (!ok) return res.status(401).json({ error: 'Credenciales inválidas' });
 
-    // compat: usamos el ID numérico como “token” porque tu API ya lo acepta (Bearer <id>)
+    // Compatibilidad: usamos el id como “token” (tu middleware ya acepta Bearer <id>)
     const token = String(user.id);
     return res.json({ token, usuario: cleanUser(user) });
   } catch (e) {

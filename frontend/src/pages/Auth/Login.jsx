@@ -1,4 +1,3 @@
-// src/pages/Auth/Login.jsx
 import { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import * as API from '../../lib/api.js';
@@ -23,16 +22,12 @@ export default function Login() {
     setLoading(true);
 
     try {
-      // limpiar restos de sesiones anteriores para evitar "undefined" en storage
       localStorage.removeItem('token');
       localStorage.removeItem('usuario');
       localStorage.removeItem('auth');
       localStorage.removeItem('user');
 
-      // login (api.ts guarda token/usuario de forma segura)
       await API.apiLogin({ telefono: telefono.trim(), password: contrasena });
-
-      // redirigir
       navigate(redirectTo, { replace: true });
     } catch (err) {
       const msg = err?.message || 'Error al iniciar sesión';

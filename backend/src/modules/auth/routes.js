@@ -26,11 +26,11 @@ router.post('/login', async (req, res) => {
 
     // cubrimos distintos nombres de columna que pueda mapear Prisma
     const stored =
-      user.password ??
-      user.contrasena ??
-      user['contraseña'] ??
-      '';
-
+  user.password ??
+  user.contrasena ??
+  user.contrasenia ??
+  user['contraseña'] ??
+  '';
     let ok = false;
     if (stored && stored.startsWith('$2')) {
       // hash bcrypt -> necesitamos bcryptjs instalado

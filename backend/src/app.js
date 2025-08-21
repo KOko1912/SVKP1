@@ -1,3 +1,4 @@
+// backend/src/app.js
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
@@ -33,9 +34,9 @@ const corsOptions = {
   optionsSuccessStatus: 204,
 };
 
-// CORS SIEMPRE antes de las rutas:
+// CORS SIEMPRE antes de las rutas
 app.use(cors(corsOptions));
-// Preflight para todo:
+// Preflight para todo (Express 5 usa RegExp)
 app.options(/.*/, cors(corsOptions));
 
 if (process.env.TRUST_PROXY === '1') app.set('trust proxy', 1);
@@ -66,7 +67,7 @@ app.use('/uploads', express.static(userUploadsDir, {
 /* =========================
    Rutas (Routers)
    ========================= */
-const authRoutes            = require('./modules/auth/routes');        // 👈 NUEVO
+const authRoutes            = require('./modules/auth/routes');
 const usuariosRoutes        = require('./modules/usuarios/routes');
 const adminRoutes           = require('./modules/admin/routes');
 const sdkadminRoutes        = require('./modules/sdkadmin/routes');
@@ -75,14 +76,14 @@ const productosRoutes       = require('./modules/productos/routes');
 const categoriasRoutes      = require('./modules/categorias/routes');
 const uploadProductoRoutes  = require('./modules/productos/upload');
 
-app.use('/api/auth',        authRoutes);       // 👈 NUEVO (login)
-app.use('/api/usuarios',    usuariosRoutes);
-app.use('/api/admin',       adminRoutes);
-app.use('/api/sdkadmin',    sdkadminRoutes);
-app.use('/api/tienda',      tiendaRoutes);
+app.use('/api/auth',         authRoutes);       // login
+app.use('/api/usuarios',     usuariosRoutes);
+app.use('/api/admin',        adminRoutes);
+app.use('/api/sdkadmin',     sdkadminRoutes);
+app.use('/api/tienda',       tiendaRoutes);
 app.use('/api/v1/productos', productosRoutes);
 app.use('/api/v1/categorias', categoriasRoutes);
-app.use('/api/v1/upload',    uploadProductoRoutes);
+app.use('/api/v1/upload',     uploadProductoRoutes);
 
 /* =========================
    Utilidades

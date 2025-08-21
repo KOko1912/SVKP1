@@ -5,13 +5,15 @@
   "main": "server.js",
   "license": "ISC",
   "author": "",
-  "scripts": {
-    "dev": "nodemon server.js",
-    "start": "node server.js",
-    "prisma:dev": "prisma migrate dev",
-    "prisma:generate": "prisma generate",
-    "prisma:studio": "prisma studio"
-  },
+ "scripts": {
+  "dev": "nodemon server.js",
+  "start": "npx prisma migrate deploy && node server.js",
+  "prisma:deploy": "prisma migrate deploy",
+  "prisma:dev": "prisma migrate dev",
+  "prisma:generate": "prisma generate",
+  "prisma:studio": "prisma studio"
+}
+,
   "dependencies": {
     "@prisma/client": "^6.14.0",
     "bcrypt": "^6.0.0",

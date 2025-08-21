@@ -1,39 +1,42 @@
+// src/pages/Auth/Login.jsx
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
+import * as API from '../../lib/api.js';
 import './Auth.css';
 
-const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
-
-function Login() {
-  const [telefono, setTelefono] = useState('');
-  const [contraseña, setContraseña] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+export default function Login() {
+  const [telefono, setTelefono]   = useState('');
+  const [contrasena, setContrasena] = useState('');
+  const [loading, setLoading]     = useState(false);
+  const [error, setError]         = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const navigate = useNavigate();
+
+  const navigate   = useNavigate();
+  const location   = useLocation();
+  const redirectTo = location.state?.from || '/usuario/perfil';
 
   const handleLogin = async (e) => {
     e.preventDefault();
+    if (loading) return;
+
     setError('');
     setLoading(true);
 
     try {
-      const res = await fetch(`${API}/api/usuarios/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ telefono, contraseña }),
-      });
+      // limpiar restos de sesiones anteriores para evitar "undefined" en storage
+      localStorage.removeItem('token');
+      localStorage.removeItem('usuario');
+      localStorage.removeItem('auth');
+      localStorage.removeItem('user');
 
-      const data = await res.json();
+      // login (api.ts guarda token/usuario de forma segura)
+      await API.apiLogin({ telefono: telefono.trim(), password: contrasena });
 
-      if (!res.ok) {
-        throw new Error(data?.error || 'Error al iniciar sesión');
-      }
-
-      localStorage.setItem('usuario', JSON.stringify(data.usuario));
-      navigate('/usuario/perfil');
+      // redirigir
+      navigate(redirectTo, { replace: true });
     } catch (err) {
-      setError(err.message);
+      const msg = err?.message || 'Error al iniciar sesión';
+      setError(msg);
     } finally {
       setLoading(false);
     }
@@ -45,50 +48,51 @@ function Login() {
         <h2>Bienvenido de nuevo</h2>
         <p>Ingresa tus credenciales para acceder a tu cuenta</p>
       </div>
-      
-      {error && <div className="auth-error-message">{error}</div>}
-      
+
+      {error && <div className="auth-error-message">⚠️ {error}</div>}
+
       <form onSubmit={handleLogin} className="auth-form">
         <div className="form-group">
           <label htmlFor="telefono">Teléfono</label>
           <input
             id="telefono"
-            type="text"
-            placeholder="Ingresa tu número telefónico"
+            type="tel"
+            inputMode="numeric"
+            pattern="[0-9]*"
             value={telefono}
             onChange={(e) => setTelefono(e.target.value)}
+            autoComplete="username"
+            placeholder="8440000000"
             required
           />
         </div>
-        
+
         <div className="form-group">
-          <label htmlFor="contraseña">Contraseña</label>
+          <label htmlFor="password">Contraseña</label>
           <div className="password-input">
             <input
-              id="contraseña"
-              type={showPassword ? "text" : "password"}
-              placeholder="Ingresa tu contraseña"
-              value={contraseña}
-              onChange={(e) => setContraseña(e.target.value)}
+              id="password"
+              type={showPassword ? 'text' : 'password'}
+              value={contrasena}
+              onChange={(e) => setContrasena(e.target.value)}
+              autoComplete="current-password"
+              placeholder="•••••••••"
               required
             />
-            <button 
-              type="button" 
+            <button
+              type="button"
               className="toggle-password"
-              onClick={() => setShowPassword(!showPassword)}
+              onClick={() => setShowPassword((s) => !s)}
+              aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
             >
-              {showPassword ? (
-                <i className="eye-icon">👁️</i>
-              ) : (
-                <i className="eye-icon">👁️</i>
-              )}
+              👁️
             </button>
           </div>
         </div>
-        
+
         <div className="forgot-password">
-          <button 
-            type="button" 
+          <button
+            type="button"
             onClick={() => navigate('/olvide')}
             className="text-button"
           >
@@ -96,15 +100,10 @@ function Login() {
           </button>
         </div>
 
-        <button 
-          type="submit" 
-          className="primary-button" 
-          disabled={loading}
-        >
+        <button type="submit" className="primary-button" disabled={loading}>
           {loading ? (
             <>
-              <span className="spinner"></span>
-              Ingresando...
+              <span className="spinner" /> Ingresando…
             </>
           ) : (
             'Iniciar sesión'
@@ -114,15 +113,10 @@ function Login() {
 
       <div className="auth-footer">
         <p>¿No tienes una cuenta?</p>
-        <button 
-          onClick={() => navigate('/registro')} 
-          className="secondary-button"
-        >
+        <button onClick={() => navigate('/registro')} className="secondary-button">
           Crear cuenta
         </button>
       </div>
     </div>
   );
 }
-
-export default Login;

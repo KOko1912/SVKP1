@@ -1,4 +1,7 @@
 services:
+  # =========================
+  # Backend (Node + Prisma)
+  # =========================
   - type: web
     name: svkp-backend
     env: node
@@ -20,24 +23,33 @@ services:
         fromDatabase:
           name: svkp-postgres
           property: connectionString
+      # Si no quieres fijarlos, puedes pedir a Render que los genere:
       - key: JWT_SECRET
-        sync: false
+        generateValue: true
       - key: ADMIN_SECRET
-        sync: false
+        generateValue: true
+      # CORS: incluir PROD + LOCAL
       - key: FRONTEND_URL
-        value: https://svkp-frontend.onrender.com
+        value: https://ventasvk.onrender.com,http://localhost:5173
       - key: USER_UPLOADS_DIR
         value: ./uploads
       - key: TIENDA_UPLOADS_DIR
         value: ./TiendaUploads
 
-  - type: web
+  # =========================
+  # Frontend (Static Site)
+  # =========================
+  - type: static_site            # 👈 importante: static_site (no web)
     name: svkp-frontend
-    env: static
     rootDir: frontend
     plan: free
     buildCommand: npm ci && npm run build
-    staticPublishPath: dist
+    staticPublishPath: dist      # publica /frontend/dist
+    routes:
+      # Fallback SPA: cualquier ruta -> index.html
+      - type: rewrite
+        source: /*
+        destination: /index.html
     envVars:
       - key: VITE_API_URL
         value: https://svkp-backend.onrender.com

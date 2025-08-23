@@ -1,48 +1,119 @@
-import { useEffect, useState, useMemo } from 'react';
+// frontend/src/pages/Public/PublicProducto.jsx
+import { useEffect, useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   FiShoppingCart, FiHeart, FiShare2, FiChevronLeft, FiChevronRight,
-  FiStar, FiTruck, FiShield, FiArrowLeft, FiCheck
+  FiStar, FiTruck, FiShield, FiArrowLeft, FiCheck, FiTag, FiPhone, FiMail
 } from 'react-icons/fi';
 
-const API   = import.meta.env.VITE_API_URL    || 'http://localhost:5000';
-const FILES = import.meta.env.VITE_FILES_BASE || API; // prefijo público para imágenes
+const API   = (import.meta.env.VITE_API_URL    || 'http://localhost:5000').replace(/\/$/, '');
+const FILES = (import.meta.env.VITE_FILES_BASE || API).replace(/\/$/, '');
+
+/* ===== Helpers compartidos con Perfil (rutas y tema) ===== */
+
+// Normaliza a un "web path" seguro
+const toWebPath = (u) => {
+  if (!u) return '';
+  if (/^https?:\/\//i.test(u)) {
+    try { return new URL(u).pathname; } catch { return ''; }
+  }
+  const clean = String(u).replace(/\\/g, '/'); // E:\ -> E:/
+  const lower = clean.toLowerCase();
+  const marks = ['/tiendauploads/', 'tiendauploads/', '/uploads/', 'uploads/'];
+  for (const m of marks) {
+    const i = lower.indexOf(m);
+    if (i !== -1) {
+      const slice = clean.slice(i);
+      return slice.startsWith('/') ? slice : `/${slice}`;
+    }
+  }
+  return clean.startsWith('/') ? clean : `/${clean}`;
+};
+
+// Convierte a URL pública
+const toPublicUrl = (u) => {
+  const p = toWebPath(u);
+  return p ? `${FILES}${encodeURI(p)}` : '';
+};
+
+// Extrae colores de un string de gradiente
+const extractColors = (gradientString) => {
+  const m = gradientString?.match(/#([0-9a-f]{6})/gi);
+  return { from: m?.[0] || '#6d28d9', to: m?.[1] || '#c026d3' };
+};
+const hexToRgb = (hex) => {
+  const m = hex?.match(/^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i);
+  if (!m) return [0, 0, 0];
+  return [parseInt(m[1], 16), parseInt(m[2], 16), parseInt(m[3], 16)];
+};
+const luminance = ([r, g, b]) => {
+  const a = [r, g, b].map(v => {
+    v /= 255;
+    return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+  });
+  return 0.2126 * a[0] + 0.7152 * a[1] + 0.0722 * a[2];
+};
+const bestTextOn = (hexA, hexB) => {
+  const L = (luminance(hexToRgb(hexA)) + luminance(hexToRgb(hexB))) / 2;
+  return L > 0.45 ? '#111111' : '#ffffff';
+};
+const grad = (from, to) => `linear-gradient(135deg, ${from}, ${to})`;
+
+/* ========================================================= */
 
 export default function PublicProducto() {
   const { uuid } = useParams();
   const nav = useNavigate();
+
   const [p, setP] = useState(null);
-  const [tiendaConfig, setTiendaConfig] = useState(null);
+  const [tienda, setTienda] = useState(null);
   const [loading, setLoading] = useState(true);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [quantity, setQuantity] = useState(1);
   const [addedToCart, setAddedToCart] = useState(false);
 
-  // Cargar configuración de la tienda
-  useEffect(() => {
-    const config = localStorage.getItem('tiendaConfig');
-    if (config) setTiendaConfig(JSON.parse(config));
-  }, []);
+  // Tema dinámico a partir de tienda.colorPrincipal
+  const theme = useMemo(() => {
+    const cp = tienda?.colorPrincipal || grad('#6d28d9', '#c026d3');
+    const { from, to } = extractColors(cp);
+    return { from, to, contrast: bestTextOn(from, to) };
+  }, [tienda?.colorPrincipal]);
 
+  // Carga producto + config de tienda
   useEffect(() => {
     let alive = true;
     (async () => {
       try {
-        // ✅ endpoint correcto
-        const r = await fetch(`${API}/api/v1/productos/public/uuid/${uuid}`);
-        if (!r.ok) throw new Error('Not found');
-        const data = await r.json();
-        if (alive) setP(data);
+        setLoading(true);
 
-        if (data.tiendaId) {
-          const tiendaRes = await fetch(`${API}/api/tienda/config/${data.tiendaId}`);
-          if (tiendaRes.ok) {
-            const tiendaData = await tiendaRes.json();
-            setTiendaConfig(tiendaData);
-            localStorage.setItem('tiendaConfig', JSON.stringify(tiendaData));
+        // Producto público por UUID
+        const r = await fetch(`${API}/api/v1/productos/public/uuid/${uuid}`);
+        if (!r.ok) throw new Error('Producto no encontrado');
+        const data = await r.json();
+
+        if (!alive) return;
+        setP(data);
+
+        // Config de tienda (para tema/logo/portada/redes...)
+        if (data?.tiendaId) {
+          const tRes = await fetch(`${API}/api/tienda/config/${data.tiendaId}`);
+          if (tRes.ok) {
+            const tData = await tRes.json();
+            // normaliza rutas a web path
+            setTienda({
+              ...tData,
+              portadaUrl: toWebPath(tData.portadaUrl),
+              logoUrl: toWebPath(tData.logoUrl),
+              bannerPromoUrl: toWebPath(tData.bannerPromoUrl),
+              colorPrincipal: tData.colorPrincipal || grad('#6d28d9', '#c026d3'),
+            });
+            localStorage.setItem('tiendaConfig', JSON.stringify(tData));
           }
         }
-      } catch {
+
+        // SEO básico
+        document.title = `${data?.nombre || 'Producto'} – ${data?.tienda?.nombre || 'Tienda'}`;
+      } catch (e) {
         if (alive) setP(null);
       } finally {
         if (alive) setLoading(false);
@@ -51,415 +122,523 @@ export default function PublicProducto() {
     return () => { alive = false; };
   }, [uuid]);
 
-  // Asegura números aunque vengan como string (Prisma Decimal)
-  const precioNumber = useMemo(() => Number(p?.precio), [p]);
+  // Números seguros (prisma Decimal viene string)
+  const precioNumber = useMemo(() => Number(p?.precio), [p?.precio]);
+  const precioComparativo = useMemo(() => Number(p?.precioComparativo || 0), [p?.precioComparativo]);
+  const descPct = useMemo(() => Number(p?.descuentoPct || 0), [p?.descuentoPct]);
+
   const precioFinal = useMemo(() => {
     if (Number.isNaN(precioNumber)) return null;
-    const desc = Number(p?.descuentoPct || 0);
-    return desc > 0 ? (precioNumber * (100 - desc)) / 100 : precioNumber;
-  }, [precioNumber, p?.descuentoPct]);
+    return descPct > 0 ? (precioNumber * (100 - descPct)) / 100 : precioNumber;
+  }, [precioNumber, descPct]);
 
-  const alertaPocasUnidades = useMemo(() => {
+  const stockInfo = useMemo(() => {
     const inv = p?.inventario;
-    if (!inv) return false;
+    if (!inv) return { stock: null, low: false, canBuy: true };
     const stock = Number(inv.stock ?? 0);
     const umbral = Number(inv.umbralAlerta ?? 0);
-    return stock <= umbral;
-  }, [p]);
+    const low = stock <= umbral;
+    const canBuy = stock > 0 || !!inv.permitirBackorder;
+    return { stock, low, canBuy };
+  }, [p?.inventario]);
 
-  const puedeComprar = useMemo(() => {
-    const inv = p?.inventario;
-    if (!inv) return true;
-    const stock = Number(inv.stock ?? 0);
-    return stock > 0 || !!inv.permitirBackorder;
-  }, [p]);
+  const sortedImages = useMemo(() => {
+    const imgs = Array.isArray(p?.imagenes) ? [...p.imagenes] : [];
+    imgs.sort((a, b) => (Number(b.isPrincipal) - Number(a.isPrincipal)) || (a.orden ?? 0) - (b.orden ?? 0));
+    return imgs;
+  }, [p?.imagenes]);
 
-  const nextImage = () => {
-    if (p?.imagenes?.length) {
-      setCurrentImageIndex((prev) => (prev + 1) % p.imagenes.length);
-    }
-  };
-  const prevImage = () => {
-    if (p?.imagenes?.length) {
-      setCurrentImageIndex((prev) => (prev - 1 + p.imagenes.length) % p.imagenes.length);
-    }
+  const share = async () => {
+    const url = window.location.href;
+    const title = p?.nombre || 'Producto';
+    try {
+      if (navigator.share) {
+        await navigator.share({ title, url });
+      } else {
+        await navigator.clipboard.writeText(url);
+        alert('Enlace copiado al portapapeles');
+      }
+    } catch {}
   };
 
   const handleAddToCart = () => {
     setAddedToCart(true);
-    setTimeout(() => setAddedToCart(false), 2000);
+    // TODO: lógica real para carrito
+    setTimeout(() => setAddedToCart(false), 1800);
   };
 
-  if (loading) return (
-    <div className="product-loading" style={{
-      background: tiendaConfig?.colorPrincipal || 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-      minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center'
-    }}>
-      <div className="spinner" style={{
-        width: '50px', height: '50px', border: '5px solid rgba(255,255,255,0.3)',
-        borderRadius: '50%', borderTopColor: '#fff', animation: 'spin 1s ease-in-out infinite'
-      }} />
-    </div>
-  );
+  /* =========== Loaders / Not found =========== */
+  if (loading) {
+    return (
+      <div style={{
+        minHeight: '100vh',
+        display: 'grid',
+        placeItems: 'center',
+        background: grad('#eef2ff', '#f5f3ff'),
+        fontFamily: 'Inter, system-ui, sans-serif'
+      }}>
+        <div style={{
+          width: 54, height: 54, borderRadius: '50%',
+          border: '6px solid rgba(0,0,0,.08)',
+          borderTopColor: theme.from,
+          animation: 'spin 1s linear infinite'
+        }} />
+        <style>{`@keyframes spin {to{transform:rotate(360deg)}}`}</style>
+      </div>
+    );
+  }
 
-  if (!p) return (
-    <div className="page" style={{
-      padding: '2rem', textAlign: 'center',
-      background: tiendaConfig?.colorPrincipal || '#f8f9fa',
-      minHeight: '100vh', display: 'flex', flexDirection: 'column',
-      alignItems: 'center', justifyContent: 'center'
-    }}>
-      <h3>Producto no encontrado</h3>
-      <button
-        onClick={() => nav(-1)}
-        style={{
-          padding: '0.75rem 1.5rem',
-          background: tiendaConfig
-            ? `linear-gradient(135deg, ${tiendaConfig.theme?.from || '#667eea'}, ${tiendaConfig.theme?.to || '#764ba2'})`
-            : '#667eea',
-          color: tiendaConfig?.theme?.contrast || '#fff',
-          border: 'none', borderRadius: '8px', cursor: 'pointer', marginTop: '1rem', fontWeight: '600'
-        }}
-      >
-        Volver
-      </button>
-    </div>
-  );
+  if (!p) {
+    return (
+      <div style={{
+        minHeight: '100vh',
+        display: 'grid',
+        placeItems: 'center',
+        gap: 16,
+        background: grad('#f1f5f9', '#f8fafc'),
+        fontFamily: 'Inter, system-ui, sans-serif'
+      }}>
+        <div style={{
+          padding: '2rem 2.25rem',
+          background: '#fff',
+          borderRadius: 16,
+          boxShadow: '0 16px 40px rgba(0,0,0,.08)',
+          textAlign: 'center'
+        }}>
+          <h2 style={{ margin: 0, fontWeight: 800 }}>Producto no encontrado</h2>
+          <p style={{ color: '#6b7280', marginTop: 8 }}>El enlace puede haber cambiado o el producto ya no está publicado.</p>
+          <button
+            onClick={() => nav(-1)}
+            style={{
+              marginTop: 16, padding: '0.75rem 1.25rem',
+              background: grad('#6366f1', '#8b5cf6'),
+              color: '#fff', border: 'none', borderRadius: 10, fontWeight: 700, cursor: 'pointer'
+            }}
+          >
+            Volver
+          </button>
+        </div>
+      </div>
+    );
+  }
 
-  const brandGradient  = tiendaConfig?.colorPrincipal || 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
-  const textColor      = tiendaConfig?.theme?.contrast || '#2d3748';
-  const primaryColor   = tiendaConfig?.theme?.from || '#667eea';
-  const secondaryColor = tiendaConfig?.theme?.to   || '#764ba2';
+  /* ======= Tema calculado ======= */
+  const headerGradient = grad(theme.from, theme.to);
+  const contrast = theme.contrast;
+  const primaryColor = theme.from;
 
   return (
-    <div className="product-page" style={{
-      minHeight: '100vh', background: '#f8f9fa', color: textColor, fontFamily: "'Inter', 'Segoe UI', sans-serif"
-    }}>
-      {/* Header */}
-      <header style={{
-        background: brandGradient, padding: '1rem 2rem', display: 'flex',
-        justifyContent: 'space-between', alignItems: 'center',
-        color: tiendaConfig?.theme?.contrast || '#fff', boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
-      }}>
-        <button
-          onClick={() => nav(-1)}
-          style={{
-            background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '50%',
-            width: '40px', height: '40px', display: 'flex', alignItems: 'center',
-            justifyContent: 'center', color: 'inherit', cursor: 'pointer'
-          }}
-        >
-          <FiArrowLeft />
-        </button>
+    <div
+      style={{
+        '--brandFrom': theme.from,
+        '--brandTo': theme.to,
+        '--contrast': contrast,
+      }}
+    >
+      {/* ======= Header de tienda con portada/gradiente ======= */}
+      <header
+        style={{
+          backgroundImage: tienda?.portadaUrl
+            ? `linear-gradient(135deg, ${theme.from}cc, ${theme.to}cc), url("${toPublicUrl(tienda.portadaUrl)}")`
+            : headerGradient,
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          color: contrast,
+          boxShadow: '0 10px 30px rgba(0,0,0,.18)',
+        }}
+      >
+        <div style={{
+          maxWidth: 1200, margin: '0 auto', padding: '1rem 1rem 1.25rem',
+          display: 'flex', alignItems: 'center', gap: 14, justifyContent: 'space-between'
+        }}>
+          <button
+            onClick={() => nav(-1)}
+            title="Regresar"
+            style={{
+              background: 'rgba(255,255,255,.18)', color: contrast, border: '1px solid rgba(255,255,255,.35)',
+              width: 42, height: 42, borderRadius: 12, display: 'grid', placeItems: 'center', cursor: 'pointer'
+            }}
+          >
+            <FiArrowLeft />
+          </button>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-          {tiendaConfig?.logoUrl && (
-            <img
-              src={`${FILES}${tiendaConfig.logoUrl}`}
-              alt="Logo de la tienda"
-              style={{ height: '40px', borderRadius: '8px' }}
-            />
-          )}
-          <h1 style={{ margin: 0, fontSize: '1.5rem', fontWeight: '700' }}>
-            {tiendaConfig?.nombre || 'Tienda'}
-          </h1>
-        </div>
-
-        <div style={{ width: '40px' }} />
-      </header>
-
-      {/* Main */}
-      <main style={{
-        maxWidth: '1200px', margin: '2rem auto', padding: '0 1rem',
-        display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '3rem', alignItems: 'start'
-      }}>
-        {/* Galería */}
-        <div className="product-gallery" style={{ position: 'relative' }}>
-          {p.imagenes?.length ? (
-            <>
-              <div style={{
-                position: 'relative', borderRadius: '12px', overflow: 'hidden',
-                boxShadow: '0 10px 30px rgba(0,0,0,0.1)', aspectRatio: '1/1'
-              }}>
-                <img
-                  src={`${FILES}${p.imagenes[currentImageIndex].url}`}
-                  alt={p.imagenes[currentImageIndex].alt || p.nombre}
-                  style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-                />
-
-                {p.imagenes.length > 1 && (
-                  <>
-                    <button onClick={prevImage} style={navBtnStyle('left')}><FiChevronLeft size={20} /></button>
-                    <button onClick={nextImage} style={navBtnStyle('right')}><FiChevronRight size={20} /></button>
-                  </>
-                )}
-
-                {Number(p.descuentoPct) > 0 && (
-                  <div style={badgeDescStyle}>-{p.descuentoPct}%</div>
-                )}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, justifyContent: 'center' }}>
+            {tienda?.logoUrl && (
+              <img
+                src={toPublicUrl(tienda.logoUrl)}
+                alt="logo"
+                style={{
+                  height: 44, width: 44, objectFit: 'contain',
+                  background: '#fff', borderRadius: 10, padding: 4, boxShadow: '0 6px 16px rgba(0,0,0,.18)'
+                }}
+                onError={(e) => { e.currentTarget.style.display = 'none'; }}
+              />
+            )}
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontWeight: 800, fontSize: 20, letterSpacing: .2 }}>
+                {tienda?.nombre || p?.tienda?.nombre || 'Tienda'}
               </div>
-
-              {p.imagenes.length > 1 && (
-                <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem', overflowX: 'auto', paddingBottom: '0.5rem' }}>
-                  {p.imagenes.map((img, index) => (
-                    <button
-                      key={index}
-                      onClick={() => setCurrentImageIndex(index)}
-                      style={{
-                        width: '60px', height: '60px',
-                        border: index === currentImageIndex ? `2px solid ${primaryColor}` : '1px solid #ddd',
-                        borderRadius: '8px', overflow: 'hidden', cursor: 'pointer', padding: 0, background: 'transparent', flexShrink: 0
-                      }}
-                    >
-                      <img src={`${FILES}${img.url}`} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                    </button>
-                  ))}
+              {tienda?.descripcion && (
+                <div style={{ fontSize: 13, opacity: .9, maxWidth: 580, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {tienda.descripcion}
                 </div>
               )}
-            </>
-          ) : (
-            <div style={{
-              aspectRatio: '1/1', background: '#e9ecef', borderRadius: '12px',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#6c757d'
-            }}>
-              Sin imagen
             </div>
-          )}
-        </div>
+          </div>
 
-        {/* Info */}
-        <div className="product-info" style={{ padding: '1rem 0' }}>
-          <div style={{ marginBottom: '1.5rem' }}>
-            {p.categorias?.length > 0 && (
-              <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem', flexWrap: 'wrap' }}>
-                {p.categorias.map(pc => (
-                  <span key={pc.categoria.id} style={{
-                    background: 'rgba(0,0,0,0.05)', padding: '0.35rem 0.75rem',
-                    borderRadius: '20px', fontSize: '0.85rem', fontWeight: '500'
-                  }}>
-                    {pc.categoria.nombre}
+          <div style={{ width: 42 }} />
+        </div>
+      </header>
+
+      {/* ======= Contenido principal ======= */}
+      <main style={{ maxWidth: 1200, margin: '1.75rem auto 2.5rem', padding: '0 1rem', fontFamily: 'Inter, system-ui, sans-serif' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 1fr', gap: 28 }}>
+          {/* Galería */}
+          <section>
+            <div style={{
+              position: 'relative', borderRadius: 14, overflow: 'hidden',
+              boxShadow: '0 16px 40px rgba(0,0,0,.08)', background: '#fff'
+            }}>
+              {sortedImages?.length ? (
+                <>
+                  <div style={{ position: 'relative', aspectRatio: '1/1' }}>
+                    <img
+                      src={toPublicUrl(sortedImages[currentImageIndex]?.url)}
+                      alt={sortedImages[currentImageIndex]?.alt || p.nombre}
+                      style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                      onError={(e) => { e.currentTarget.src = ''; e.currentTarget.alt = 'Sin imagen'; }}
+                    />
+                    {sortedImages.length > 1 && (
+                      <>
+                        <button onClick={() => setCurrentImageIndex(i => (i - 1 + sortedImages.length) % sortedImages.length)}
+                                style={navBtn('left')}><FiChevronLeft size={20} /></button>
+                        <button onClick={() => setCurrentImageIndex(i => (i + 1) % sortedImages.length)}
+                                style={navBtn('right')}><FiChevronRight size={20} /></button>
+                      </>
+                    )}
+                    {descPct > 0 && (
+                      <div style={discountBadge}>-{descPct}%</div>
+                    )}
+                  </div>
+
+                  {sortedImages.length > 1 && (
+                    <div style={{
+                      display: 'flex', gap: 10, padding: 12, overflowX: 'auto', background: '#fff'
+                    }}>
+                      {sortedImages.map((img, idx) => (
+                        <button key={idx}
+                                onClick={() => setCurrentImageIndex(idx)}
+                                style={{
+                                  width: 72, height: 72, flex: '0 0 auto',
+                                  borderRadius: 10, overflow: 'hidden',
+                                  border: idx === currentImageIndex ? `2px solid ${primaryColor}` : '1px solid #e5e7eb',
+                                  padding: 0, cursor: 'pointer', background: '#fff'
+                                }}>
+                          <img src={toPublicUrl(img.url)} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div style={{
+                  aspectRatio: '1/1', display: 'grid', placeItems: 'center',
+                  color: '#9ca3af', background: '#f3f4f6'
+                }}>Sin imagen</div>
+              )}
+            </div>
+
+            {/* Ficha técnica / atributos */}
+            {(p.atributos?.length || p.sku || p.marca) && (
+              <div style={cardBox}>
+                <h3 style={cardTitle}><FiTag style={{ marginRight: 8 }} /> Detalles del producto</h3>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
+                  {p.sku && <KV k="SKU" v={p.sku} />}
+                  {p.marca && <KV k="Marca" v={p.marca} />}
+                  {p.condicion && <KV k="Condición" v={p.condicion} />}
+                  {p.gtin && <KV k="GTIN" v={p.gtin} />}
+                  {p.pesoGramos && <KV k="Peso" v={`${p.pesoGramos} g`} />}
+                  {(p.altoCm || p.anchoCm || p.largoCm) && (
+                    <KV k="Dimensiones" v={[p.altoCm, p.anchoCm, p.largoCm].filter(Boolean).join(' × ') + ' cm'} />
+                  )}
+                  {(p.atributos || []).map((a, i) => (
+                    <KV key={i} k={a.clave} v={a.valor} />
+                  ))}
+                </div>
+              </div>
+            )}
+          </section>
+
+          {/* Info / compra */}
+          <section>
+            <div style={cardBox}>
+              {/* Categorías (breadcrumbs simples) */}
+              {p.categorias?.length > 0 && (
+                <div style={{ color: '#6b7280', fontSize: 13, marginBottom: 6 }}>
+                  {p.categorias.map(pc => pc.categoria?.nombre).filter(Boolean).join(' • ')}
+                </div>
+              )}
+
+              <h1 style={{ margin: '2px 0 8px', fontWeight: 800, fontSize: 28, lineHeight: 1.15 }}>{p.nombre}</h1>
+
+              {/* Rating */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                <div style={{ display: 'flex', color: '#f59e0b' }}>
+                  {[...Array(5)].map((_, i) => (
+                    <FiStar key={i} fill={i < Math.round(p.ratingAvg || 0) ? '#f59e0b' : 'none'} />
+                  ))}
+                </div>
+                <span style={{ fontSize: 13, color: '#6b7280' }}>
+                  {Number(p.ratingAvg || 0).toFixed(1)} · {p.ratingCount || 0} reseñas
+                </span>
+              </div>
+
+              {/* Precio */}
+              {Number.isFinite(precioFinal) && (
+                <div style={{ margin: '10px 0 18px', display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: 30, fontWeight: 900, color: primaryColor }}>
+                    ${precioFinal.toFixed(2)}
                   </span>
-                ))}
+                  {(descPct > 0 || precioComparativo > 0) && (
+                    <span style={{ fontSize: 18, color: '#9ca3af', textDecoration: 'line-through' }}>
+                      ${ (precioComparativo || precioNumber).toFixed(2) }
+                    </span>
+                  )}
+                  {descPct > 0 && (
+                    <span style={{
+                      background: '#ef4444', color: '#fff', borderRadius: 999,
+                      padding: '4px 10px', fontWeight: 700, fontSize: 13
+                    }}>
+                      -{descPct}%
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {/* Descripción */}
+              <p style={{ color: '#4b5563', lineHeight: 1.6, marginTop: 6 }}>
+                {p.descripcion || 'Este producto no tiene descripción disponible.'}
+              </p>
+
+              {/* Stock / alerta */}
+              {stockInfo.low && (
+                <div style={{
+                  marginTop: 12, background: '#fff7ed', border: '1px solid #fed7aa',
+                  color: '#9a3412', padding: '10px 12px', borderRadius: 10, fontSize: 14
+                }}>
+                  ¡Quedan pocas unidades disponibles!
+                </div>
+              )}
+
+              {/* Cantidad + acciones */}
+              <div style={{ marginTop: 16 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 12 }}>
+                  <label style={{ fontWeight: 700 }}>Cantidad</label>
+                  <div style={{
+                    display: 'flex', alignItems: 'center', border: '1px solid #e5e7eb',
+                    borderRadius: 12, overflow: 'hidden'
+                  }}>
+                    <button onClick={() => setQuantity(q => Math.max(1, q - 1))}
+                            style={qtyBtn}>-</button>
+                    <input
+                      type="number"
+                      value={quantity}
+                      onChange={(e) => setQuantity(Math.max(1, parseInt(e.target.value) || 1))}
+                      min="1"
+                      style={qtyInput}
+                    />
+                    <button onClick={() => setQuantity(q => q + 1)}
+                            style={qtyBtn}>+</button>
+                  </div>
+                  {Number.isFinite(stockInfo.stock) && (
+                    <span style={{ fontSize: 13, color: '#6b7280' }}>
+                      {stockInfo.stock} en stock
+                    </span>
+                  )}
+                </div>
+
+                <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                  <button
+                    onClick={handleAddToCart}
+                    disabled={!stockInfo.canBuy || addedToCart}
+                    style={{
+                      flex: '1 1 220px',
+                      padding: '14px 18px',
+                      borderRadius: 12,
+                      border: 'none',
+                      background: stockInfo.canBuy ? headerGradient : '#9ca3af',
+                      color: contrast,
+                      fontWeight: 800,
+                      cursor: stockInfo.canBuy ? 'pointer' : 'not-allowed',
+                      boxShadow: '0 10px 24px rgba(0,0,0,.12)'
+                    }}
+                  >
+                    {addedToCart ? (<><FiCheck style={{ marginRight: 8 }} /> ¡Agregado!</>) :
+                      (<><FiShoppingCart style={{ marginRight: 8 }} /> Agregar al carrito</>)}
+                  </button>
+                  <button title="Favorito" style={ghostBtn(primaryColor)}><FiHeart /></button>
+                  <button title="Compartir" onClick={share} style={ghostBtn(primaryColor)}><FiShare2 /></button>
+                </div>
+              </div>
+            </div>
+
+            {/* Envíos / garantías */}
+            {(tienda?.envioCobertura || tienda?.devoluciones || p?.diasPreparacion) && (
+              <div style={cardBox}>
+                <h3 style={cardTitle}>Beneficios</h3>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px,1fr))', gap: 14 }}>
+                  <Benefit icon={<FiTruck />} title={`Cobertura: ${tienda?.envioCobertura || 'Consultar'}`}
+                           subtitle={tienda?.envioTiempo || 'Tiempo estimado variable'} />
+                  <Benefit icon={<FiShield />} title="Devoluciones"
+                           subtitle={tienda?.devoluciones ? 'Aceptadas con política' : 'Consultar política'} />
+                  {p?.diasPreparacion && (
+                    <Benefit icon={<FiClock />} title="Preparación"
+                             subtitle={`${p.diasPreparacion} día(s) hábiles`} />
+                  )}
+                </div>
               </div>
             )}
 
-            <h1 style={{ margin: '0 0 1rem 0', fontSize: '2.25rem', fontWeight: '800', lineHeight: '1.2' }}>
-              {p.nombre}
-            </h1>
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1.5rem' }}>
-              <div style={{ display: 'flex', color: '#ffc107' }}>
-                {[...Array(5)].map((_, i) => (<FiStar key={i} fill={i < 4 ? "#ffc107" : "none"} />))}
-              </div>
-              <span style={{ fontSize: '0.9rem', color: '#6c757d' }}>(42 reseñas)</span>
-            </div>
-          </div>
-
-          {/* Precio */}
-          {p.tipo === 'SIMPLE' && !Number.isNaN(precioNumber) && (
-            <div style={{ marginBottom: '1.5rem' }}>
-              {Number(p.descuentoPct) > 0 ? (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
-                  <span style={{ fontSize: '2rem', fontWeight: '800', color: primaryColor }}>
-                    ${precioFinal.toFixed(2)}
-                  </span>
-                  <span style={{ fontSize: '1.5rem', fontWeight: '500', color: '#6c757d', textDecoration: 'line-through' }}>
-                    ${precioNumber.toFixed(2)}
-                  </span>
-                  <span style={{ background: '#ff4444', color: 'white', padding: '0.25rem 0.75rem',
-                    borderRadius: '20px', fontWeight: 'bold', fontSize: '0.9rem' }}>
-                    Ahorras {p.descuentoPct}%
-                  </span>
+            {/* Vendedor */}
+            <div style={cardBox}>
+              <h3 style={cardTitle}>Vendido por</h3>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                {tienda?.logoUrl && (
+                  <img
+                    src={toPublicUrl(tienda.logoUrl)}
+                    alt="logo tienda"
+                    style={{ width: 56, height: 56, objectFit: 'contain', background: '#fff', borderRadius: 12, padding: 6 }}
+                  />
+                )}
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 800 }}>{tienda?.nombre || p?.tienda?.nombre || 'Tienda'}</div>
+                  {tienda?.categoria && (
+                    <div style={{ color: '#6b7280', fontSize: 13 }}>{tienda.categoria}</div>
+                  )}
                 </div>
-              ) : (
-                <span style={{ fontSize: '2rem', fontWeight: '800', color: primaryColor }}>
-                  ${precioNumber.toFixed(2)}
-                </span>
-              )}
-            </div>
-          )}
-
-          {/* Descripción */}
-          <div style={{ marginBottom: '2rem' }}>
-            <h3 style={{ margin: '0 0 0.75rem 0', fontSize: '1.25rem' }}>Descripción</h3>
-            <p style={{ margin: 0, lineHeight: '1.6', color: '#495057' }}>
-              {p.descripcion || 'Este producto no tiene descripción disponible.'}
-            </p>
-          </div>
-
-          {/* Alertas de stock */}
-          {alertaPocasUnidades && (
-            <div style={{
-              background: '#fff3cd', border: '1px solid #ffeaa7', color: '#856404',
-              padding: '0.75rem 1rem', borderRadius: '8px', marginBottom: '1.5rem',
-              display: 'flex', alignItems: 'center', gap: '0.5rem'
-            }}>
-              <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-              </svg>
-              ¡Quedan pocas unidades! No te quedes sin tu producto.
-            </div>
-          )}
-
-          {/* Cantidad + acciones */}
-          <div style={{ marginBottom: '2rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1rem' }}>
-              <label htmlFor="quantity" style={{ fontWeight: '600' }}>Cantidad:</label>
-              <div style={{ display: 'flex', border: '1px solid #ced4da', borderRadius: '8px', overflow: 'hidden' }}>
-                <button onClick={() => setQuantity(q => Math.max(1, q - 1))} style={qtyBtnStyle}>-</button>
-                <input
-                  type="number" id="quantity" value={quantity}
-                  onChange={(e) => setQuantity(Math.max(1, parseInt(e.target.value) || 1))}
-                  min="1" style={qtyInputStyle}
-                />
-                <button onClick={() => setQuantity(q => q + 1)} style={qtyBtnStyle}>+</button>
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
-              <button
-                onClick={handleAddToCart}
-                disabled={!puedeComprar || addedToCart}
-                style={{
-                  flex: '1', minWidth: '200px', padding: '1rem 2rem',
-                  background: puedeComprar ? brandGradient : '#6c757d',
-                  color: tiendaConfig?.theme?.contrast || '#fff',
-                  border: 'none', borderRadius: '8px', fontWeight: '600',
-                  cursor: puedeComprar ? 'pointer' : 'not-allowed',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem',
-                  boxShadow: '0 4px 12px rgba(0,0,0,0.15)', transition: 'all 0.2s ease',
-                  opacity: addedToCart ? 0.8 : 1
-                }}
-                onMouseOver={(e) => {
-                  if (puedeComprar) {
-                    e.currentTarget.style.transform = 'translateY(-2px)';
-                    e.currentTarget.style.boxShadow = '0 6px 16px rgba(0,0,0,0.2)';
-                  }
-                }}
-                onMouseOut={(e) => {
-                  if (puedeComprar) {
-                    e.currentTarget.style.transform = 'translateY(0)';
-                    e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
-                  }
-                }}
-              >
-                {addedToCart ? (<><FiCheck size={20} /> ¡Agregado!</>) :
-                 (puedeComprar ? (<><FiShoppingCart size={20} /> Agregar al carrito</>) : 'Sin stock')}
-              </button>
-
-              <button style={ghostBtnStyle(primaryColor)}><FiHeart size={20} /></button>
-              <button style={ghostBtnStyle(primaryColor)}><FiShare2 size={20} /></button>
-            </div>
-          </div>
-
-          {/* Beneficios */}
-          <div style={{ border: '1px solid #e9ecef', borderRadius: '8px', padding: '1.5rem' }}>
-            <h3 style={{ margin: '0 0 1rem 0', fontSize: '1.1rem' }}>Beneficios</h3>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '1rem' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <FiTruck size={20} color={primaryColor} />
-                <div>
-                  <div style={{ fontWeight: '600' }}>Envío gratis</div>
-                  <div style={{ fontSize: '0.85rem', color: '#6c757d' }}>En compras +$500</div>
-                </div>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <FiShield size={20} color={primaryColor} />
-                <div>
-                  <div style={{ fontWeight: '600' }}>Garantía</div>
-                  <div style={{ fontSize: '0.85rem', color: '#6c757d' }}>30 días</div>
+                <div style={{ display: 'flex', gap: 10 }}>
+                  {tienda?.telefonoContacto && (
+                    <a href={`tel:${tienda.telefonoContacto}`} title="Llamar" style={miniPill(primaryColor)}><FiPhone /></a>
+                  )}
+                  {tienda?.email && (
+                    <a href={`mailto:${tienda.email}`} title="Email" style={miniPill(primaryColor)}><FiMail /></a>
+                  )}
+                  {tienda?.redes?.facebook && (
+                    <a href={tienda.redes.facebook} target="_blank" rel="noreferrer"
+                       title="Facebook" style={miniPill('#1877F2')}>f</a>
+                  )}
+                  {tienda?.redes?.instagram && (
+                    <a href={tienda.redes.instagram} target="_blank" rel="noreferrer"
+                       title="Instagram" style={miniPill('#E1306C')}>◎</a>
+                  )}
+                  {tienda?.redes?.tiktok && (
+                    <a href={tienda.redes.tiktok} target="_blank" rel="noreferrer"
+                       title="TikTok" style={miniPill('#000')}>♫</a>
+                  )}
                 </div>
               </div>
             </div>
-          </div>
+          </section>
         </div>
       </main>
 
-      {/* Banner */}
-      <footer style={{
-        background: 'linear-gradient(135deg, #1a202c 0%, #2d3748 100%)', color: 'white',
-        padding: '2rem', marginTop: '3rem', textAlign: 'center'
-      }}>
-        <div style={{ maxWidth: '1000px', margin: '0 auto' }}>
-          <h3 style={{ margin: '0 0 1rem 0', fontSize: '1.5rem' }}>
-            ¿Necesitas una tienda online como esta?
-          </h3>
-          <p style={{ margin: '0 0 1.5rem 0', fontSize: '1.1rem', opacity: 0.9 }}>
-            Desarrollamos tiendas personalizadas con diseño premium y todas las funcionalidades que necesitas
-          </p>
-          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '2rem', flexWrap: 'wrap' }}>
-            <a href="https://wa.me/528441786280" target="_blank" rel="noopener noreferrer"
-               style={{
-                 background: '#25D366', color: 'white', padding: '0.75rem 1.5rem',
-                 borderRadius: '8px', textDecoration: 'none', fontWeight: '600',
-                 display: 'flex', alignItems: 'center', gap: '0.5rem'
-               }}>
-              {/* ícono WhatsApp */}
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884" />
-              </svg>
-              Contactar por WhatsApp
-            </a>
-            <div style={{ fontSize: '1.2rem', fontWeight: '700' }}>📞 8441786280</div>
-          </div>
-          <p style={{ margin: '1.5rem 0 0 0', fontSize: '0.9rem', opacity: 0.7 }}>
-            SystemVkode - Desarrollos personalizados a medida
-          </p>
-        </div>
-      </footer>
-
-      <style jsx>{`
-        @keyframes spin { 0% { transform: rotate(0deg);} 100% { transform: rotate(360deg);} }
-        input[type="number"]::-webkit-outer-spin-button,
-        input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
-        @media (max-width: 768px) {
-          main { grid-template-columns: 1fr !important; gap: 2rem !important; }
-          .product-info { padding: 0 !important; }
+      {/* estilos mínimos para botones de navegación */}
+      <style>{`
+        @media (max-width: 900px){
+          main>div{ grid-template-columns: 1fr; }
         }
       `}</style>
     </div>
   );
 }
 
-/* ---------- estilos inline reutilizables ---------- */
-const navBtnStyle = (side) => ({
+/* ======= Subcomponentes & estilos inline reutilizables ======= */
+
+const cardBox = {
+  background: '#fff',
+  borderRadius: 14,
+  padding: 18,
+  boxShadow: '0 16px 40px rgba(0,0,0,.08)',
+  marginBottom: 18,
+};
+const cardTitle = { margin: 0, marginBottom: 12, fontSize: 16, fontWeight: 800 };
+
+const navBtn = (side) => ({
   position: 'absolute',
-  [side]: '1rem',
+  [side]: 10,
   top: '50%',
   transform: 'translateY(-50%)',
-  background: 'rgba(255,255,255,0.8)',
-  border: 'none',
-  borderRadius: '50%',
-  width: '40px',
-  height: '40px',
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
+  width: 42,
+  height: 42,
+  borderRadius: 12,
+  border: '1px solid rgba(0,0,0,.08)',
+  background: 'rgba(255,255,255,.9)',
+  display: 'grid',
+  placeItems: 'center',
   cursor: 'pointer',
-  boxShadow: '0 2px 8px rgba(0,0,0,0.15)'
+  boxShadow: '0 10px 24px rgba(0,0,0,.12)'
 });
-const badgeDescStyle = {
+
+const discountBadge = {
   position: 'absolute',
-  top: '1rem',
-  right: '1rem',
-  background: '#ff4444',
-  color: 'white',
-  padding: '0.5rem 0.75rem',
-  borderRadius: '20px',
-  fontWeight: 'bold',
-  fontSize: '0.9rem'
+  top: 10,
+  right: 10,
+  background: '#ef4444',
+  color: '#fff',
+  padding: '6px 10px',
+  borderRadius: 999,
+  fontWeight: 800,
+  fontSize: 12
 };
-const qtyBtnStyle = {
-  width: '40px', height: '40px', border: 'none', background: '#f8f9fa',
-  cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center'
+
+const qtyBtn = {
+  width: 40, height: 40, border: 'none', background: '#f3f4f6',
+  cursor: 'pointer', display: 'grid', placeItems: 'center', fontWeight: 800
 };
-const qtyInputStyle = {
-  width: '60px', height: '40px', border: 'none',
-  borderLeft: '1px solid #ced4da', borderRight: '1px solid #ced4da',
-  textAlign: 'center', appearance: 'textfield', MozAppearance: 'textfield'
+const qtyInput = {
+  width: 64, height: 40, border: 'none', borderLeft: '1px solid #e5e7eb', borderRight: '1px solid #e5e7eb',
+  textAlign: 'center', fontWeight: 700, outline: 'none'
 };
-const ghostBtnStyle = (color) => ({
-  padding: '1rem', border: `1px solid ${color}`, background: 'transparent',
-  color, borderRadius: '8px', cursor: 'pointer', display: 'flex',
-  alignItems: 'center', justifyContent: 'center'
+const ghostBtn = (color) => ({
+  padding: '12px 14px',
+  borderRadius: 12,
+  background: 'transparent',
+  border: `1px solid ${color}`,
+  color,
+  cursor: 'pointer',
+  fontWeight: 700,
+  minWidth: 54
 });
+const miniPill = (bg) => ({
+  width: 36, height: 36, display: 'grid', placeItems: 'center',
+  borderRadius: 10, background: bg, color: '#fff', textDecoration: 'none',
+  fontWeight: 900, boxShadow: '0 6px 16px rgba(0,0,0,.12)'
+});
+
+function KV({ k, v }) {
+  return (
+    <div style={{
+      background: '#f9fafb', border: '1px solid #f1f5f9', borderRadius: 10, padding: '10px 12px'
+    }}>
+      <div style={{ fontSize: 12, color: '#6b7280', marginBottom: 2 }}>{k}</div>
+      <div style={{ fontWeight: 700 }}>{v}</div>
+    </div>
+  );
+}
+
+function Benefit({ icon, title, subtitle }) {
+  return (
+    <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: 8 }}>
+      <div style={{
+        width: 38, height: 38, borderRadius: 12, display: 'grid', placeItems: 'center',
+        background: '#f5f3ff', color: '#6d28d9'
+      }}>
+        {icon}
+      </div>
+      <div>
+        <div style={{ fontWeight: 800 }}>{title}</div>
+        <div style={{ fontSize: 13, color: '#6b7280' }}>{subtitle}</div>
+      </div>
+    </div>
+  );
+}

@@ -1,6 +1,6 @@
 // frontend/src/pages/Vendedor/Productos.jsx
-import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom'; // ⭐ CHANGED
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import Nabvendedor from './Nabvendedor';
 import {
   FiPlus, FiRefreshCcw, FiSearch, FiTag, FiEdit2, FiTrash2,
@@ -9,22 +9,22 @@ import {
 } from 'react-icons/fi';
 import './Productos.css';
 
-const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+const API   = import.meta.env.VITE_API_URL   || 'http://localhost:5000';
 const FILES = import.meta.env.VITE_FILES_BASE || API;
 
 /* -------------------- Tipos de producto (explicación) -------------------- */
 const TIPOS = [
-  { value: 'SIMPLE', label: 'Simple', desc: 'Un solo SKU con precio y stock únicos.', badges: ['Inventario', 'Precio único'], supports: { inventory: true, variants: false, digital: false, service: false, bundle: false }, },
-  { value: 'VARIANTE', label: 'Con variantes', desc: 'Varias combinaciones (talla, color…). Inventario por variante.', badges: ['Variantes', 'Precios por variante'], supports: { inventory: false, variants: true, digital: false, service: false, bundle: false }, },
-  { value: 'DIGITAL', label: 'Digital', desc: 'Archivo descargable (no requiere stock).', badges: ['Descargable'], supports: { inventory: false, variants: false, digital: true, service: false, bundle: false }, },
-  { value: 'SERVICIO', label: 'Servicio', desc: 'Reservas/citas; precio por sesión.', badges: ['Agenda'], supports: { inventory: false, variants: false, digital: false, service: true, bundle: false }, },
-  { value: 'BUNDLE', label: 'Bundle', desc: 'Paquete de varios productos (combos).', badges: ['Pack'], supports: { inventory: false, variants: false, digital: false, service: false, bundle: true }, },
+  { value: 'SIMPLE',   label: 'Simple',   desc: 'Un solo SKU con precio y stock únicos.',           badges: ['Inventario', 'Precio único'],       supports: { inventory: true,  variants: false, digital: false, service: false, bundle: false } },
+  { value: 'VARIANTE', label: 'Con variantes', desc: 'Varias combinaciones (talla, color…).',      badges: ['Variantes', 'Precios por variante'], supports: { inventory: false, variants: true,  digital: false, service: false, bundle: false } },
+  { value: 'DIGITAL',  label: 'Digital',  desc: 'Archivo descargable (no requiere stock).',        badges: ['Descargable'],                       supports: { inventory: false, variants: false, digital: true,  service: false, bundle: false } },
+  { value: 'SERVICIO', label: 'Servicio', desc: 'Reservas/citas; precio por sesión.',              badges: ['Agenda'],                            supports: { inventory: false, variants: false, digital: false, service: true,  bundle: false } },
+  { value: 'BUNDLE',   label: 'Bundle',   desc: 'Paquete de varios productos (combos).',           badges: ['Pack'],                              supports: { inventory: false, variants: false, digital: false, service: false, bundle: true  } },
 ];
 
 /* -------------------- helpers de tema -------------------- */
 const grad = (from, to) => `linear-gradient(135deg, ${from}, ${to})`;
 const hexToRgb = (hex) => { const m = hex?.match(/^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i); if (!m) return [0,0,0]; return [parseInt(m[1],16),parseInt(m[2],16),parseInt(m[3],16)]; };
-const luminance = ([r, g, b]) => { const a=[r,g,b].map(v=>{v/=255;return v<=0.03928?v/12.92:Math.pow((v+0.055)/1.055,2.4);}); return 0.2126*a[0]+0.7152*a[1]+0.0722*a[2]; };
+const luminance = ([r,g,b]) => { const a=[r,g,b].map(v=>{v/=255;return v<=0.03928?v/12.92:Math.pow((v+0.055)/1.055,2.4);}); return 0.2126*a[0]+0.7152*a[1]+0.0722*a[2]; };
 const bestTextOn = (hexA, hexB) => { const L=(luminance(hexToRgb(hexA))+luminance(hexToRgb(hexB)))/2; return L>0.45?'#111111':'#ffffff'; };
 const extractColors = (gradientString) => { const m = gradientString?.match(/#([0-9a-f]{6})/gi); return { from: m?.[0] || '#6d28d9', to: m?.[1] || '#c026d3' }; };
 
@@ -37,13 +37,27 @@ const ImageCarousel = ({ images, productName }) => {
   const nextImage = () => setCurrentIndex((p) => (p + 1) % images.length);
   const prevImage = () => setCurrentIndex((p) => (p - 1 + images.length) % images.length);
   return (
-    <div className="producto-media-carousel">
-      <button className="carousel-btn prev" onClick={prevImage}><FiChevronLeft /></button>
-      <img src={`${FILES}${images[currentIndex].url}`} alt={`${productName} - Imagen ${currentIndex + 1}`} className="carousel-image" />
-      <button className="carousel-btn next" onClick={nextImage}><FiChevronRight /></button>
-      <div className="carousel-dots">
+    <div className="producto-media-carousel" aria-roledescription="carrusel" aria-label={`Imágenes de ${productName}`}>
+      <button className="carousel-btn prev" onClick={prevImage} aria-label="Imagen anterior"><FiChevronLeft /></button>
+      <img
+        src={`${FILES}${images[currentIndex].url}`}
+        alt={`${productName} – imagen ${currentIndex + 1} de ${images.length}`}
+        className="carousel-image"
+        loading="lazy"
+        decoding="async"
+        sizes="(max-width: 480px) 100vw, (max-width: 1024px) 50vw, 33vw"
+      />
+      <button className="carousel-btn next" onClick={nextImage} aria-label="Siguiente imagen"><FiChevronRight /></button>
+      <div className="carousel-dots" role="tablist" aria-label="Selector de imagen">
         {images.map((_, i) => (
-          <button key={i} className={`dot ${i === currentIndex ? 'active' : ''}`} onClick={() => setCurrentIndex(i)} aria-label={`Ir a imagen ${i + 1}`} />
+          <button
+            key={i}
+            className={`dot ${i === currentIndex ? 'active' : ''}`}
+            onClick={() => setCurrentIndex(i)}
+            aria-label={`Ir a imagen ${i + 1}`}
+            aria-selected={i === currentIndex}
+            role="tab"
+          />
         ))}
       </div>
     </div>
@@ -52,7 +66,7 @@ const ImageCarousel = ({ images, productName }) => {
 
 export default function Productos() {
   /* -------------------- estado base -------------------- */
-  const navigate = useNavigate(); // ⭐ CHANGED
+  const navigate = useNavigate();
   const [tiendaId, setTiendaId] = useState(null);
   const [theme, setTheme] = useState({ from: '#6d28d9', to: '#c026d3', contrast: '#ffffff' });
 
@@ -88,9 +102,17 @@ export default function Productos() {
   const [vSaving, setVSaving] = useState(false);
   const [vForm, setVForm] = useState(defaultVForm());
 
+  /* ------ refs para foco en modales ------ */
+  const refCatInput   = useRef(null);
+  const refProdNombre = useRef(null);
+
   /* -------------------- offsets navbar móvil -------------------- */
   const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' ? window.innerWidth < 768 : false);
-  useEffect(() => { const onResize = () => setIsMobile(window.innerWidth < 768); window.addEventListener('resize', onResize); return () => window.removeEventListener('resize', onResize); }, []);
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
   const mobileTopOffset = 'calc(60px + env(safe-area-inset-top, 0px))';
   const mobileBottomOffset = 'calc(72px + env(safe-area-inset-bottom, 0px))';
 
@@ -101,7 +123,7 @@ export default function Productos() {
 
   /* -------------------- tema brand -------------------- */
   useEffect(() => {
-    document.body.classList.add('vendor-theme');
+    document.body.classList.add('vendor-theme', 'has-topfixed', 'has-bottomnav');
     (async () => {
       try {
         const r = await fetch(`${API}/api/tienda/me`, { headers: baseHeaders });
@@ -126,10 +148,36 @@ export default function Productos() {
           localStorage.setItem('brandTo', to);
           localStorage.setItem('brandContrast', contrast);
         }
-      } catch { /* tema por defecto */ }
+      } catch {/* tema por defecto */}
     })();
-    return () => document.body.classList.remove('vendor-theme');
+    return () => document.body.classList.remove('vendor-theme', 'has-topfixed', 'has-bottomnav');
   }, []);
+
+  /* --------- cierre con Esc + scroll lock en modales ---------- */
+  const anyModalOpen = showCatModal || showEditor || showVariantes;
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key === 'Escape') {
+        if (showVariantes) setShowVariantes(false);
+        else if (showEditor) setShowEditor(false);
+        else if (showCatModal) setShowCatModal(false);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    document.body.style.overflow = anyModalOpen ? 'hidden' : '';
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.body.style.overflow = '';
+    };
+  }, [showCatModal, showEditor, showVariantes, anyModalOpen]);
+
+  /* -------- foco inicial en cada modal -------- */
+  useEffect(() => {
+    if (showCatModal) setTimeout(() => refCatInput.current?.focus(), 0);
+  }, [showCatModal]);
+  useEffect(() => {
+    if (showEditor) setTimeout(() => refProdNombre.current?.focus(), 0);
+  }, [showEditor]);
 
   /* -------------------- helpers -------------------- */
   function slugify(str) { return String(str || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)+/g, ''); }
@@ -145,7 +193,7 @@ export default function Productos() {
     if (s <= umbral) return `Stock bajo (${s})`;
     return `En stock: ${s}`;
   }
-  function currency(n) { if (typeof n !== 'number') return ''; try { return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(n); } catch { return `$${n.toFixed(2)}`; } }
+  function currency(n) { if (typeof n !== 'number') return ''; try { return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(n); } catch { return `$${Number(n || 0).toFixed(2)}`; } }
 
   /* -------------------- asegurar tienda -------------------- */
   useEffect(() => {
@@ -155,7 +203,7 @@ export default function Productos() {
       (async () => {
         try {
           const r = await fetch(`${API}/api/tienda/me`, { headers: baseHeaders });
-          if (!r.ok) throw new Error('No se encontró tu tienda. Configúrala en el perfil.');
+          if (!r.ok) throw new Error('No se encontró tu tienda. Configúrala en tu perfil.');
           const d = await r.json();
           if (d?.id) {
             setTiendaId(Number(d.id));
@@ -176,7 +224,7 @@ export default function Productos() {
       setCargandoCats(true);
       try {
         const res = await fetch(`${API}/api/v1/categorias?tiendaId=${tiendaId}`, { headers: baseHeaders });
-        if (!res.ok) throw new Error('No se pudieron cargar las categorías');
+        if (!res.ok) throw new Error('No se pudieron cargar las categorías.');
         const data = await res.json();
         setCategorias(Array.isArray(data) ? data : []);
       } catch (e) {
@@ -198,7 +246,7 @@ export default function Productos() {
       if (estadoSel) params.set('estado', estadoSel);
       if (categoriaSel && categoriaSel !== 'todas') params.set('categoria', categoriaSel);
       const res = await fetch(`${API}/api/v1/productos?${params.toString()}`, { headers: baseHeaders });
-      if (!res.ok) throw new Error('No se pudieron cargar los productos');
+      if (!res.ok) throw new Error('No se pudieron cargar los productos.');
       const data = await res.json();
       setProductos(Array.isArray(data) ? data : []);
     } catch (e) {
@@ -243,7 +291,7 @@ export default function Productos() {
     );
     if (productosSinCategoria.length > 0) {
       categoriasConProductos.push({
-        categoria: { id: 0, nombre: 'Sin categoría', slug: 'sin-categoria' },
+        categoria: { id: 0, nombre: 'Sin categoría', slug: 'sin-categoría' },
         productos: productosSinCategoria
       });
     }
@@ -251,7 +299,14 @@ export default function Productos() {
   }, [productos, categorias, q, categoriaSel, estadoSel]);
 
   /* -------------------- acciones productos -------------------- */
-  const crearProducto = () => { setMode('create'); setEditId(null); setForm(defaultForm()); setErrors({}); setShowEditor(true); };
+  const crearProducto = () => {
+    setMode('create');
+    setEditId(null);
+    setForm(defaultForm());
+    setErrors({});
+    setShowEditor(true);
+  };
+
   const productToForm = (p) => {
     const catIds = Array.isArray(p?.categorias)
       ? p.categorias.map((x) => x?.categoriaId ?? x?.categoria?.id ?? x?.id).filter(Boolean)
@@ -270,22 +325,29 @@ export default function Productos() {
         : [],
     };
   };
-  const editarProducto = (p) => { setMode('edit'); setEditId(p.id); setForm(productToForm(p)); setErrors({}); setShowEditor(true); };
 
-  // ⭐ CHANGED: ver público por UUID con navigate (compatible HashRouter)
+  const editarProducto = (p) => {
+    setMode('edit');
+    setEditId(p.id);
+    setForm(productToForm(p));
+    setErrors({});
+    setShowEditor(true);
+  };
+
   const verPublico = (p) => {
     if (!p?.uuid) { alert('Este producto no tiene UUID. Guarda el producto primero.'); return; }
     navigate(`/producto/${p.uuid}`, { replace: false });
   };
 
   const eliminarProducto = async (p) => {
-    if (!confirm(`¿Eliminar "${p.nombre}"?`)) return;
+    if (!confirm(`¿Eliminar "${p.nombre}"? Esta acción no se puede deshacer.`)) return;
     try {
       const res = await fetch(`${API}/api/v1/productos/${p.id}`, { method: 'DELETE', headers: baseHeaders });
-      if (!res.ok) throw new Error('No se pudo eliminar');
+      if (!res.ok) throw new Error('No se pudo eliminar el producto.');
       setProductos((prev) => prev.filter((x) => x.id !== p.id));
     } catch (e) { alert(e?.message || 'Error al eliminar'); }
   };
+
   const toggleEstado = async (p) => {
     const next = p.estado === 'ACTIVE' ? 'PAUSED' : 'ACTIVE';
     try {
@@ -294,11 +356,12 @@ export default function Productos() {
         headers: { 'Content-Type': 'application/json', ...baseHeaders },
         body: JSON.stringify({ estado: next }),
       });
-      if (!res.ok) throw new Error('No se pudo actualizar el estado');
+      if (!res.ok) throw new Error('No se pudo actualizar el estado.');
       const act = await res.json();
       setProductos((prev) => prev.map((x) => (x.id === act.id ? act : x)));
     } catch (e) { alert(e?.message || 'Error al actualizar estado'); }
   };
+
   const toggleDestacado = async (p) => {
     try {
       const res = await fetch(`${API}/api/v1/productos/${p.id}`, {
@@ -306,7 +369,7 @@ export default function Productos() {
         headers: { 'Content-Type': 'application/json', ...baseHeaders },
         body: JSON.stringify({ destacado: !p.destacado }),
       });
-      if (!res.ok) throw new Error('No se pudo actualizar destacado');
+      if (!res.ok) throw new Error('No se pudo actualizar destacado.');
       const act = await res.json();
       setProductos((prev) => prev.map((x) => (x.id === act.id ? act : x)));
     } catch (e) { alert(e?.message || 'Error al actualizar destacado'); }
@@ -322,12 +385,13 @@ export default function Productos() {
         headers: { 'Content-Type': 'application/json', ...baseHeaders },
         body: JSON.stringify({ tiendaId, nombre }),
       });
-      if (!res.ok) throw new Error('No se pudo crear la categoría');
+      if (!res.ok) throw new Error('No se pudo crear la categoría.');
       const creada = await res.json();
       setCategorias((prev) => [creada, ...prev]);
       setNewCatName('');
     } catch (e) { alert(e?.message || 'Error al crear categoría'); }
   };
+
   const guardarEdicionCat = async () => {
     const nombre = editCatName.trim();
     if (!nombre || !editCatId) return;
@@ -337,17 +401,18 @@ export default function Productos() {
         headers: { 'Content-Type': 'application/json', ...baseHeaders },
         body: JSON.stringify({ nombre }),
       });
-      if (!res.ok) throw new Error('No se pudo renombrar la categoría');
+      if (!res.ok) throw new Error('No se pudo renombrar la categoría.');
       const act = await res.json();
       setCategorias((prev) => prev.map((c) => (c.id === act.id ? act : c)));
       setEditCatId(null); setEditCatName('');
     } catch (e) { alert(e?.message || 'Error al renombrar categoría'); }
   };
+
   const eliminarCategoria = async (id) => {
     if (!confirm('¿Eliminar categoría? Los productos no se borran.')) return;
     try {
       const res = await fetch(`${API}/api/v1/categorias/${id}`, { method: 'DELETE', headers: baseHeaders });
-      if (!res.ok) throw new Error('No se pudo eliminar la categoría');
+      if (!res.ok) throw new Error('No se pudo eliminar la categoría.');
       setCategorias((prev) => prev.filter((c) => c.id !== id));
       if (categoriaSel !== 'todas' && categorias.find((c) => c.id === id)?.slug === categoriaSel) {
         setCategoriaSel('todas');
@@ -365,11 +430,22 @@ export default function Productos() {
     };
   }
 
-  const precioNum = useMemo(() => (form.precio === '' ? null : Number(form.precio)), [form.precio]);
+  const precioNum     = useMemo(() => (form.precio === '' ? null : Number(form.precio)), [form.precio]);
   const precioCompNum = useMemo(() => (form.precioComparativo === '' ? null : Number(form.precioComparativo)), [form.precioComparativo]);
-  const costoNum = useMemo(() => (form.costo === '' ? null : Number(form.costo)), [form.costo]);
-  const descuentoSugerido = useMemo(() => { if (precioNum != null && precioCompNum && precioCompNum > 0) { return Math.max(0, Math.round((1 - (precioNum / precioCompNum)) * 100)); } return null; }, [precioNum, precioCompNum]);
-  const margen = useMemo(() => { if (precioNum != null && costoNum != null) { const m = precioNum - costoNum; const pct = costoNum > 0 ? (m / costoNum) * 100 : null; return { m, pct }; } return null; }, [precioNum, costoNum]);
+  const costoNum      = useMemo(() => (form.costo === '' ? null : Number(form.costo)), [form.costo]);
+  const descuentoSugerido = useMemo(() => {
+    if (precioNum != null && precioCompNum && precioCompNum > 0) {
+      return Math.max(0, Math.round((1 - (precioNum / precioCompNum)) * 100));
+    }
+    return null;
+  }, [precioNum, precioCompNum]);
+  const margen = useMemo(() => {
+    if (precioNum != null && costoNum != null) {
+      const m = precioNum - costoNum; const pct = costoNum > 0 ? (m / costoNum) * 100 : null;
+      return { m, pct };
+    }
+    return null;
+  }, [precioNum, costoNum]);
   const computedSlug = useMemo(() => slugify(form.nombre), [form.nombre]);
 
   /* -------------------- imágenes producto -------------------- */
@@ -384,26 +460,66 @@ export default function Productos() {
         const res = await fetch(`${API}/api/v1/upload/producto`, { method: 'POST', headers: { ...baseHeaders }, body: fd });
         if (!res.ok) throw new Error('No se pudo subir imagen');
         const { url } = await res.json();
-        setForm((prev) => { const next = [...prev.imagenes]; next.push({ url, alt: '', isPrincipal: next.length === 0, orden: next.length }); return { ...prev, imagenes: next }; });
+        setForm((prev) => {
+          const next = [...prev.imagenes];
+          next.push({ url, alt: '', isPrincipal: next.length === 0, orden: next.length });
+          return { ...prev, imagenes: next };
+        });
       } catch (e) { alert(e?.message || 'Error subiendo imagen'); }
     }
   };
-  const setPrincipal = (idx) => { setForm((prev) => { const next = prev.imagenes.map((img, i) => ({ ...img, isPrincipal: i === idx, orden: i === idx ? 0 : img.orden })); next.sort((a, b) => (a.isPrincipal ? -1 : b.isPrincipal ? 1 : 0)); next.forEach((img, i) => { img.orden = i; }); return { ...prev, imagenes: next }; }); };
-  const removeImagen = (idx) => { setForm((prev) => { const next = prev.imagenes.filter((_, i) => i !== idx).map((img, i) => ({ ...img, orden: i })); if (!next.some((i) => i.isPrincipal) && next[0]) next[0].isPrincipal = true; return { ...prev, imagenes: next }; }); };
-  const moveImagen = (idx, dir = -1) => { setForm((prev) => { const arr = [...prev.imagenes]; const j = idx + dir; if (j < 0 || j >= arr.length) return prev; const tmp = arr[idx]; arr[idx] = arr[j]; arr[j] = tmp; arr.forEach((img, i) => (img.orden = i)); if (!arr.some((x) => x.isPrincipal)) arr[0].isPrincipal = true; return { ...prev, imagenes: arr }; }); };
-  const updateAlt = (idx, alt) => { setForm((prev) => { const arr = [...prev.imagenes]; if (!arr[idx]) return prev; arr[idx] = { ...arr[idx], alt }; return { ...prev, imagenes: arr }; }); };
-  const handleDrop = (e) => { e.preventDefault(); e.stopPropagation(); const files = e.dataTransfer?.files; if (files?.length) onUploadImages(files); };
-  const handleDragOver = (e) => { e.preventDefault(); e.stopPropagation(); };
 
-  const toggleCategoria = (id) => { setForm((prev) => { const set = new Set(prev.categoriasIds); set.has(id) ? set.delete(id) : set.add(id); return { ...prev, categoriasIds: Array.from(set) }; }); };
+  const setPrincipal = (idx) => {
+    setForm((prev) => {
+      const next = prev.imagenes.map((img, i) => ({ ...img, isPrincipal: i === idx, orden: i === idx ? 0 : img.orden }));
+      next.sort((a, b) => (a.isPrincipal ? -1 : b.isPrincipal ? 1 : 0));
+      next.forEach((img, i) => { img.orden = i; });
+      return { ...prev, imagenes: next };
+    });
+  };
+  const removeImagen = (idx) => {
+    setForm((prev) => {
+      const next = prev.imagenes.filter((_, i) => i !== idx).map((img, i) => ({ ...img, orden: i }));
+      if (!next.some((i) => i.isPrincipal) && next[0]) next[0].isPrincipal = true;
+      return { ...prev, imagenes: next };
+    });
+  };
+  const moveImagen = (idx, dir = -1) => {
+    setForm((prev) => {
+      const arr = [...prev.imagenes];
+      const j = idx + dir; if (j < 0 || j >= arr.length) return prev;
+      const tmp = arr[idx]; arr[idx] = arr[j]; arr[j] = tmp;
+      arr.forEach((img, i) => (img.orden = i));
+      if (!arr.some((x) => x.isPrincipal)) arr[0].isPrincipal = true;
+      return { ...prev, imagenes: arr };
+    });
+  };
+  const updateAlt = (idx, alt) => {
+    setForm((prev) => {
+      const arr = [...prev.imagenes];
+      if (!arr[idx]) return prev;
+      arr[idx] = { ...arr[idx], alt };
+      return { ...prev, imagenes: arr };
+    });
+  };
+  const handleDrop    = (e) => { e.preventDefault(); e.stopPropagation(); const files = e.dataTransfer?.files; if (files?.length) onUploadImages(files); };
+  const handleDragOver= (e) => { e.preventDefault(); e.stopPropagation(); };
+
+  const toggleCategoria = (id) => {
+    setForm((prev) => {
+      const set = new Set(prev.categoriasIds);
+      set.has(id) ? set.delete(id) : set.add(id);
+      return { ...prev, categoriasIds: Array.from(set) };
+    });
+  };
 
   /* -------------------- validación -------------------- */
   function validate() {
     const errs = {};
     if (!form.nombre.trim()) errs.nombre = 'El nombre es obligatorio.';
     if (form.tipo === 'SIMPLE') {
-      if (form.precio === '' || Number.isNaN(Number(form.precio))) errs.precio = 'Precio requerido.';
-      if (form.inventarioStock === '' || Number.isNaN(Number(form.inventarioStock))) errs.stock = 'Stock requerido.';
+      if (form.precio === '' || Number.isNaN(Number(form.precio))) errs.precio = 'Indica el precio de venta.';
+      if (form.inventarioStock === '' || Number.isNaN(Number(form.inventarioStock))) errs.stock = 'Indica el stock disponible.';
     }
     setErrors(errs);
     return Object.keys(errs).length === 0;
@@ -447,7 +563,7 @@ export default function Productos() {
       }
       if (!res.ok) {
         const msg = await res.text().catch(() => '');
-        throw new Error(msg || 'No se pudo guardar el producto');
+        throw new Error(msg || 'No se pudo guardar el producto.');
       }
       const data = await res.json();
       setShowEditor(false); setForm(defaultForm()); setEditId(null);
@@ -476,7 +592,7 @@ export default function Productos() {
     setVError(''); setVLoading(true); setShowVariantes(true);
     try {
       const res = await fetch(`${API}/api/v1/productos/${productoId}`, { headers: baseHeaders });
-      if (!res.ok) throw new Error('No se pudo cargar el producto');
+      if (!res.ok) throw new Error('No se pudo cargar el producto.');
       const data = await res.json();
       setVList(Array.isArray(data?.variantes) ? data.variantes : []);
       setProductos((prev) => prev.map((p) => (p.id === data.id ? data : p)));
@@ -525,7 +641,7 @@ export default function Productos() {
       costo: vForm.costo === '' ? null : Number(vForm.costo),
       inventario: vForm.stock === '' && vMode === 'create' && vForm.umbral === 0 && !vForm.backorder
         ? null
-        : { stock: vForm.stock === '' ? 0 : Number(vForm.stock), umbralAlerta: Number(vForm.umbral || 0), permitirBackorder: !!vForm.backorder, },
+        : { stock: vForm.stock === '' ? 0 : Number(vForm.stock), umbralAlerta: Number(vForm.umbral || 0), permitirBackorder: !!vForm.backorder },
       imagenes: vForm.imagenes.map((m, i) => ({ url: m.url, alt: m.alt || null, orden: i })),
     };
 
@@ -536,13 +652,13 @@ export default function Productos() {
         res = await fetch(`${API}/api/v1/variantes/${vEditId}`, {
           method: 'PATCH', headers: { 'Content-Type': 'application/json', ...baseHeaders }, body: JSON.stringify(payload),
         });
-        if (!res.ok) throw new Error('No se pudo actualizar la variante');
+        if (!res.ok) throw new Error('No se pudo actualizar la variante.');
         data = await res.json();
       } else {
         res = await fetch(`${API}/api/v1/productos/${editId}/variantes`, {
           method: 'POST', headers: { 'Content-Type': 'application/json', ...baseHeaders }, body: JSON.stringify(payload),
         });
-        if (!res.ok) throw new Error('No se pudo crear la variante');
+        if (!res.ok) throw new Error('No se pudo crear la variante.');
         data = await res.json();
       }
 
@@ -561,7 +677,7 @@ export default function Productos() {
     if (!confirm(`¿Eliminar variante "${v.nombre || v.sku || v.id}"?`)) return;
     try {
       const res = await fetch(`${API}/api/v1/variantes/${v.id}`, { method: 'DELETE', headers: baseHeaders });
-      if (!res.ok) throw new Error('No se pudo eliminar la variante');
+      if (!res.ok) throw new Error('No se pudo eliminar la variante.');
       await refreshProductoLocal();
       if (vEditId === v.id) vStartCreate();
     } catch (e) { alert(e?.message || 'Error al eliminar variante'); }
@@ -598,21 +714,26 @@ export default function Productos() {
           <div className="toolbar-card">
             <div className="productos-header">
               <h1>Productos</h1>
-              <p>Administra tu catálogo. Crea categorías y mantén todo ordenado.</p>
+              <p>Administra tu catálogo: crea productos, ordénalos por categorías y mantén todo al día.</p>
             </div>
 
             <div className="productos-actions">
               <label className="buscar" aria-label="Buscar">
                 <FiSearch className="i" />
-                <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar por nombre, slug o SKU…" aria-label="Buscar productos" />
+                <input
+                  value={q}
+                  onChange={(e) => setQ(e.target.value)}
+                  placeholder="Buscar por nombre, URL (slug) o SKU…"
+                  aria-label="Buscar productos"
+                />
               </label>
 
-              <select value={categoriaSel} onChange={(e) => setCategoriaSel(e.target.value)} aria-label="Filtrar por categoría" disabled={cargandoCats}>
+              <select value={categoriaSel} onChange={(e) => setCategoriaSel(e.target.value)} aria-label="Filtrar por categoría" disabled={cargandoCats} title="Filtrar por categoría">
                 <option value="todas">Todas las categorías</option>
                 {categorias.map((c) => (<option key={c.id} value={c.slug}>{c.nombre}</option>))}
               </select>
 
-              <select value={estadoSel} onChange={(e) => setEstadoSel(e.target.value)} aria-label="Filtrar por estado">
+              <select value={estadoSel} onChange={(e) => setEstadoSel(e.target.value)} aria-label="Filtrar por estado" title="Filtrar por estado">
                 <option value="">Todos los estados</option>
                 <option value="ACTIVE">Activo</option>
                 <option value="DRAFT">Borrador</option>
@@ -620,9 +741,9 @@ export default function Productos() {
                 <option value="ARCHIVED">Archivado</option>
               </select>
 
-              <button className="btn btn-secondary" onClick={() => setShowCatModal(true)}><FiTag /> Gestionar categorías</button>
-              <button className="btn btn-primary" onClick={crearProducto}><FiPlus /> Nuevo producto</button>
-              <button className="btn btn-ghost" onClick={cargar} disabled={loading || !tiendaId}><FiRefreshCcw /> {loading ? 'Actualizando…' : 'Actualizar'}</button>
+              <button className="btn btn-secondary" onClick={() => setShowCatModal(true)} title="Crear, renombrar o eliminar categorías"><FiTag /> Gestionar categorías</button>
+              <button className="btn btn-primary" onClick={crearProducto} title="Crear un nuevo producto"><FiPlus /> Nuevo producto</button>
+              <button className="btn btn-ghost" onClick={cargar} disabled={loading || !tiendaId} title="Actualizar lista de productos"><FiRefreshCcw /> {loading ? 'Actualizando…' : 'Actualizar'}</button>
             </div>
           </div>
         </header>
@@ -671,7 +792,7 @@ export default function Productos() {
                           <span className="producto-slug">/{p.slug}</span>
                         </div>
 
-                        {/* ⭐ CHANGED: mostrar rango para VARIANTE */}
+                        {/* Rango para VARIANTE */}
                         <div className="producto-precio">
                           {p.tipo === 'VARIANTE' ? (
                             typeof p.precioDesde === 'number' ? (
@@ -702,19 +823,19 @@ export default function Productos() {
                         <div className="producto-footer">
                           <span className="producto-stock" data-stock={calcStock(p)}>{stockText(p)}</span>
                           <div className="producto-actions">
-                            <button className="icon" onClick={() => toggleEstado(p)} title={p.estado === 'ACTIVE' ? 'Pausar' : 'Activar'}>
+                            <button className="icon" onClick={() => toggleEstado(p)} title={p.estado === 'ACTIVE' ? 'Pausar producto' : 'Activar producto'}>
                               {p.estado === 'ACTIVE' ? <FiPause /> : <FiPlay />}
                             </button>
-                            <button className="icon" onClick={() => toggleDestacado(p)} title={p.destacado ? 'Quitar destacado' : 'Marcar destacado'}>
+                            <button className="icon" onClick={() => toggleDestacado(p)} title={p.destacado ? 'Quitar destacado' : 'Marcar como destacado'}>
                               <FiStar />
                             </button>
-                            <button className="icon" onClick={() => verPublico(p)} title="Ver público">
+                            <button className="icon" onClick={() => verPublico(p)} title="Ver página pública del producto">
                               <FiEye />
                             </button>
-                            <button className="icon" onClick={() => editarProducto(p)} title="Editar">
+                            <button className="icon" onClick={() => editarProducto(p)} title="Editar producto">
                               <FiEdit2 />
                             </button>
-                            <button className="icon danger" onClick={() => eliminarProducto(p)} title="Eliminar">
+                            <button className="icon danger" onClick={() => eliminarProducto(p)} title="Eliminar producto">
                               <FiTrash2 />
                             </button>
                           </div>
@@ -732,7 +853,7 @@ export default function Productos() {
       {/* Modal Categorías */}
       {showCatModal && (
         <section className="panel-overlay" onClick={() => setShowCatModal(false)}>
-          <div className="panel-content" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
+          <div className="panel-content" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Gestión de categorías">
             <header className="panel-head">
               <h3>Categorías</h3>
               <button className="icon" onClick={() => setShowCatModal(false)} title="Cerrar"><FiX /></button>
@@ -741,7 +862,14 @@ export default function Productos() {
             <p className="panel-subtitle">Crea y organiza categorías para tu catálogo.</p>
 
             <div className="categorias-new">
-              <input value={newCatName} onChange={(e) => setNewCatName(e.target.value)} placeholder="Nombre de la nueva categoría" onKeyDown={(e) => e.key === 'Enter' && agregarCategoria()} />
+              <input
+                ref={refCatInput}
+                value={newCatName}
+                onChange={(e) => setNewCatName(e.target.value)}
+                placeholder="Ej. Calzado, Postres, Electrónica…"
+                onKeyDown={(e) => e.key === 'Enter' && agregarCategoria()}
+                aria-label="Nombre de la nueva categoría"
+              />
               <button className="btn btn-primary" onClick={agregarCategoria}><FiPlus /> Agregar</button>
             </div>
 
@@ -750,7 +878,12 @@ export default function Productos() {
                 <li key={c.id}>
                   {editCatId === c.id ? (
                     <>
-                      <input value={editCatName} onChange={(e) => setEditCatName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && guardarEdicionCat()} />
+                      <input
+                        value={editCatName}
+                        onChange={(e) => setEditCatName(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && guardarEdicionCat()}
+                        aria-label="Nuevo nombre de la categoría"
+                      />
                       <div className="cat-actions">
                         <button className="btn btn-secondary" onClick={guardarEdicionCat}><FiCheck /> Guardar</button>
                         <button className="btn btn-ghost" onClick={() => { setEditCatId(null); setEditCatName(''); }}><FiX /> Cancelar</button>
@@ -779,7 +912,7 @@ export default function Productos() {
       {/* Modal Crear/Editar Producto */}
       {showEditor && (
         <section className="panel-overlay" onClick={() => setShowEditor(false)}>
-          <form className="panel-content crear-contenido" onClick={(e) => e.stopPropagation()} onSubmit={submitEditor}>
+          <form className="panel-content crear-contenido" onClick={(e) => e.stopPropagation()} onSubmit={submitEditor} aria-label={mode === 'edit' ? 'Editar producto' : 'Nuevo producto'}>
             {/* Cabecera */}
             <header className="panel-head">
               <div style={{display:'flex',flexDirection:'column',gap:4}}>
@@ -806,13 +939,20 @@ export default function Productos() {
               <div className="crear-col">
                 <label className={`field ${errors.nombre ? 'has-error':''}`}>
                   <span>Nombre *</span>
-                  <input value={form.nombre} onChange={(e) => setForm({ ...form, nombre: e.target.value })} required placeholder="Ej. Tenis deportivos Falcon" />
-                  {errors.nombre && <small className="error">{errors.nombre}</small>}
+                  <input
+                    ref={refProdNombre}
+                    value={form.nombre}
+                    onChange={(e) => setForm({ ...form, nombre: e.target.value })}
+                    required
+                    placeholder="Ej. Tenis Falcon para correr"
+                    aria-describedby={errors.nombre ? 'err-nombre' : undefined}
+                  />
+                  {errors.nombre && <small id="err-nombre" className="error">{errors.nombre}</small>}
                 </label>
 
                 <label className="field">
                   <span>Descripción</span>
-                  <textarea rows={4} value={form.descripcion} onChange={(e) => setForm({ ...form, descripcion: e.target.value })} placeholder="Cuenta por qué este producto es genial…" />
+                  <textarea rows={4} value={form.descripcion} onChange={(e) => setForm({ ...form, descripcion: e.target.value })} placeholder="Cuenta por qué este producto es genial, beneficios y materiales…" />
                 </label>
 
                 {/* Selector de Tipo */}
@@ -828,7 +968,7 @@ export default function Productos() {
                     ))}
                   </div>
                   {(form.tipo !== 'SIMPLE') && (
-                    <p className="muted" style={{marginTop:'.25rem'}}><FiInfo /> Por ahora el inventario por variantes/servicios/digitales se configura después. Guardaremos el producto sin inventario (no rompe tu API).</p>
+                    <p className="muted" style={{marginTop:'.25rem'}}><FiInfo /> El inventario de variantes/servicios/digitales se configura después. Guardaremos el producto sin inventario.</p>
                   )}
                   {form.tipo === 'VARIANTE' && (
                     <div style={{marginTop:'.5rem', display:'flex', gap:8, alignItems:'center'}}>
@@ -844,18 +984,18 @@ export default function Productos() {
                 <div className="crear-row">
                   <label className={`field ${errors.precio ? 'has-error':''}`}>
                     <span>Precio actual{form.tipo==='SIMPLE' && ' *'}</span>
-                    <input type="number" step="0.01" value={form.precio} onChange={(e) => setForm({ ...form, precio: e.target.value })} placeholder="ej. 129.99" />
+                    <input type="number" step="0.01" value={form.precio} onChange={(e) => setForm({ ...form, precio: e.target.value })} placeholder="Ej. 129.99" />
                     {errors.precio && <small className="error">{errors.precio}</small>}
                   </label>
                   <label className="field">
                     <span>Precio antes (comparativo)</span>
-                    <input type="number" step="0.01" value={form.precioComparativo} onChange={(e) => setForm({ ...form, precioComparativo: e.target.value })} placeholder="ej. 169.99" />
+                    <input type="number" step="0.01" value={form.precioComparativo} onChange={(e) => setForm({ ...form, precioComparativo: e.target.value })} placeholder="Ej. 169.99" />
                   </label>
                 </div>
 
                 <div className="crear-row">
-                  <label className="field"><span>Costo</span><input type="number" step="0.01" value={form.costo} onChange={(e) => setForm({ ...form, costo: e.target.value })} /></label>
-                  <label className="field"><span>% Descuento</span><input type="number" min="0" max="100" value={form.descuentoPct} onChange={(e) => setForm({ ...form, descuentoPct: e.target.value })} placeholder={descuentoSugerido != null ? `${descuentoSugerido} sugerido` : 'ej. 15'} /></label>
+                  <label className="field"><span>Costo</span><input type="number" step="0.01" value={form.costo} onChange={(e) => setForm({ ...form, costo: e.target.value })} placeholder="Costo de adquisición" /></label>
+                  <label className="field"><span>% Descuento</span><input type="number" min="0" max="100" value={form.descuentoPct} onChange={(e) => setForm({ ...form, descuentoPct: e.target.value })} placeholder={descuentoSugerido != null ? `${descuentoSugerido} sugerido` : 'Ej. 15'} /></label>
                 </div>
 
                 {/* KPI cards */}
@@ -871,17 +1011,17 @@ export default function Productos() {
                     <div className="crear-row">
                       <label className={`field ${errors.stock ? 'has-error':''}`}>
                         <span>Stock *</span>
-                        <input type="number" min="0" value={form.inventarioStock} onChange={(e) => setForm({ ...form, inventarioStock: e.target.value })} />
+                        <input type="number" min="0" value={form.inventarioStock} onChange={(e) => setForm({ ...form, inventarioStock: e.target.value })} placeholder="Ej. 20" />
                         {errors.stock && <small className="error">{errors.stock}</small>}
                       </label>
                       <label className="field">
                         <span>Umbral alerta</span>
-                        <input type="number" min="0" value={form.inventarioUmbral} onChange={(e) => setForm({ ...form, inventarioUmbral: e.target.value })} />
+                        <input type="number" min="0" value={form.inventarioUmbral} onChange={(e) => setForm({ ...form, inventarioUmbral: e.target.value })} placeholder="Ej. 3" />
                       </label>
                     </div>
                     <label className="check">
                       <input type="checkbox" checked={form.backorder} onChange={(e) => setForm({ ...form, backorder: e.target.checked })} />
-                      <span>Permitir backorder</span>
+                      <span>Permitir pedidos sin stock (backorder)</span>
                     </label>
                   </>
                 )}
@@ -889,9 +1029,9 @@ export default function Productos() {
                 {/* Categorías (chips) */}
                 <h4 className="subhead" style={{marginTop:'1rem'}}>Categorías</h4>
                 <div className="chips">
-                  {categorias.length === 0 && <span className="muted">No tienes categorías.</span>}
+                  {categorias.length === 0 && <span className="muted">No tienes categorías todavía.</span>}
                   {categorias.map(c => (
-                    <button key={c.id} type="button" className={`chip ${form.categoriasIds.includes(c.id) ? 'active':''}`} onClick={() => toggleCategoria(c.id)}>
+                    <button key={c.id} type="button" className={`chip ${form.categoriasIds.includes(c.id) ? 'active':''}`} onClick={() => toggleCategoria(c.id)} title={form.categoriasIds.includes(c.id) ? 'Quitar de esta categoría' : 'Agregar a esta categoría'}>
                       {c.nombre}
                     </button>
                   ))}
@@ -912,18 +1052,18 @@ export default function Productos() {
                     <ul className="imgs-list">
                       {form.imagenes.map((img, idx) => (
                         <li key={idx}>
-                          <img src={`${FILES}${img.url}`} alt={img.alt || `img-${idx}`} />
+                          <img src={`${FILES}${img.url}`} alt={img.alt || `Imagen ${idx + 1}`} loading="lazy" decoding="async" />
                           <div className="img-actions">
                             <div style={{display:'flex', gap:6}}>
                               <button type="button" className="icon" onClick={() => moveImagen(idx, -1)} title="Mover a la izquierda"><FiChevronLeft /></button>
                               <button type="button" className="icon" onClick={() => moveImagen(idx, +1)} title="Mover a la derecha"><FiChevronRight /></button>
                               {!img.isPrincipal ? (
-                                <button type="button" className="icon" onClick={() => setPrincipal(idx)} title="Marcar principal"><FiStar /></button>
+                                <button type="button" className="icon" onClick={() => setPrincipal(idx)} title="Marcar como principal"><FiStar /></button>
                               ) : (<span className="chip chip-principal"><FiStar /> Principal</span>)}
                             </div>
-                            <button type="button" className="icon danger" onClick={() => removeImagen(idx)} title="Quitar"><FiX /></button>
+                            <button type="button" className="icon danger" onClick={() => removeImagen(idx)} title="Quitar imagen"><FiX /></button>
                           </div>
-                          <input className="img-alt" value={img.alt} onChange={(e) => updateAlt(idx, e.target.value)} placeholder="Texto alternativo (accesible/SEO)" />
+                          <input className="img-alt" value={img.alt} onChange={(e) => updateAlt(idx, e.target.value)} placeholder="Texto alternativo (para accesibilidad/SEO)" />
                         </li>
                       ))}
                     </ul>
@@ -931,7 +1071,7 @@ export default function Productos() {
                 </div>
 
                 {/* Preview en vivo */}
-                <h4 className="subhead">Preview</h4>
+                <h4 className="subhead">Vista previa</h4>
                 <article className="producto-card preview" data-estado={form.estado} data-destacado={form.destacado ? '1' : '0'}>
                   <figure className="producto-media">
                     {form.imagenes?.length ? (<ImageCarousel images={form.imagenes} productName={form.nombre || 'Producto'} />) : (<div className="producto-media-empty"><span>Sin imágenes</span></div>)}
@@ -961,8 +1101,8 @@ export default function Productos() {
                         {form.tipo === 'SIMPLE' ? (Number(form.inventarioStock || 0) > 0 ? `En stock: ${form.inventarioStock}` : 'Sin stock') : '—'}
                       </span>
                       <div className="producto-actions">
-                        <button className="icon" type="button" title="Vista"><FiEye /></button>
-                        <button className="icon" type="button" title="Favorito"><FiStar /></button>
+                        <button className="icon" type="button" title="Vista pública"><FiEye /></button>
+                        <button className="icon" type="button" title="Marcar como destacado"><FiStar /></button>
                       </div>
                     </div>
                   </div>
@@ -983,7 +1123,7 @@ export default function Productos() {
       {/* Sub-modal Variantes */}
       {showVariantes && (
         <section className="panel-overlay" onClick={() => setShowVariantes(false)}>
-          <div className="panel-content variantes-modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
+          <div className="panel-content variantes-modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Gestión de variantes">
             <header className="panel-head">
               <div>
                 <h3 style={{margin:0}}>Variantes de {form.nombre || 'Producto'}</h3>
@@ -1075,7 +1215,7 @@ export default function Productos() {
                     <ul className="imgs-list">
                       {vForm.imagenes.map((img, idx) => (
                         <li key={idx}>
-                          <img src={`${FILES}${img.url}`} alt={img.alt || `var-${idx}`} />
+                          <img src={`${FILES}${img.url}`} alt={img.alt || `var-${idx}`} loading="lazy" decoding="async" />
                           <div className="img-actions">
                             <div style={{display:'flex', gap:6}}>
                               <button type="button" className="icon" onClick={() => moveVImagen(idx, -1)} title="Mover a la izquierda"><FiChevronLeft /></button>

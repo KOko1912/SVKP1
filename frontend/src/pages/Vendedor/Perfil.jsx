@@ -1,10 +1,10 @@
 // frontend/src/pages/Vendedor/Perfil.jsx
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Nabvendedor from './Nabvendedor';
 import {
   FiSettings, FiImage, FiInfo, FiCreditCard, FiShare2, FiTag,
   FiClock, FiPhone, FiTruck, FiRefreshCw, FiCheck,
-  FiFacebook, FiInstagram, FiYoutube
+  FiFacebook, FiInstagram, FiYoutube, FiMenu, FiX, FiMoon, FiSun
 } from 'react-icons/fi';
 import './Vendedor.css';
 
@@ -13,16 +13,11 @@ const API = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\
 const CATEGORIAS = ['Electrónica', 'Moda', 'Hogar', 'Alimentos', 'Belleza', 'Juguetes', 'Otros'];
 const METODOS_PAGO = ['tarjeta', 'transferencia', 'efectivo', 'contraentrega', 'paypal'];
 const DIAS_SEMANA = [
-  { id: 'lun', label: 'Lunes' },
-  { id: 'mar', label: 'Martes' },
-  { id: 'mie', label: 'Miércoles' },
-  { id: 'jue', label: 'Jueves' },
-  { id: 'vie', label: 'Viernes' },
-  { id: 'sab', label: 'Sábado' },
+  { id: 'lun', label: 'Lunes' }, { id: 'mar', label: 'Martes' }, { id: 'mie', label: 'Miércoles' },
+  { id: 'jue', label: 'Jueves' }, { id: 'vie', label: 'Viernes' }, { id: 'sab', label: 'Sábado' },
   { id: 'dom', label: 'Domingo' },
 ];
 
-// Paletas
 const PALETA_NEON = [
   { id: 'neon-purple', name: 'Neon Purple', from: '#6d28d9', to: '#c026d3' },
   { id: 'neon-blue',   name: 'Neon Blue',   from: '#0369a1', to: '#0ea5e9' },
@@ -33,41 +28,23 @@ const PALETA_NEON = [
   { id: 'neon-red',    name: 'Neon Red',    from: '#b91c1c', to: '#ef4444' },
 ];
 
-// Utils
+/* ===================== Utils ===================== */
 const grad = (from, to) => `linear-gradient(135deg, ${from}, ${to})`;
-
-// Versionador por imagen para invalidar caché solo al subir
 const withT = (url, t) => (url ? `${url}${url.includes('?') ? '&' : '?'}t=${t || 0}` : '');
-
-// Extrae SIEMPRE un **web path** seguro (sin rutas locales).
-// Preferimos /TiendaUploads/... y aceptamos /uploads/... por compat.
 const toWebPath = (u) => {
   if (!u) return '';
-  if (/^https?:\/\//i.test(u)) {
-    try { return new URL(u).pathname; } catch { return ''; }
-  }
-  const clean = String(u).replace(/\\/g, '/'); // E:\ -> E:/
+  if (/^https?:\/\//i.test(u)) { try { return new URL(u).pathname; } catch { return ''; } }
+  const clean = String(u).replace(/\\/g, '/');
   const lower = clean.toLowerCase();
   const marks = ['/tiendauploads/', 'tiendauploads/', '/uploads/', 'uploads/'];
   for (const m of marks) {
     const i = lower.indexOf(m);
-    if (i !== -1) {
-      // recortamos desde la marca y garantizamos slash inicial
-      const slice = clean.slice(i);
-      return slice.startsWith('/') ? slice : `/${slice}`;
-    }
+    if (i !== -1) { const slice = clean.slice(i); return slice.startsWith('/') ? slice : `/${slice}`; }
   }
-  // Si ya viene relativo, nos aseguramos del slash
   return clean.startsWith('/') ? clean : `/${clean}`;
 };
+const toPublicUrl = (u) => { const p = toWebPath(u); return p ? `${API}${encodeURI(p)}` : ''; };
 
-// Convierte a URL pública usando API + web path
-const toPublicUrl = (u) => {
-  const p = toWebPath(u);
-  return p ? `${API}${encodeURI(p)}` : '';
-};
-
-// Helpers de color/contraste
 const hexToRgb = (hex) => {
   const m = hex?.match(/^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i);
   if (!m) return [0, 0, 0];
@@ -88,42 +65,140 @@ const extractColors = (gradientString) => {
   const m = gradientString?.match(/#([0-9a-f]{6})/gi);
   return { from: m?.[0] || '#6d28d9', to: m?.[1] || '#c026d3' };
 };
-
-// Header con gradiente + portada
 const composeHeaderBg = (portadaUrl, from, to, ver) => {
   const layers = [`linear-gradient(135deg, ${from}, ${to})`];
   if (portadaUrl) layers.push(`url("${withT(toPublicUrl(portadaUrl), ver)}")`);
   return layers.join(', ');
 };
+const normalizeUrl = (url) => {
+  if (!url) return '';
+  const u = String(url).trim();
+  if (!/^https?:\/\//i.test(u)) return `https://${u}`;
+  return u;
+};
 
+/* ===================== Componentes internos (reutilizables) ===================== */
+
+// PATCH: Card evita <h3><h3>…</h3></h3> si title ya es un nodo
+function Card({ as: As = 'section', children, title, subtitle, actions, footer, id }) {
+  const TitleWrap = typeof title === 'string' ? 'h3' : 'div';
+  return (
+    <As className="card" aria-labelledby={id ? `${id}-title` : undefined}>
+      {(title || actions || subtitle) && (
+        <header className="card-header">
+          {title && (
+            <TitleWrap id={id ? `${id}-title` : undefined} className="card-title">
+              {title}
+            </TitleWrap>
+          )}
+          {subtitle && <p className="card-subtitle">{subtitle}</p>}
+          {actions && <div className="card-actions">{actions}</div>}
+        </header>
+      )}
+      <div className="card-body">{children}</div>
+      {footer && <footer className="card-footer">{footer}</footer>}
+    </As>
+  );
+}
+
+function FormField({
+  label, hint, error, required, children, id, inline, htmlFor, a11yDescription
+}) {
+  return (
+    <div className={`form-group ${inline ? 'form-group-inline' : ''}`}>
+      {label && (
+        <label className="form-label" htmlFor={htmlFor || id}>
+          {label}{required && <span className="req">*</span>}
+        </label>
+      )}
+      {children}
+      {hint && <p className="form-hint" id={a11yDescription}>{hint}</p>}
+      {error && <p className="form-error" role="alert">{error}</p>}
+    </div>
+  );
+}
+
+function ImageUploader({
+  label, value, onUpload, accept = 'image/*', ratio, busy, previewHeight = 180, id
+}) {
+  const inputRef = useRef(null);
+  return (
+    <div className="image-upload" aria-busy={busy ? 'true' : 'false'}>
+      {label && <label className="form-label" htmlFor={id}>{label}</label>}
+
+      {value ? (
+        <img
+          src={value}
+          alt=""
+          className="image-preview"
+          loading="lazy"
+          decoding="async"
+          style={{ maxHeight: previewHeight, aspectRatio: ratio || 'auto' }}
+          onError={e => { e.currentTarget.style.display = 'none'; }}
+        />
+      ) : (
+        <p className="image-upload-placeholder">Arrastra una imagen o haz clic para subir</p>
+      )}
+
+      <label className="btn btn-upload" role="button" aria-label="Subir imagen">
+        <input
+          ref={inputRef}
+          id={id}
+          type="file"
+          accept={accept}
+          onChange={e => onUpload?.(e.target.files?.[0] || null)}
+          style={{ display: 'none' }}
+        />
+        {busy ? 'Subiendo...' : 'Seleccionar Imagen'}
+      </label>
+    </div>
+  );
+}
+
+function Toast({ open, message }) {
+  return (
+    <div className={`notification ${open ? 'show' : ''}`} aria-live="polite">
+      {message}
+    </div>
+  );
+}
+
+// PATCH: SectionTitle ya no usa <h3>, es un span accesible
+function SectionTitle({ icon: Icon, children, level = 3 }) {
+  return (
+    <span className="section-title" role="heading" aria-level={level}>
+      {Icon && <Icon className="section-title-icon" aria-hidden="true" />} {children}
+    </span>
+  );
+}
+
+function Pill({ children }) {
+  return <span className="pill">{children}</span>;
+}
+
+/* ===================== Página ===================== */
 export default function VendedorPerfil() {
-  const [theme, setTheme] = useState({ from: '#fdfdfdff', to: '#4236e6ff', contrast: '#ffffff' });
-
-  // Versión por imagen
+  const prefersLight = window.matchMedia?.('(prefers-color-scheme: light)').matches;
+  const [colorMode, setColorMode] = useState(() => localStorage.getItem('vk-color-mode') || (prefersLight ? 'light' : 'dark'));
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [theme, setTheme] = useState({ from: '#6d28d9', to: '#c026d3', contrast: '#ffffff' });
   const [imgV, setImgV] = useState({ portada: 0, logo: 0, banner: 0 });
 
   const [tienda, setTienda] = useState({
-    nombre: '',
-    descripcion: '',
-    portadaUrl: '',
-    logoUrl: '',
-    categoria: '',
-    subcategorias: [],
-    telefonoContacto: '',
-    email: '',
+    nombre: '', descripcion: '',
+    portadaUrl: '', logoUrl: '', bannerPromoUrl: '',
+    categoria: '', subcategorias: [],
+    telefonoContacto: '', email: '',
     horario: Object.fromEntries(DIAS_SEMANA.map(d => [d.id, ''])),
     metodosPago: [],
     redes: { facebook: '', instagram: '', tiktok: '' },
-    envioCobertura: '',
-    envioCosto: '',
-    envioTiempo: '',
+    envioCobertura: '', envioCosto: '', envioTiempo: '',
     devoluciones: '',
-    colorPrincipal: grad('#0084ffff', '#faebfcff'),
-    bannerPromoUrl: '',
-    seoKeywords: [],
-    seoDescripcion: '',
+    colorPrincipal: grad('#6d28d9', '#c026d3'),
+    seoKeywords: [], seoDescripcion: '',
   });
 
+  const [errors, setErrors] = useState({});
   const [tab, setTab] = useState('general');
   const [subiendo, setSubiendo] = useState({ portada: false, logo: false, banner: false });
   const [cargando, setCargando] = useState(true);
@@ -132,7 +207,19 @@ export default function VendedorPerfil() {
   const usuario = JSON.parse(localStorage.getItem('usuario') || '{}');
   const headers = { 'x-user-id': usuario?.id };
 
-  // Cargar config de tienda (solo web paths)
+  /* ====== Effects ====== */
+  useEffect(() => {
+    document.body.classList.add('vendor-theme');
+    return () => document.body.classList.remove('vendor-theme');
+  }, []);
+
+  // Color mode sync
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', colorMode);
+    localStorage.setItem('vk-color-mode', colorMode);
+  }, [colorMode]);
+
+  // Carga inicial
   useEffect(() => {
     (async () => {
       try {
@@ -152,25 +239,17 @@ export default function VendedorPerfil() {
             colorPrincipal: d.colorPrincipal || grad('#6d28d9', '#c026d3'),
           };
           setTienda(t => ({ ...t, ...normal }));
-
           const { from, to } = extractColors(normal.colorPrincipal);
           setTheme({ from, to, contrast: bestTextOn(from, to) });
         }
       } catch (e) {
         console.error(e);
-      } finally {
-        setCargando(false);
-      }
+      } finally { setCargando(false); }
     })();
-
-    document.body.classList.add('vendor-theme');
-    return () => {
-      document.body.classList.remove('vendor-theme');
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Propagar tema a CSS
+  // Propaga tema a CSS
   useEffect(() => {
     const root = document.documentElement.style;
     root.setProperty('--brand-from', theme.from);
@@ -179,34 +258,46 @@ export default function VendedorPerfil() {
     root.setProperty('--brand-gradient', grad(theme.from, theme.to));
     root.setProperty('--primary-color', theme.from);
     root.setProperty('--primary-hover', theme.from);
-
     const softHalos = `radial-gradient(900px 600px at 0% -10%, ${theme.from}22, transparent 60%),
                        radial-gradient(900px 600px at 100% -10%, ${theme.to}22, transparent 60%)`;
     const pageBg = `${softHalos}, linear-gradient(135deg, ${theme.from}, ${theme.to})`;
     root.setProperty('--page-bg', pageBg);
-
     setTienda(t => ({ ...t, colorPrincipal: grad(theme.from, theme.to) }));
   }, [theme]);
 
+  // Cierra drawer con ESC
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') setDrawerOpen(false); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  /* ====== Helpers de UI ====== */
   const showNotification = (message) => {
     setNotification({ show: true, message });
-    setTimeout(() => setNotification({ show: false, message: '' }), 3000);
+    window.clearTimeout((showNotification._t));
+    showNotification._t = window.setTimeout(() => setNotification({ show: false, message: '' }), 2800);
+  };
+
+  const validate = () => {
+    const e = {};
+    if (!tienda.nombre) e.nombre = 'Requerido';
+    if (!tienda.descripcion) e.descripcion = 'Requerido';
+    if (!tienda.categoria) e.categoria = 'Requerido';
+    if (!tienda.telefonoContacto) e.telefonoContacto = 'Requerido';
+    if (tienda.telefonoContacto && !/^\d{10}$/.test(tienda.telefonoContacto)) e.telefonoContacto = '10 dígitos';
+    if (!tienda.email) e.email = 'Requerido';
+    if (tienda.email && !/^\S+@\S+\.\S+$/.test(tienda.email)) e.email = 'Email inválido';
+    setErrors(e);
+    return Object.keys(e).length === 0;
   };
 
   const guardar = async () => {
-    if (!tienda.nombre || !tienda.descripcion || !tienda.categoria || !tienda.telefonoContacto || !tienda.email) {
-      showNotification('Por favor completa todos los campos requeridos');
-      return;
-    }
-    if (tienda.telefonoContacto && !/^\d{10}$/.test(tienda.telefonoContacto)) {
-      showNotification('El teléfono debe tener exactamente 10 dígitos');
-      return;
-    }
+    if (!validate()) { showNotification('Revisa los campos marcados'); return; }
     try {
       const r = await fetch(`${API}/api/tienda/me`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', ...headers },
-        // Siempre enviamos web paths (no rutas locales)
         body: JSON.stringify({
           ...tienda,
           portadaUrl: toWebPath(tienda.portadaUrl),
@@ -230,23 +321,13 @@ export default function VendedorPerfil() {
     try {
       const fd = new FormData();
       fd.append('file', file);
-      const r = await fetch(`${API}/api/tienda/upload/${tipo}`, {
-        method: 'POST',
-        headers,
-        body: fd,
-      });
+      const r = await fetch(`${API}/api/tienda/upload/${tipo}`, { method: 'POST', headers, body: fd });
       const d = await r.json();
       if (!r.ok) throw new Error(d?.error || 'Error al subir imagen');
-
-      // Guardamos solo el web path (nada de E:\...)
       const webPath = toWebPath(d.url);
-
       const campo = tipo === 'portada' ? 'portadaUrl' : (tipo === 'logo' ? 'logoUrl' : 'bannerPromoUrl');
       setTienda(t => ({ ...t, [campo]: webPath }));
-
-      // Bump de versión para invalidar caché SOLO de esa imagen
       setImgV(v => ({ ...v, [tipo]: Date.now() }));
-
       showNotification('Imagen subida correctamente');
     } catch (e) {
       showNotification(e.message);
@@ -263,121 +344,146 @@ export default function VendedorPerfil() {
       return { ...t, [campo]: [...arr, valor] };
     });
   };
-
-  const removeFromArray = (campo, idx) => {
-    setTienda(t => ({ ...t, [campo]: t[campo].filter((_, i) => i !== idx) }));
-  };
-
-  const togglePago = (id) => {
-    setTienda(t => ({
-      ...t,
-      metodosPago: t.metodosPago.includes(id)
-        ? t.metodosPago.filter(x => x !== id)
-        : [...t.metodosPago, id],
-    }));
-  };
-
+  const removeFromArray = (campo, idx) => setTienda(t => ({ ...t, [campo]: t[campo].filter((_, i) => i !== idx) }));
+  const togglePago = (id) => setTienda(t => ({
+    ...t, metodosPago: t.metodosPago.includes(id) ? t.metodosPago.filter(x => x !== id) : [...t.metodosPago, id],
+  }));
   const setPalette = (paletteId) => {
     const p = PALETA_NEON.find(x => x.id === paletteId) || PALETA_NEON[0];
-    setTheme({
-      from: p.from,
-      to: p.to,
-      contrast: bestTextOn(p.from, p.to),
-    });
+    setTheme({ from: p.from, to: p.to, contrast: bestTextOn(p.from, p.to) });
   };
 
+  /* ====== Memoizados ====== */
+  const headerBg = useMemo(
+    () => composeHeaderBg(tienda.portadaUrl, theme.from, theme.to, imgV.portada),
+    [tienda.portadaUrl, theme.from, theme.to, imgV.portada]
+  );
+
+  /* ====== Render ====== */
   if (cargando) {
     return (
       <div className="loading-screen">
-        <div className="loading-spinner"></div>
+        <div className="loading-spinner" />
         <p>Cargando tu configuración...</p>
       </div>
     );
   }
 
-  const headerBg = composeHeaderBg(tienda.portadaUrl, theme.from, theme.to, imgV.portada);
+  const imageUrl = (p, v) => p ? withT(toPublicUrl(p), v) : '';
 
   return (
     <div className="vendedor-container">
       <Nabvendedor />
 
-      {/* Header con imagen/gradiente + overlay y contraste automático */}
+      {/* Header */}
       <div
         className="tienda-header"
-        style={{
-          backgroundImage: headerBg,
-          color: 'var(--brand-contrast)',
-        }}
+        style={{ backgroundImage: headerBg, color: 'var(--brand-contrast)' }}
       >
         <div className="tienda-header-content">
           <div className="tienda-header-info">
             {tienda.logoUrl && (
               <img
-                src={withT(toPublicUrl(tienda.logoUrl), imgV.logo)}
-                alt="logo"
+                src={imageUrl(tienda.logoUrl, imgV.logo)}
+                alt="Logo de la tienda"
                 className="tienda-logo"
+                loading="lazy"
+                decoding="async"
                 onError={(e) => { e.currentTarget.src = ''; }}
               />
             )}
             <div>
-              <h1 className="tienda-nombre">
-                {tienda.nombre || 'Nombre de tu tienda'}
-              </h1>
+              <h1 className="tienda-nombre">{tienda.nombre || 'Nombre de tu tienda'}</h1>
               <p className="tienda-descripcion">
                 {tienda.descripcion || 'Personaliza completamente tu tienda online'}
               </p>
+              <div className="header-pills">
+                {tienda.categoria && <Pill>{tienda.categoria}</Pill>}
+                {tienda.subcategorias?.slice(0, 2).map((s, i) => <Pill key={i}>{s}</Pill>)}
+              </div>
             </div>
+          </div>
+
+          {/* Controles header */}
+          <div className="header-actions">
+            <button
+              className="btn btn-ghost"
+              onClick={() => setColorMode(m => (m === 'light' ? 'dark' : 'light'))}
+              aria-label="Cambiar modo de color"
+              title="Claro/Oscuro"
+            >
+              {colorMode === 'light' ? <FiMoon /> : <FiSun />} {colorMode === 'light' ? 'Oscuro' : 'Claro'}
+            </button>
+            <button
+              className="btn btn-primary"
+              onClick={guardar}
+              aria-label="Guardar cambios"
+            >
+              <FiCheck /> Guardar
+            </button>
+            <button
+              className="btn btn-ghost show-on-mobile"
+              onClick={() => setDrawerOpen(true)}
+              aria-label="Abrir menú"
+            >
+              <FiMenu />
+            </button>
           </div>
         </div>
       </div>
 
-      {/* Panel de configuración */}
+      {/* Panel principal */}
       <div className="config-panel">
-        {/* Sidebar */}
-        <div className="sidebar">
+
+        {/* Sidebar / Drawer */}
+        <aside
+          className={`sidebar ${drawerOpen ? 'open' : ''}`}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Menú de configuración"
+        >
+          <button className="drawer-close" onClick={() => setDrawerOpen(false)} aria-label="Cerrar menú">
+            <FiX />
+          </button>
+
           <div
             className={`sidebar-item ${tab === 'general' ? 'active' : ''}`}
-            onClick={() => setTab('general')}
+            onClick={() => { setTab('general'); setDrawerOpen(false); }}
+            role="button" tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && setTab('general')}
           >
-            <FiSettings className="sidebar-icon" />
-            Información General
+            <FiSettings className="sidebar-icon" /> Información General
           </div>
           <div
             className={`sidebar-item ${tab === 'apariencia' ? 'active' : ''}`}
-            onClick={() => setTab('apariencia')}
+            onClick={() => { setTab('apariencia'); setDrawerOpen(false); }}
+            role="button" tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && setTab('apariencia')}
           >
-            <FiImage className="sidebar-icon" />
-            Apariencia
+            <FiImage className="sidebar-icon" /> Apariencia
           </div>
           <div
             className={`sidebar-item ${tab === 'pagos' ? 'active' : ''}`}
-            onClick={() => setTab('pagos')}
+            onClick={() => { setTab('pagos'); setDrawerOpen(false); }}
+            role="button" tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && setTab('pagos')}
           >
-            <FiCreditCard className="sidebar-icon" />
-            Pagos & Envíos
+            <FiCreditCard className="sidebar-icon" /> Pagos & Envíos
           </div>
           <div
             className={`sidebar-item ${tab === 'redes' ? 'active' : ''}`}
-            onClick={() => setTab('redes')}
+            onClick={() => { setTab('redes'); setDrawerOpen(false); }}
+            role="button" tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && setTab('redes')}
           >
-            <FiShare2 className="sidebar-icon" />
-            Redes Sociales
+            <FiShare2 className="sidebar-icon" /> Redes Sociales
           </div>
           <div
             className={`sidebar-item ${tab === 'seo' ? 'active' : ''}`}
-            onClick={() => setTab('seo')}
+            onClick={() => { setTab('seo'); setDrawerOpen(false); }}
+            role="button" tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && setTab('seo')}
           >
-            <FiTag className="sidebar-icon" />
-            SEO & Marketing
+            <FiTag className="sidebar-icon" /> SEO & Marketing
           </div>
 
-          <button
-            className="btn btn-primary"
-            onClick={guardar}
-            style={{ marginTop: '1.5rem', width: '100%' }}
-          >
-            <FiCheck style={{ marginRight: 8 }} />
-            Guardar Cambios
+          <button className="btn btn-primary sidebar-save" onClick={guardar}>
+            <FiCheck /> Guardar Cambios
           </button>
 
           <div className="sidebar-tip">
@@ -390,185 +496,130 @@ export default function VendedorPerfil() {
               {tab === 'seo' && 'Usa palabras clave relevantes para mejorar tu visibilidad.'}
             </p>
           </div>
-        </div>
+        </aside>
 
-        {/* Contenido principal */}
-        <div className="content-area">
+        {/* Overlay del drawer en móvil */}
+        {drawerOpen && <div className="drawer-scrim" onClick={() => setDrawerOpen(false)} aria-hidden="true" />}
+
+        {/* Contenido */}
+        <main className="content-area">
           {tab === 'general' && (
             <div>
-              <div className="form-section">
-                <h3><FiImage style={{ marginRight: 10 }} /> Imágenes de la Tienda</h3>
 
-                <div className="form-group">
-                  <label className="form-label">Portada de la Tienda</label>
-                  <p className="form-hint">
-                    Esta imagen aparecerá en la parte superior de tu tienda (recomendado 1920x500 px)
-                  </p>
-                  <div className="image-upload">
-                    {tienda.portadaUrl ? (
-                      <img
-                        src={withT(toPublicUrl(tienda.portadaUrl), imgV.portada)}
-                        alt="portada"
-                        className="image-preview"
-                        onError={(e) => { e.currentTarget.src = ''; }}
-                      />
-                    ) : (
-                      <p className="image-upload-placeholder">Arrastra una imagen o haz clic para subir</p>
-                    )}
-                    <label className="btn btn-upload">
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={e => subirImagen('portada', e.target.files?.[0])}
-                        style={{ display: 'none' }}
-                      />
-                      {subiendo.portada ? 'Subiendo...' : 'Seleccionar Imagen'}
-                    </label>
-                  </div>
-                </div>
+              <Card title={<SectionTitle icon={FiImage}>Imágenes de la Tienda</SectionTitle>}>
+                {/* Portada */}
+                <ImageUploader
+                  label="Portada de la Tienda"
+                  value={tienda.portadaUrl ? imageUrl(tienda.portadaUrl, imgV.portada) : ''}
+                  onUpload={(f) => subirImagen('portada', f)}
+                  busy={subiendo.portada}
+                  ratio="1920 / 500"
+                />
+                <p className="form-hint">Aparece en la parte superior de tu tienda (recomendado 1920×500 px).</p>
 
-                <div className="form-group">
-                  <label className="form-label">Logo de la Tienda</label>
-                  <p className="form-hint">
-                    Tu logo debe ser cuadrado y con fondo transparente (recomendado 500x500 px)
-                  </p>
-                  <div className="image-upload">
-                    {tienda.logoUrl ? (
-                      <img
-                        src={withT(toPublicUrl(tienda.logoUrl), imgV.logo)}
-                        alt="logo"
-                        className="image-preview"
-                        style={{ maxHeight: 150, width: 'auto' }}
-                        onError={(e) => { e.currentTarget.src = ''; }}
-                      />
-                    ) : (
-                      <p className="image-upload-placeholder">Tu logo ayuda a los clientes a reconocer tu marca</p>
-                    )}
-                    <label className="btn btn-upload">
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={e => subirImagen('logo', e.target.files?.[0])}
-                        style={{ display: 'none' }}
-                      />
-                      {subiendo.logo ? 'Subiendo...' : 'Seleccionar Logo'}
-                    </label>
-                  </div>
-                </div>
-              </div>
+                {/* Logo */}
+                <ImageUploader
+                  label="Logo de la Tienda"
+                  value={tienda.logoUrl ? imageUrl(tienda.logoUrl, imgV.logo) : ''}
+                  onUpload={(f) => subirImagen('logo', f)}
+                  busy={subiendo.logo}
+                  previewHeight={150}
+                />
+                <p className="form-hint">Logo cuadrado, fondo transparente (recomendado 500×500 px).</p>
+              </Card>
 
-              <div className="form-section">
-                <h3><FiInfo style={{ marginRight: 10 }} /> Información Básica</h3>
-
-                <div className="form-group">
-                  <label className="form-label">Nombre de la Tienda*</label>
-                  <input
-                    className="form-input"
-                    placeholder="Ej: Moda Express"
-                    value={tienda.nombre}
-                    onChange={e => setTienda({ ...tienda, nombre: e.target.value })}
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label">Descripción*</label>
-                  <textarea
-                    className="form-textarea"
-                    placeholder="Describe qué hace única a tu tienda..."
-                    value={tienda.descripcion}
-                    onChange={e => setTienda({ ...tienda, descripcion: e.target.value })}
-                  />
-                  <p className="form-hint">
-                    Esta descripción aparecerá en la página principal de tu tienda (máximo 250 caracteres).
-                  </p>
-                </div>
-
+              <Card title={<SectionTitle icon={FiInfo}>Información Básica</SectionTitle>}>
                 <div className="form-row">
-                  <div className="form-group">
-                    <label className="form-label">Categoría Principal*</label>
+                  <FormField label="Nombre de la Tienda" required error={errors.nombre}>
+                    <input
+                      className="form-input"
+                      placeholder="Ej: Moda Express"
+                      value={tienda.nombre}
+                      aria-invalid={!!errors.nombre}
+                      onChange={e => { setTienda({ ...tienda, nombre: e.target.value }); if (errors.nombre) validate(); }}
+                    />
+                  </FormField>
+
+                  <FormField label="Categoría Principal" required error={errors.categoria}>
                     <select
                       className="form-select"
                       value={tienda.categoria}
-                      onChange={e => setTienda({ ...tienda, categoria: e.target.value })}
+                      aria-invalid={!!errors.categoria}
+                      onChange={e => { setTienda({ ...tienda, categoria: e.target.value }); if (errors.categoria) validate(); }}
                     >
                       <option value="">Selecciona una categoría</option>
-                      {CATEGORIAS.map(c => (
-                        <option key={c} value={c}>{c}</option>
-                      ))}
+                      {CATEGORIAS.map(c => <option key={c} value={c}>{c}</option>)}
                     </select>
-                  </div>
-
-                  <div className="form-group">
-                    <label className="form-label">Subcategorías</label>
-                    <input
-                      className="form-input"
-                      placeholder="Ej: Ropa deportiva (presiona Enter para agregar)"
-                      onKeyDown={e => {
-                        if (e.key === 'Enter') {
-                          const v = e.currentTarget.value.trim();
-                          if (v) addArray('subcategorias', v);
-                          e.currentTarget.value = '';
-                        }
-                      }}
-                    />
-                    <div className="chip-container">
-                      {tienda.subcategorias.map((s, i) => (
-                        <div key={i} className="chip">
-                          {s}
-                          <button
-                            className="chip-remove"
-                            onClick={() => removeFromArray('subcategorias', i)}
-                            aria-label="Quitar"
-                          >
-                            ×
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
+                  </FormField>
                 </div>
-              </div>
 
-              <div className="form-section">
-                <h3><FiPhone style={{ marginRight: 10 }} /> Información de Contacto</h3>
+                <FormField label="Descripción" required error={errors.descripcion}>
+                  <textarea
+                    className="form-textarea"
+                    placeholder="Describe qué hace única a tu tienda..."
+                    maxLength={250}
+                    value={tienda.descripcion}
+                    aria-invalid={!!errors.descripcion}
+                    onChange={e => { setTienda({ ...tienda, descripcion: e.target.value }); if (errors.descripcion) validate(); }}
+                  />
+                  <div className="char-counter">{tienda.descripcion?.length || 0}/250</div>
+                </FormField>
+
+                <FormField label="Subcategorías" hint="Presiona Enter para agregar">
+                  <input
+                    className="form-input"
+                    placeholder="Ej: Ropa deportiva"
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') {
+                        const v = e.currentTarget.value.trim();
+                        if (v) addArray('subcategorias', v);
+                        e.currentTarget.value = '';
+                      }
+                    }}
+                  />
+                  <div className="chip-container">
+                    {tienda.subcategorias.map((s, i) => (
+                      <div key={i} className="chip">
+                        {s}
+                        <button className="chip-remove" onClick={() => removeFromArray('subcategorias', i)} aria-label="Quitar">×</button>
+                      </div>
+                    ))}
+                  </div>
+                </FormField>
+              </Card>
+
+              <Card title={<SectionTitle icon={FiPhone}>Información de Contacto</SectionTitle>}>
                 <div className="form-row">
-                  <div className="form-group">
-                    <label className="form-label">Teléfono de Contacto*</label>
+                  <FormField label="Teléfono de Contacto" required error={errors.telefonoContacto} hint="Este número será visible para tus clientes">
                     <input
                       className="form-input"
-                      placeholder="Ej: 5512345678"
+                      placeholder="5512345678"
+                      inputMode="numeric"
                       maxLength={10}
                       value={tienda.telefonoContacto}
-                      onChange={e => setTienda({ ...tienda, telefonoContacto: e.target.value })}
+                      aria-invalid={!!errors.telefonoContacto}
+                      onChange={e => { setTienda({ ...tienda, telefonoContacto: e.target.value.replace(/\D/g, '') }); if (errors.telefonoContacto) validate(); }}
                     />
-                    <p className="form-hint">
-                      Este número será visible para tus clientes
-                    </p>
-                  </div>
+                  </FormField>
 
-                  <div className="form-group">
-                    <label className="form-label">Email de Contacto*</label>
+                  <FormField label="Email de Contacto" required error={errors.email} hint="Usa un email profesional">
                     <input
                       className="form-input"
-                      placeholder="Ej: contacto@mitienda.com"
+                      placeholder="contacto@mitienda.com"
                       type="email"
+                      inputMode="email"
                       value={tienda.email}
-                      onChange={e => setTienda({ ...tienda, email: e.target.value })}
+                      aria-invalid={!!errors.email}
+                      onChange={e => { setTienda({ ...tienda, email: e.target.value }); if (errors.email) validate(); }}
                     />
-                    <p className="form-hint">Usa un email profesional</p>
-                  </div>
+                  </FormField>
                 </div>
-              </div>
+              </Card>
 
-              <div className="form-section">
-                <h3><FiClock style={{ marginRight: 10 }} /> Horario de Atención</h3>
-                <p className="form-hint" style={{ marginBottom: '1rem' }}>
-                  Especifica los horarios en que atiendes a tus clientes
-                </p>
+              <Card title={<SectionTitle icon={FiClock}>Horario de Atención</SectionTitle>} subtitle="Especifica tus horarios">
                 <div className="grid-responsive">
                   {DIAS_SEMANA.map(d => (
-                    <div className="form-group" key={d.id}>
-                      <label className="form-label">{d.label}</label>
+                    <FormField key={d.id} label={d.label}>
                       <input
                         className="form-input"
                         placeholder="Ej: 9:00 - 18:00"
@@ -578,48 +629,26 @@ export default function VendedorPerfil() {
                           horario: { ...tienda.horario, [d.id]: e.target.value }
                         })}
                       />
-                    </div>
+                    </FormField>
                   ))}
                 </div>
-              </div>
+              </Card>
             </div>
           )}
 
           {tab === 'apariencia' && (
             <div>
-              <div className="form-section">
-                <h3>Banner Promocional</h3>
-                <p className="form-hint">
-                  Este banner aparecerá en tu tienda para destacar promociones (recomendado 1200x300 px)
-                </p>
-                <div className="image-upload">
-                  {tienda.bannerPromoUrl ? (
-                    <img
-                      src={withT(toPublicUrl(tienda.bannerPromoUrl), imgV.banner)}
-                      alt="banner"
-                      className="image-preview"
-                      onError={(e) => { e.currentTarget.src = ''; }}
-                    />
-                  ) : (
-                    <p className="image-upload-placeholder">Puedes subir un banner para promociones especiales</p>
-                  )}
-                  <label className="btn btn-upload">
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={e => subirImagen('banner', e.target.files?.[0])}
-                      style={{ display: 'none' }}
-                    />
-                    {subiendo.banner ? 'Subiendo...' : 'Seleccionar Banner'}
-                  </label>
-                </div>
-              </div>
+              <Card title={<SectionTitle icon={FiImage}>Banner Promocional</SectionTitle>} subtitle="Destaca promociones (recomendado 1200×300 px)">
+                <ImageUploader
+                  label="Banner"
+                  value={tienda.bannerPromoUrl ? imageUrl(tienda.bannerPromoUrl, imgV.banner) : ''}
+                  onUpload={(f) => subirImagen('banner', f)}
+                  busy={subiendo.banner}
+                  ratio="1200 / 300"
+                />
+              </Card>
 
-              {/* Paletas NEON preset */}
-              <div className="form-section">
-                <h3>Paleta de Colores</h3>
-                <p className="form-hint">Elige una paleta o define tus colores de marca.</p>
-
+              <Card title={<SectionTitle>Paleta de Colores</SectionTitle>} subtitle="Elige una paleta o define tus colores">
                 <div className="color-palette-grid">
                   {PALETA_NEON.map(p => {
                     const selected = theme.from === p.from && theme.to === p.to;
@@ -629,61 +658,44 @@ export default function VendedorPerfil() {
                         className={`color-option ${selected ? 'selected' : ''}`}
                         onClick={() => setPalette(p.id)}
                         title={p.name}
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={(e) => e.key === 'Enter' && setPalette(p.id)}
                       >
-                        <div
-                          className="color-swatch"
-                          style={{ background: grad(p.from, p.to) }}
-                        />
+                        <div className="color-swatch" style={{ background: grad(p.from, p.to) }} />
                         <span className="color-name">{p.name}</span>
-                        <div
-                          className="color-check"
-                          style={{ visibility: selected ? 'visible' : 'hidden' }}
-                        >
-                          ✓
-                        </div>
+                        <div className="color-check" style={{ visibility: selected ? 'visible' : 'hidden' }}>✓</div>
                       </div>
                     );
                   })}
                 </div>
-              </div>
+              </Card>
 
-              {/* Colores personalizados + vista previa con portada */}
-              <div className="form-section">
-                <h3>Colores de marca (personalizados)</h3>
-                <p className="form-hint">
-                  Elige dos colores para tu gradiente. El texto se ajusta automáticamente para que se lea bien.
-                </p>
-
+              <Card title={<SectionTitle>Colores de marca (personalizados)</SectionTitle>} subtitle="El texto se ajusta automáticamente">
                 <div className="form-row">
-                  <div className="form-group">
-                    <label className="form-label">Color inicial</label>
+                  <FormField label="Color inicial">
                     <input
                       type="color"
                       className="form-input color-input"
                       value={theme.from}
-                      onChange={e =>
-                        setTheme(th => ({ ...th, from: e.target.value, contrast: bestTextOn(e.target.value, th.to) }))
-                      }
+                      onChange={e => setTheme(th => ({ ...th, from: e.target.value, contrast: bestTextOn(e.target.value, th.to) }))}
                     />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Color final</label>
+                  </FormField>
+                  <FormField label="Color final">
                     <input
                       type="color"
                       className="form-input color-input"
                       value={theme.to}
-                      onChange={e =>
-                        setTheme(th => ({ ...th, to: e.target.value, contrast: bestTextOn(th.from, e.target.value) }))
-                      }
+                      onChange={e => setTheme(th => ({ ...th, to: e.target.value, contrast: bestTextOn(th.from, e.target.value) }))}
                     />
-                  </div>
+                  </FormField>
                 </div>
 
                 <div
                   className="color-preview"
                   style={{
                     backgroundImage: tienda.portadaUrl
-                      ? `linear-gradient(135deg, ${theme.from}c7, ${theme.to}c7), url("${withT(toPublicUrl(tienda.portadaUrl), imgV.portada)}")`
+                      ? `linear-gradient(135deg, ${theme.from}c7, ${theme.to}c7), url("${imageUrl(tienda.portadaUrl, imgV.portada)}")`
                       : `linear-gradient(135deg, ${theme.from}, ${theme.to})`,
                     backgroundSize: 'cover',
                     backgroundPosition: 'center',
@@ -692,17 +704,13 @@ export default function VendedorPerfil() {
                 >
                   Vista previa del tema seleccionado
                 </div>
-              </div>
+              </Card>
             </div>
           )}
 
           {tab === 'pagos' && (
             <div>
-              <div className="form-section">
-                <h3><FiCreditCard style={{ marginRight: 10 }} /> Métodos de Pago</h3>
-                <p className="form-hint">
-                  Selecciona los métodos de pago que aceptas en tu tienda
-                </p>
+              <Card title={<SectionTitle icon={FiCreditCard}>Métodos de Pago</SectionTitle>} subtitle="Selecciona los métodos que aceptas">
                 <div className="checkbox-group">
                   {METODOS_PAGO.map(m => (
                     <div className="checkbox-item" key={m}>
@@ -712,22 +720,15 @@ export default function VendedorPerfil() {
                         checked={tienda.metodosPago.includes(m)}
                         onChange={() => togglePago(m)}
                       />
-                      <label
-                        htmlFor={`pago-${m}`}
-                        className="checkbox-label"
-                      >
-                        {m}
-                      </label>
+                      <label htmlFor={`pago-${m}`} className="checkbox-label">{m}</label>
                     </div>
                   ))}
                 </div>
-              </div>
+              </Card>
 
-              <div className="form-section">
-                <h3><FiTruck style={{ marginRight: 10 }} /> Políticas de Envío</h3>
+              <Card title={<SectionTitle icon={FiTruck}>Políticas de Envío</SectionTitle>}>
                 <div className="form-row">
-                  <div className="form-group">
-                    <label className="form-label">Cobertura de Envíos</label>
+                  <FormField label="Cobertura de Envíos">
                     <select
                       className="form-select"
                       value={tienda.envioCobertura}
@@ -738,117 +739,87 @@ export default function VendedorPerfil() {
                       <option value="nacional">Nacional</option>
                       <option value="internacional">Internacional</option>
                     </select>
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Costo de Envío</label>
+                  </FormField>
+                  <FormField label="Costo de Envío">
                     <input
                       className="form-input"
                       placeholder="Ej: $50 o Gratis para compras mayores a $500"
                       value={tienda.envioCosto}
                       onChange={e => setTienda({ ...tienda, envioCosto: e.target.value })}
                     />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Tiempo de Entrega</label>
+                  </FormField>
+                  <FormField label="Tiempo de Entrega">
                     <input
                       className="form-input"
                       placeholder="Ej: 3-5 días hábiles"
                       value={tienda.envioTiempo}
                       onChange={e => setTienda({ ...tienda, envioTiempo: e.target.value })}
                     />
-                  </div>
+                  </FormField>
                 </div>
-              </div>
+              </Card>
 
-              <div className="form-section">
-                <h3><FiRefreshCw style={{ marginRight: 10 }} /> Política de Devoluciones</h3>
-                <p className="form-hint">Especifica tus condiciones para devoluciones y cambios</p>
-                <textarea
-                  className="form-textarea"
-                  placeholder="Ej: Aceptamos devoluciones dentro de los 15 días posteriores a la compra..."
-                  value={tienda.devoluciones}
-                  onChange={e => setTienda({ ...tienda, devoluciones: e.target.value })}
-                />
-              </div>
+              <Card title={<SectionTitle icon={FiRefreshCw}>Política de Devoluciones</SectionTitle>}>
+                <FormField>
+                  <textarea
+                    className="form-textarea"
+                    placeholder="Ej: Aceptamos devoluciones dentro de los 15 días posteriores a la compra..."
+                    value={tienda.devoluciones}
+                    onChange={e => setTienda({ ...tienda, devoluciones: e.target.value })}
+                  />
+                </FormField>
+              </Card>
             </div>
           )}
 
           {tab === 'redes' && (
             <div>
-              <div className="form-section">
-                <h3><FiShare2 style={{ marginRight: 10 }} /> Redes Sociales</h3>
-                <p className="form-hint">Conecta tus redes sociales para que tus clientes puedan seguirte</p>
+              <Card title={<SectionTitle icon={FiShare2}>Redes Sociales</SectionTitle>} subtitle="Conecta tus redes">
                 <div className="grid-responsive">
-                  <div className="form-group">
-                    <label className="form-label">
-                      <FiFacebook style={{ marginRight: 8, color: '#1877F2' }} />
-                      Facebook
-                    </label>
+                  <FormField label={<><FiFacebook style={{ marginRight: 8, color: '#1877F2' }} /> Facebook</>}>
                     <input
                       className="form-input"
                       placeholder="https://facebook.com/tu-tienda"
                       value={tienda.redes.facebook}
-                      onChange={e => setTienda({ ...tienda, redes: { ...tienda.redes, facebook: e.target.value } })}
+                      onChange={e => setTienda({ ...tienda, redes: { ...tienda.redes, facebook: normalizeUrl(e.target.value) } })}
                     />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">
-                      <FiInstagram style={{ marginRight: 8, color: '#E1306C' }} />
-                      Instagram
-                    </label>
+                  </FormField>
+                  <FormField label={<><FiInstagram style={{ marginRight: 8, color: '#E1306C' }} /> Instagram</>}>
                     <input
                       className="form-input"
                       placeholder="https://instagram.com/tu-tienda"
                       value={tienda.redes.instagram}
-                      onChange={e => setTienda({ ...tienda, redes: { ...tienda.redes, instagram: e.target.value } })}
+                      onChange={e => setTienda({ ...tienda, redes: { ...tienda.redes, instagram: normalizeUrl(e.target.value) } })}
                     />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">
-                      <FiYoutube style={{ marginRight: 8, color: '#FF0000' }} />
-                      TikTok
-                    </label>
+                  </FormField>
+                  <FormField label={<><FiYoutube style={{ marginRight: 8, color: '#000' }} /> TikTok</>}>
                     <input
                       className="form-input"
                       placeholder="https://tiktok.com/@tu-tienda"
                       value={tienda.redes.tiktok}
-                      onChange={e => setTienda({ ...tienda, redes: { ...tienda.redes, tiktok: e.target.value } })}
+                      onChange={e => setTienda({ ...tienda, redes: { ...tienda.redes, tiktok: normalizeUrl(e.target.value) } })}
                     />
-                  </div>
+                  </FormField>
                 </div>
 
                 <div className="social-preview-container">
                   <h4>Vista Previa</h4>
                   <div className="social-preview-group">
-                    {tienda.redes.facebook && (
-                      <a href={tienda.redes.facebook} target="_blank" rel="noreferrer" className="social-preview" style={{ background: '#1877F2' }}>
-                        <FiFacebook /> Facebook
-                      </a>
-                    )}
-                    {tienda.redes.instagram && (
-                      <a href={tienda.redes.instagram} target="_blank" rel="noreferrer" className="social-preview" style={{ background: '#E1306C' }}>
-                        <FiInstagram /> Instagram
-                      </a>
-                    )}
-                    {tienda.redes.tiktok && (
-                      <a href={tienda.redes.tiktok} target="_blank" rel="noreferrer" className="social-preview" style={{ background: '#000000' }}>
-                        <FiYoutube /> TikTok
-                      </a>
-                    )}
+                    {tienda.redes.facebook && <a href={tienda.redes.facebook} target="_blank" rel="noreferrer" className="social-preview" style={{ background: '#1877F2' }}><FiFacebook /> Facebook</a>}
+                    {tienda.redes.instagram && <a href={tienda.redes.instagram} target="_blank" rel="noreferrer" className="social-preview" style={{ background: '#E1306C' }}><FiInstagram /> Instagram</a>}
+                    {tienda.redes.tiktok && <a href={tienda.redes.tiktok} target="_blank" rel="noreferrer" className="social-preview" style={{ background: '#000' }}><FiYoutube /> TikTok</a>}
                     {!tienda.redes.facebook && !tienda.redes.instagram && !tienda.redes.tiktok && (
                       <p className="no-socials">Agrega tus redes sociales para mostrarlas aquí</p>
                     )}
                   </div>
                 </div>
-              </div>
+              </Card>
             </div>
           )}
 
           {tab === 'seo' && (
             <div>
-              <div className="form-section">
-                <h3><FiTag style={{ marginRight: 10 }} /> Palabras Clave (SEO)</h3>
-                <p className="form-hint">Agrega palabras clave que describan tu tienda para mejorar tu visibilidad en buscadores</p>
+              <Card title={<SectionTitle icon={FiTag}>Palabras Clave (SEO)</SectionTitle>} subtitle="Mejora tu visibilidad">
                 <input
                   className="form-input"
                   placeholder="Escribe una palabra clave y presiona Enter"
@@ -864,21 +835,13 @@ export default function VendedorPerfil() {
                   {tienda.seoKeywords.map((k, i) => (
                     <div key={i} className="chip">
                       {k}
-                      <button
-                        className="chip-remove"
-                        onClick={() => removeFromArray('seoKeywords', i)}
-                        aria-label="Quitar"
-                      >
-                        ×
-                      </button>
+                      <button className="chip-remove" onClick={() => removeFromArray('seoKeywords', i)} aria-label="Quitar">×</button>
                     </div>
                   ))}
                 </div>
-              </div>
+              </Card>
 
-              <div className="form-section">
-                <h3>Descripción para SEO</h3>
-                <p className="form-hint">Esta descripción aparecerá en los resultados de búsqueda (óptimo 150-160 caracteres)</p>
+              <Card title={<SectionTitle>Descripción para SEO</SectionTitle>} subtitle="Óptimo 150–160 caracteres">
                 <textarea
                   className="form-textarea"
                   placeholder="Describe tu tienda con palabras clave importantes..."
@@ -886,26 +849,22 @@ export default function VendedorPerfil() {
                   value={tienda.seoDescripcion}
                   onChange={e => setTienda({ ...tienda, seoDescripcion: e.target.value })}
                 />
-                <div
-                  className="char-counter"
-                  style={{
-                    color: tienda.seoDescripcion.length >= 150 && tienda.seoDescripcion.length <= 160
-                      ? 'var(--success-color)'
-                      : '#666',
-                  }}
-                >
+                <div className="char-counter" data-ok={tienda.seoDescripcion.length >= 150 && tienda.seoDescripcion.length <= 160}>
                   {tienda.seoDescripcion.length}/160 caracteres
                 </div>
-              </div>
+              </Card>
             </div>
           )}
-        </div>
+        </main>
       </div>
 
-      {/* Notificación */}
-      <div className={`notification ${notification.show ? 'show' : ''}`} aria-live="polite">
-        {notification.message}
+      {/* CTA sticky móvil */}
+      <div className="sticky-cta show-on-mobile">
+        <button className="btn btn-primary" onClick={guardar}><FiCheck /> Guardar</button>
       </div>
+
+      {/* Toast */}
+      <Toast open={notification.show} message={notification.message} />
     </div>
   );
 }

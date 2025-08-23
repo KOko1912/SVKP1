@@ -3,6 +3,11 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import App from './App';
 
 // ===============================
+// Público
+// ===============================
+import PublicProducto from './pages/Public/PublicProducto';
+
+// ===============================
 // Auth (acceso público)
 // ===============================
 import Login from './pages/Auth/Login';
@@ -27,8 +32,8 @@ import AdminHome from './pages/Admin/Home';
 import VendedorPerfil from './pages/Vendedor/Perfil';
 import Pagina from './pages/Vendedor/Pagina';
 import ConfiguracionVista from './pages/Vendedor/ConfiguracionVista';
-import Productos from './pages/Vendedor/Productos';            // <-- NUEVO
-// import ProductosNuevo from './pages/Vendedor/ProductosNuevo'; // <-- opcional, si lo crearás
+import Productos from './pages/Vendedor/Productos'; // gestor de productos del vendedor
+// import ProductosNuevo from './pages/Vendedor/ProductosNuevo'; // opcional si lo habilitas
 
 // ------------------------------------------------------------------
 // Helpers de protección de rutas
@@ -68,18 +73,22 @@ const RequireAuth = ({ children }) => {
 export default function AppRouter() {
   return (
     <Routes>
-      {/* =======================
-          Rutas públicas
-      ======================== */}
+      {/** =======================
+           Rutas públicas
+          ======================= */}
       <Route path="/" element={<App />} />
+
+      {/** Detalle público de producto por UUID (compatible con HashRouter: /#/producto/:uuid) */}
+      <Route path="/producto/:uuid" element={<PublicProducto />} />
+
       <Route path="/login" element={<Login />} />
       <Route path="/registro" element={<Registro />} />
       <Route path="/olvide" element={<Olvide />} />
       <Route path="/reset" element={<Reset />} />
 
-      {/* =======================
-          Rutas protegidas: Usuario
-      ======================== */}
+      {/** =======================
+           Rutas protegidas: Usuario
+          ======================= */}
       <Route
         path="/usuario/home"
         element={
@@ -120,6 +129,7 @@ export default function AppRouter() {
           </RequireAuth>
         }
       />
+      {/** Detalle protegido (por ID) que ya tenías para el área de usuario */}
       <Route
         path="/usuario/producto/:id"
         element={
@@ -129,9 +139,9 @@ export default function AppRouter() {
         }
       />
 
-      {/* =======================
-          Rutas protegidas: Admin
-      ======================== */}
+      {/** =======================
+           Rutas protegidas: Admin
+          ======================= */}
       <Route
         path="/admin"
         element={
@@ -141,10 +151,10 @@ export default function AppRouter() {
         }
       />
 
-      {/* =======================
-          Rutas protegidas: Vendedor
-          (Si quieres forzar solo vendedores, envuelve con <RequireSeller>…</RequireSeller>)
-      ======================== */}
+      {/** =======================
+           Rutas protegidas: Vendedor
+           (Si quieres forzar solo vendedores, envuelve con <RequireSeller>…</RequireSeller>)
+          ======================= */}
       <Route
         path="/vendedor/perfil"
         element={
@@ -177,19 +187,20 @@ export default function AppRouter() {
           </RequireAuth>
         }
       />
-      {/* Ruta opcional para crear producto nuevo */}
-      {/* <Route
+      {/*
+      <Route
         path="/vendedor/productos/nuevo"
         element={
           <RequireAuth>
             <ProductosNuevo />
           </RequireAuth>
         }
-      /> */}
+      />
+      */}
 
-      {/* =======================
-          Fallback
-      ======================== */}
+      {/** =======================
+           Fallback
+          ======================= */}
       <Route path="*" element={<Navigate to="/usuario/home" replace />} />
     </Routes>
   );

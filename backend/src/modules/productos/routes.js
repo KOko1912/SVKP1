@@ -464,6 +464,28 @@ router.delete('/variantes/:varianteId', async (req, res) => {
     res.status(500).json({ error: 'Error eliminando variante' });
   }
 });
+// GET /api/v1/public/uuid/:uuid  → detalle público por UUID (sin costo)
+router.get('/public/uuid/:uuid', async (req, res) => {
+  try {
+    const p = await prisma.producto.findUnique({
+      where: { uuid: String(req.params.uuid) },
+      include: productInclude, // imágenes, inventario, variantes, categorías, atributos
+    });
+    if (!p || p.deletedAt) return res.status(404).json({ error: 'No existe' });
+
+    // Opcional: exponer solo si es visible/activo
+    if (!p.visible || p.estado !== 'ACTIVE') {
+      return res.status(404).json({ error: 'No disponible' });
+    }
+
+    const pub = mapForList(p);        // agrega stockTotal, precioDesde/Hasta
+    const { costo, ...safe } = pub;   // oculta costo al público
+    res.json(safe);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Error al cargar' });
+  }
+});
 
 /* ===== DIGITAL: set digitalUrl rápida (si subes archivo, usa upload.js/digital y luego pega la URL aquí) ===== */
 

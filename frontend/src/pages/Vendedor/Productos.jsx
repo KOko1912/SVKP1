@@ -1,5 +1,6 @@
 // frontend/src/pages/Vendedor/Productos.jsx
 import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom'; // ⭐ CHANGED
 import Nabvendedor from './Nabvendedor';
 import {
   FiPlus, FiRefreshCcw, FiSearch, FiTag, FiEdit2, FiTrash2,
@@ -13,65 +14,19 @@ const FILES = import.meta.env.VITE_FILES_BASE || API;
 
 /* -------------------- Tipos de producto (explicación) -------------------- */
 const TIPOS = [
-  {
-    value: 'SIMPLE',
-    label: 'Simple',
-    desc: 'Un solo SKU con precio y stock únicos.',
-    badges: ['Inventario', 'Precio único'],
-    supports: { inventory: true, variants: false, digital: false, service: false, bundle: false },
-  },
-  {
-    value: 'VARIANTE',
-    label: 'Con variantes',
-    desc: 'Varias combinaciones (talla, color…). Inventario por variante.',
-    badges: ['Variantes', 'Precios por variante'],
-    supports: { inventory: false, variants: true, digital: false, service: false, bundle: false },
-  },
-  {
-    value: 'DIGITAL',
-    label: 'Digital',
-    desc: 'Archivo descargable (no requiere stock).',
-    badges: ['Descargable'],
-    supports: { inventory: false, variants: false, digital: true, service: false, bundle: false },
-  },
-  {
-    value: 'SERVICIO',
-    label: 'Servicio',
-    desc: 'Reservas/citas; precio por sesión.',
-    badges: ['Agenda'],
-    supports: { inventory: false, variants: false, digital: false, service: true, bundle: false },
-  },
-  {
-    value: 'BUNDLE',
-    label: 'Bundle',
-    desc: 'Paquete de varios productos (combos).',
-    badges: ['Pack'],
-    supports: { inventory: false, variants: false, digital: false, service: false, bundle: true },
-  },
+  { value: 'SIMPLE', label: 'Simple', desc: 'Un solo SKU con precio y stock únicos.', badges: ['Inventario', 'Precio único'], supports: { inventory: true, variants: false, digital: false, service: false, bundle: false }, },
+  { value: 'VARIANTE', label: 'Con variantes', desc: 'Varias combinaciones (talla, color…). Inventario por variante.', badges: ['Variantes', 'Precios por variante'], supports: { inventory: false, variants: true, digital: false, service: false, bundle: false }, },
+  { value: 'DIGITAL', label: 'Digital', desc: 'Archivo descargable (no requiere stock).', badges: ['Descargable'], supports: { inventory: false, variants: false, digital: true, service: false, bundle: false }, },
+  { value: 'SERVICIO', label: 'Servicio', desc: 'Reservas/citas; precio por sesión.', badges: ['Agenda'], supports: { inventory: false, variants: false, digital: false, service: true, bundle: false }, },
+  { value: 'BUNDLE', label: 'Bundle', desc: 'Paquete de varios productos (combos).', badges: ['Pack'], supports: { inventory: false, variants: false, digital: false, service: false, bundle: true }, },
 ];
 
 /* -------------------- helpers de tema -------------------- */
 const grad = (from, to) => `linear-gradient(135deg, ${from}, ${to})`;
-const hexToRgb = (hex) => {
-  const m = hex?.match(/^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i);
-  if (!m) return [0, 0, 0];
-  return [parseInt(m[1], 16), parseInt(m[2], 16), parseInt(m[3], 16)];
-};
-const luminance = ([r, g, b]) => {
-  const a = [r, g, b].map(v => {
-    v /= 255;
-    return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
-  });
-  return 0.2126 * a[0] + 0.7152 * a[1] + 0.0722 * a[2];
-};
-const bestTextOn = (hexA, hexB) => {
-  const L = (luminance(hexToRgb(hexA)) + luminance(hexToRgb(hexB))) / 2;
-  return L > 0.45 ? '#111111' : '#ffffff';
-};
-const extractColors = (gradientString) => {
-  const m = gradientString?.match(/#([0-9a-f]{6})/gi);
-  return { from: m?.[0] || '#6d28d9', to: m?.[1] || '#c026d3' };
-};
+const hexToRgb = (hex) => { const m = hex?.match(/^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i); if (!m) return [0,0,0]; return [parseInt(m[1],16),parseInt(m[2],16),parseInt(m[3],16)]; };
+const luminance = ([r, g, b]) => { const a=[r,g,b].map(v=>{v/=255;return v<=0.03928?v/12.92:Math.pow((v+0.055)/1.055,2.4);}); return 0.2126*a[0]+0.7152*a[1]+0.0722*a[2]; };
+const bestTextOn = (hexA, hexB) => { const L=(luminance(hexToRgb(hexA))+luminance(hexToRgb(hexB)))/2; return L>0.45?'#111111':'#ffffff'; };
+const extractColors = (gradientString) => { const m = gradientString?.match(/#([0-9a-f]{6})/gi); return { from: m?.[0] || '#6d28d9', to: m?.[1] || '#c026d3' }; };
 
 /* -------------------- Carrusel de imágenes -------------------- */
 const ImageCarousel = ({ images, productName }) => {
@@ -84,20 +39,11 @@ const ImageCarousel = ({ images, productName }) => {
   return (
     <div className="producto-media-carousel">
       <button className="carousel-btn prev" onClick={prevImage}><FiChevronLeft /></button>
-      <img
-        src={`${FILES}${images[currentIndex].url}`}
-        alt={`${productName} - Imagen ${currentIndex + 1}`}
-        className="carousel-image"
-      />
+      <img src={`${FILES}${images[currentIndex].url}`} alt={`${productName} - Imagen ${currentIndex + 1}`} className="carousel-image" />
       <button className="carousel-btn next" onClick={nextImage}><FiChevronRight /></button>
       <div className="carousel-dots">
         {images.map((_, i) => (
-          <button
-            key={i}
-            className={`dot ${i === currentIndex ? 'active' : ''}`}
-            onClick={() => setCurrentIndex(i)}
-            aria-label={`Ir a imagen ${i + 1}`}
-          />
+          <button key={i} className={`dot ${i === currentIndex ? 'active' : ''}`} onClick={() => setCurrentIndex(i)} aria-label={`Ir a imagen ${i + 1}`} />
         ))}
       </div>
     </div>
@@ -106,6 +52,7 @@ const ImageCarousel = ({ images, productName }) => {
 
 export default function Productos() {
   /* -------------------- estado base -------------------- */
+  const navigate = useNavigate(); // ⭐ CHANGED
   const [tiendaId, setTiendaId] = useState(null);
   const [theme, setTheme] = useState({ from: '#6d28d9', to: '#c026d3', contrast: '#ffffff' });
 
@@ -133,35 +80,24 @@ export default function Productos() {
 
   /* -------- Variantes (sub-modal) -------- */
   const [showVariantes, setShowVariantes] = useState(false);
-  const [vList, setVList] = useState([]);           // variantes del producto actual
+  const [vList, setVList] = useState([]);
   const [vLoading, setVLoading] = useState(false);
   const [vError, setVError] = useState('');
-  const [vMode, setVMode] = useState('create');     // create | edit
-  const [vEditId, setVEditId] = useState(null);     // id de variante al editar
+  const [vMode, setVMode] = useState('create');
+  const [vEditId, setVEditId] = useState(null);
   const [vSaving, setVSaving] = useState(false);
   const [vForm, setVForm] = useState(defaultVForm());
 
   /* -------------------- offsets navbar móvil -------------------- */
-  const [isMobile, setIsMobile] = useState(
-    typeof window !== 'undefined' ? window.innerWidth < 768 : false
-  );
-  useEffect(() => {
-    const onResize = () => setIsMobile(window.innerWidth < 768);
-    window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
-  }, []);
+  const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' ? window.innerWidth < 768 : false);
+  useEffect(() => { const onResize = () => setIsMobile(window.innerWidth < 768); window.addEventListener('resize', onResize); return () => window.removeEventListener('resize', onResize); }, []);
   const mobileTopOffset = 'calc(60px + env(safe-area-inset-top, 0px))';
   const mobileBottomOffset = 'calc(72px + env(safe-area-inset-bottom, 0px))';
 
   /* -------------------- auth headers -------------------- */
-  const usuario = (() => {
-    try { return JSON.parse(localStorage.getItem('usuario') || '{}'); } catch { return {}; }
-  })();
+  const usuario = (() => { try { return JSON.parse(localStorage.getItem('usuario') || '{}'); } catch { return {}; } })();
   const token = localStorage.getItem('token');
-  const baseHeaders = {
-    ...(usuario?.id ? { 'x-user-id': usuario.id } : {}),
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
+  const baseHeaders = { ...(usuario?.id ? { 'x-user-id': usuario.id } : {}), ...(token ? { Authorization: `Bearer ${token}` } : {}), };
 
   /* -------------------- tema brand -------------------- */
   useEffect(() => {
@@ -196,19 +132,10 @@ export default function Productos() {
   }, []);
 
   /* -------------------- helpers -------------------- */
-  function slugify(str) {
-    return String(str || '')
-      .toLowerCase()
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/(^-|-$)+/g, '');
-  }
+  function slugify(str) { return String(str || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)+/g, ''); }
   function calcStock(p) {
     if (p?.inventario) return p.inventario.stock ?? 0;
-    if (Array.isArray(p?.variantes)) {
-      return p.variantes.reduce((acc, v) => acc + (v?.inventario?.stock ?? 0), 0);
-    }
+    if (Array.isArray(p?.variantes)) return p.variantes.reduce((acc, v) => acc + (v?.inventario?.stock ?? 0), 0);
     return 0;
   }
   function stockText(p) {
@@ -218,11 +145,7 @@ export default function Productos() {
     if (s <= umbral) return `Stock bajo (${s})`;
     return `En stock: ${s}`;
   }
-  function currency(n) {
-    if (typeof n !== 'number') return '';
-    try { return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(n); }
-    catch { return `$${n.toFixed(2)}`; }
-  }
+  function currency(n) { if (typeof n !== 'number') return ''; try { return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(n); } catch { return `$${n.toFixed(2)}`; } }
 
   /* -------------------- asegurar tienda -------------------- */
   useEffect(() => {
@@ -348,7 +271,13 @@ export default function Productos() {
     };
   };
   const editarProducto = (p) => { setMode('edit'); setEditId(p.id); setForm(productToForm(p)); setErrors({}); setShowEditor(true); };
-  const verPublico = (p) => window.open(`/usuario/producto/${p.uuid || p.id}`, '_blank');
+
+  // ⭐ CHANGED: ver público por UUID con navigate (compatible HashRouter)
+  const verPublico = (p) => {
+    if (!p?.uuid) { alert('Este producto no tiene UUID. Guarda el producto primero.'); return; }
+    navigate(`/producto/${p.uuid}`, { replace: false });
+  };
+
   const eliminarProducto = async (p) => {
     if (!confirm(`¿Eliminar "${p.nombre}"?`)) return;
     try {
@@ -429,48 +358,25 @@ export default function Productos() {
   /* -------------------- editor (crear/editar) -------------------- */
   function defaultForm() {
     return {
-      nombre: '',
-      descripcion: '',
-      tipo: 'SIMPLE',
-      estado: 'DRAFT',
-      visible: true,
-      destacado: false,
-      precio: '',
-      precioComparativo: '',
-      costo: '',
-      descuentoPct: '',
-      inventarioStock: '',
-      inventarioUmbral: 3,
-      backorder: false,
-      categoriasIds: [],
-      imagenes: [],
+      nombre: '', descripcion: '', tipo: 'SIMPLE', estado: 'DRAFT', visible: true, destacado: false,
+      precio: '', precioComparativo: '', costo: '', descuentoPct: '',
+      inventarioStock: '', inventarioUmbral: 3, backorder: false,
+      categoriasIds: [], imagenes: [],
     };
   }
 
   const precioNum = useMemo(() => (form.precio === '' ? null : Number(form.precio)), [form.precio]);
   const precioCompNum = useMemo(() => (form.precioComparativo === '' ? null : Number(form.precioComparativo)), [form.precioComparativo]);
   const costoNum = useMemo(() => (form.costo === '' ? null : Number(form.costo)), [form.costo]);
-  const descuentoSugerido = useMemo(() => {
-    if (precioNum != null && precioCompNum && precioCompNum > 0) {
-      return Math.max(0, Math.round((1 - (precioNum / precioCompNum)) * 100));
-    }
-    return null;
-  }, [precioNum, precioCompNum]);
-  const margen = useMemo(() => {
-    if (precioNum != null && costoNum != null) {
-      const m = precioNum - costoNum;
-      const pct = costoNum > 0 ? (m / costoNum) * 100 : null;
-      return { m, pct };
-    }
-    return null;
-  }, [precioNum, costoNum]);
+  const descuentoSugerido = useMemo(() => { if (precioNum != null && precioCompNum && precioCompNum > 0) { return Math.max(0, Math.round((1 - (precioNum / precioCompNum)) * 100)); } return null; }, [precioNum, precioCompNum]);
+  const margen = useMemo(() => { if (precioNum != null && costoNum != null) { const m = precioNum - costoNum; const pct = costoNum > 0 ? (m / costoNum) * 100 : null; return { m, pct }; } return null; }, [precioNum, costoNum]);
   const computedSlug = useMemo(() => slugify(form.nombre), [form.nombre]);
 
   /* -------------------- imágenes producto -------------------- */
   const onUploadImages = async (files) => {
     if (!files?.length) return;
     if (!tiendaId) { alert('No se encontró tu tienda. Ve a Configuración → Perfil.'); return; }
-    const uploads = Array.from(files).slice(0, 12 - form.imagenes.length); // máximo 12
+    const uploads = Array.from(files).slice(0, 12 - form.imagenes.length);
     for (const f of uploads) {
       try {
         const fd = new FormData();
@@ -478,60 +384,18 @@ export default function Productos() {
         const res = await fetch(`${API}/api/v1/upload/producto`, { method: 'POST', headers: { ...baseHeaders }, body: fd });
         if (!res.ok) throw new Error('No se pudo subir imagen');
         const { url } = await res.json();
-        setForm((prev) => {
-          const next = [...prev.imagenes];
-          next.push({ url, alt: '', isPrincipal: next.length === 0, orden: next.length });
-          return { ...prev, imagenes: next };
-        });
+        setForm((prev) => { const next = [...prev.imagenes]; next.push({ url, alt: '', isPrincipal: next.length === 0, orden: next.length }); return { ...prev, imagenes: next }; });
       } catch (e) { alert(e?.message || 'Error subiendo imagen'); }
     }
   };
-  const setPrincipal = (idx) => {
-    setForm((prev) => {
-      const next = prev.imagenes.map((img, i) => ({ ...img, isPrincipal: i === idx, orden: i === idx ? 0 : img.orden }));
-      next.sort((a, b) => (a.isPrincipal ? -1 : b.isPrincipal ? 1 : 0));
-      next.forEach((img, i) => { img.orden = i; });
-      return { ...prev, imagenes: next };
-    });
-  };
-  const removeImagen = (idx) => {
-    setForm((prev) => {
-      const next = prev.imagenes.filter((_, i) => i !== idx).map((img, i) => ({ ...img, orden: i }));
-      if (!next.some((i) => i.isPrincipal) && next[0]) next[0].isPrincipal = true;
-      return { ...prev, imagenes: next };
-    });
-  };
-  const moveImagen = (idx, dir = -1) => {
-    setForm((prev) => {
-      const arr = [...prev.imagenes];
-      const j = idx + dir;
-      if (j < 0 || j >= arr.length) return prev;
-      const tmp = arr[idx];
-      arr[idx] = arr[j];
-      arr[j] = tmp;
-      arr.forEach((img, i) => (img.orden = i));
-      if (!arr.some((x) => x.isPrincipal)) arr[0].isPrincipal = true;
-      return { ...prev, imagenes: arr };
-    });
-  };
-  const updateAlt = (idx, alt) => {
-    setForm((prev) => {
-      const arr = [...prev.imagenes];
-      if (!arr[idx]) return prev;
-      arr[idx] = { ...arr[idx], alt };
-      return { ...prev, imagenes: arr };
-    });
-  };
+  const setPrincipal = (idx) => { setForm((prev) => { const next = prev.imagenes.map((img, i) => ({ ...img, isPrincipal: i === idx, orden: i === idx ? 0 : img.orden })); next.sort((a, b) => (a.isPrincipal ? -1 : b.isPrincipal ? 1 : 0)); next.forEach((img, i) => { img.orden = i; }); return { ...prev, imagenes: next }; }); };
+  const removeImagen = (idx) => { setForm((prev) => { const next = prev.imagenes.filter((_, i) => i !== idx).map((img, i) => ({ ...img, orden: i })); if (!next.some((i) => i.isPrincipal) && next[0]) next[0].isPrincipal = true; return { ...prev, imagenes: next }; }); };
+  const moveImagen = (idx, dir = -1) => { setForm((prev) => { const arr = [...prev.imagenes]; const j = idx + dir; if (j < 0 || j >= arr.length) return prev; const tmp = arr[idx]; arr[idx] = arr[j]; arr[j] = tmp; arr.forEach((img, i) => (img.orden = i)); if (!arr.some((x) => x.isPrincipal)) arr[0].isPrincipal = true; return { ...prev, imagenes: arr }; }); };
+  const updateAlt = (idx, alt) => { setForm((prev) => { const arr = [...prev.imagenes]; if (!arr[idx]) return prev; arr[idx] = { ...arr[idx], alt }; return { ...prev, imagenes: arr }; }); };
   const handleDrop = (e) => { e.preventDefault(); e.stopPropagation(); const files = e.dataTransfer?.files; if (files?.length) onUploadImages(files); };
   const handleDragOver = (e) => { e.preventDefault(); e.stopPropagation(); };
 
-  const toggleCategoria = (id) => {
-    setForm((prev) => {
-      const set = new Set(prev.categoriasIds);
-      set.has(id) ? set.delete(id) : set.add(id);
-      return { ...prev, categoriasIds: Array.from(set) };
-    });
-  };
+  const toggleCategoria = (id) => { setForm((prev) => { const set = new Set(prev.categoriasIds); set.has(id) ? set.delete(id) : set.add(id); return { ...prev, categoriasIds: Array.from(set) }; }); };
 
   /* -------------------- validación -------------------- */
   function validate() {
@@ -564,7 +428,6 @@ export default function Productos() {
       descuentoPct: form.descuentoPct === '' ? null : Number(form.descuentoPct),
       categoriasIds: form.categoriasIds,
       imagenes: form.imagenes.map((m, i) => ({ url: m.url, alt: m.alt || null, isPrincipal: !!m.isPrincipal, orden: i })),
-      // Inventario solo cuando es SIMPLE
       inventario: form.tipo === 'SIMPLE' && form.inventarioStock !== ''
         ? { stock: Number(form.inventarioStock), umbralAlerta: form.inventarioUmbral === '' ? 0 : Number(form.inventarioUmbral), permitirBackorder: !!form.backorder }
         : null,
@@ -601,36 +464,24 @@ export default function Productos() {
   /* -------------------- Variantes: helpers y API -------------------- */
   function defaultVForm() {
     return {
-      sku: '',
-      nombre: '',
-      opcionesText: '', // JSON como texto: {"talla":"M","color":"Rojo"}
-      precio: '',
-      precioComparativo: '',
-      costo: '',
-      stock: '',
-      umbral: 0,
-      backorder: false,
-      imagenes: [], // {url, alt, orden}
+      sku: '', nombre: '', opcionesText: '',
+      precio: '', precioComparativo: '', costo: '',
+      stock: '', umbral: 0, backorder: false,
+      imagenes: [],
     };
   }
 
   const openVariantesModal = async (productoId) => {
     if (!productoId) return;
-    setVError('');
-    setVLoading(true);
-    setShowVariantes(true);
+    setVError(''); setVLoading(true); setShowVariantes(true);
     try {
       const res = await fetch(`${API}/api/v1/productos/${productoId}`, { headers: baseHeaders });
       if (!res.ok) throw new Error('No se pudo cargar el producto');
       const data = await res.json();
       setVList(Array.isArray(data?.variantes) ? data.variantes : []);
-      // también refrescamos el producto en listado (stockTotal, precioDesde/hasta ya vienen del back)
       setProductos((prev) => prev.map((p) => (p.id === data.id ? data : p)));
-    } catch (e) {
-      setVError(e?.message || 'Error al cargar variantes');
-    } finally {
-      setVLoading(false);
-    }
+    } catch (e) { setVError(e?.message || 'Error al cargar variantes'); }
+    finally { setVLoading(false); }
   };
 
   const refreshProductoLocal = async () => {
@@ -644,18 +495,11 @@ export default function Productos() {
     } catch {/* noop */}
   };
 
-  const vStartCreate = () => {
-    setVMode('create');
-    setVEditId(null);
-    setVForm(defaultVForm());
-  };
-
+  const vStartCreate = () => { setVMode('create'); setVEditId(null); setVForm(defaultVForm()); };
   const vStartEdit = (v) => {
-    setVMode('edit');
-    setVEditId(v.id);
+    setVMode('edit'); setVEditId(v.id);
     setVForm({
-      sku: v.sku || '',
-      nombre: v.nombre || '',
+      sku: v.sku || '', nombre: v.nombre || '',
       opcionesText: v.opciones ? safeStringify(v.opciones) : '',
       precio: typeof v.precio === 'number' ? String(v.precio) : '',
       precioComparativo: typeof v.precioComparativo === 'number' ? String(v.precioComparativo) : '',
@@ -666,20 +510,8 @@ export default function Productos() {
       imagenes: Array.isArray(v?.imagenes) ? v.imagenes.map((m, i) => ({ url: m.url, alt: m.alt || '', orden: typeof m.orden === 'number' ? m.orden : i })) : [],
     });
   };
-
-  function safeStringify(obj) {
-    try { return JSON.stringify(obj); } catch { return ''; }
-  }
-  function parseOpciones(text) {
-    const t = String(text || '').trim();
-    if (!t) return null;
-    try {
-      const o = JSON.parse(t);
-      return (o && typeof o === 'object') ? o : null;
-    } catch {
-      return null;
-    }
-  }
+  function safeStringify(obj) { try { return JSON.stringify(obj); } catch { return ''; } }
+  function parseOpciones(text) { const t = String(text || '').trim(); if (!t) return null; try { const o = JSON.parse(t); return (o && typeof o === 'object') ? o : null; } catch { return null; } }
 
   const submitVariante = async (e) => {
     e.preventDefault();
@@ -693,11 +525,7 @@ export default function Productos() {
       costo: vForm.costo === '' ? null : Number(vForm.costo),
       inventario: vForm.stock === '' && vMode === 'create' && vForm.umbral === 0 && !vForm.backorder
         ? null
-        : {
-            stock: vForm.stock === '' ? 0 : Number(vForm.stock),
-            umbralAlerta: Number(vForm.umbral || 0),
-            permitirBackorder: !!vForm.backorder,
-          },
+        : { stock: vForm.stock === '' ? 0 : Number(vForm.stock), umbralAlerta: Number(vForm.umbral || 0), permitirBackorder: !!vForm.backorder, },
       imagenes: vForm.imagenes.map((m, i) => ({ url: m.url, alt: m.alt || null, orden: i })),
     };
 
@@ -706,25 +534,19 @@ export default function Productos() {
       let res, data;
       if (vMode === 'edit' && vEditId) {
         res = await fetch(`${API}/api/v1/variantes/${vEditId}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json', ...baseHeaders },
-          body: JSON.stringify(payload),
+          method: 'PATCH', headers: { 'Content-Type': 'application/json', ...baseHeaders }, body: JSON.stringify(payload),
         });
         if (!res.ok) throw new Error('No se pudo actualizar la variante');
         data = await res.json();
       } else {
         res = await fetch(`${API}/api/v1/productos/${editId}/variantes`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', ...baseHeaders },
-          body: JSON.stringify(payload),
+          method: 'POST', headers: { 'Content-Type': 'application/json', ...baseHeaders }, body: JSON.stringify(payload),
         });
         if (!res.ok) throw new Error('No se pudo crear la variante');
         data = await res.json();
       }
 
-      // refrescar lista desde el servidor (para recalcular stockTotal, precioDesde/Hasta)
       await refreshProductoLocal();
-      // limpiar formulario a crear de nuevo
       setVForm(defaultVForm());
       setVMode('create');
       setVEditId(null);
@@ -738,16 +560,11 @@ export default function Productos() {
   const eliminarVariante = async (v) => {
     if (!confirm(`¿Eliminar variante "${v.nombre || v.sku || v.id}"?`)) return;
     try {
-      const res = await fetch(`${API}/api/v1/variantes/${v.id}`, {
-        method: 'DELETE',
-        headers: baseHeaders,
-      });
+      const res = await fetch(`${API}/api/v1/variantes/${v.id}`, { method: 'DELETE', headers: baseHeaders });
       if (!res.ok) throw new Error('No se pudo eliminar la variante');
       await refreshProductoLocal();
       if (vEditId === v.id) vStartCreate();
-    } catch (e) {
-      alert(e?.message || 'Error al eliminar variante');
-    }
+    } catch (e) { alert(e?.message || 'Error al eliminar variante'); }
   };
 
   /* -------------------- imágenes de variante -------------------- */
@@ -762,50 +579,17 @@ export default function Productos() {
         const res = await fetch(`${API}/api/v1/upload/producto`, { method: 'POST', headers: { ...baseHeaders }, body: fd });
         if (!res.ok) throw new Error('No se pudo subir imagen');
         const { url } = await res.json();
-        setVForm((prev) => {
-          const next = [...prev.imagenes];
-          next.push({ url, alt: '', orden: next.length });
-          return { ...prev, imagenes: next };
-        });
+        setVForm((prev) => { const next = [...prev.imagenes]; next.push({ url, alt: '', orden: next.length }); return { ...prev, imagenes: next }; });
       } catch (e) { alert(e?.message || 'Error subiendo imagen'); }
     }
   };
-  const moveVImagen = (idx, dir = -1) => {
-    setVForm((prev) => {
-      const arr = [...prev.imagenes];
-      const j = idx + dir;
-      if (j < 0 || j >= arr.length) return prev;
-      const tmp = arr[idx];
-      arr[idx] = arr[j];
-      arr[j] = tmp;
-      arr.forEach((img, i) => (img.orden = i));
-      return { ...prev, imagenes: arr };
-    });
-  };
-  const removeVImagen = (idx) => {
-    setVForm((prev) => {
-      const arr = prev.imagenes.filter((_, i) => i !== idx).map((m, i) => ({ ...m, orden: i }));
-      return { ...prev, imagenes: arr };
-    });
-  };
-  const updateVAlt = (idx, alt) => {
-    setVForm((prev) => {
-      const arr = [...prev.imagenes];
-      if (!arr[idx]) return prev;
-      arr[idx] = { ...arr[idx], alt };
-      return { ...prev, imagenes: arr };
-    });
-  };
+  const moveVImagen = (idx, dir = -1) => { setVForm((prev) => { const arr = [...prev.imagenes]; const j = idx + dir; if (j < 0 || j >= arr.length) return prev; const tmp = arr[idx]; arr[idx] = arr[j]; arr[j] = tmp; arr.forEach((img, i) => (img.orden = i)); return { ...prev, imagenes: arr }; }); };
+  const removeVImagen = (idx) => { setVForm((prev) => { const arr = prev.imagenes.filter((_, i) => i !== idx).map((m, i) => ({ ...m, orden: i })); return { ...prev, imagenes: arr }; }); };
+  const updateVAlt = (idx, alt) => { setVForm((prev) => { const arr = [...prev.imagenes]; if (!arr[idx]) return prev; arr[idx] = { ...arr[idx], alt }; return { ...prev, imagenes: arr }; }); };
 
   /* -------------------- render -------------------- */
   return (
-    <div
-      className="productos-page"
-      style={{
-        paddingTop: isMobile ? mobileTopOffset : undefined,
-        paddingBottom: isMobile ? mobileBottomOffset : undefined,
-      }}
-    >
+    <div className="productos-page" style={{ paddingTop: isMobile ? mobileTopOffset : undefined, paddingBottom: isMobile ? mobileBottomOffset : undefined }}>
       <Nabvendedor />
 
       <main className="productos-main">
@@ -820,31 +604,15 @@ export default function Productos() {
             <div className="productos-actions">
               <label className="buscar" aria-label="Buscar">
                 <FiSearch className="i" />
-                <input
-                  value={q}
-                  onChange={(e) => setQ(e.target.value)}
-                  placeholder="Buscar por nombre, slug o SKU…"
-                  aria-label="Buscar productos"
-                />
+                <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar por nombre, slug o SKU…" aria-label="Buscar productos" />
               </label>
 
-              <select
-                value={categoriaSel}
-                onChange={(e) => setCategoriaSel(e.target.value)}
-                aria-label="Filtrar por categoría"
-                disabled={cargandoCats}
-              >
+              <select value={categoriaSel} onChange={(e) => setCategoriaSel(e.target.value)} aria-label="Filtrar por categoría" disabled={cargandoCats}>
                 <option value="todas">Todas las categorías</option>
-                {categorias.map((c) => (
-                  <option key={c.id} value={c.slug}>{c.nombre}</option>
-                ))}
+                {categorias.map((c) => (<option key={c.id} value={c.slug}>{c.nombre}</option>))}
               </select>
 
-              <select
-                value={estadoSel}
-                onChange={(e) => setEstadoSel(e.target.value)}
-                aria-label="Filtrar por estado"
-              >
+              <select value={estadoSel} onChange={(e) => setEstadoSel(e.target.value)} aria-label="Filtrar por estado">
                 <option value="">Todos los estados</option>
                 <option value="ACTIVE">Activo</option>
                 <option value="DRAFT">Borrador</option>
@@ -852,17 +620,9 @@ export default function Productos() {
                 <option value="ARCHIVED">Archivado</option>
               </select>
 
-              <button className="btn btn-secondary" onClick={() => setShowCatModal(true)}>
-                <FiTag /> Gestionar categorías
-              </button>
-
-              <button className="btn btn-primary" onClick={crearProducto}>
-                <FiPlus /> Nuevo producto
-              </button>
-
-              <button className="btn btn-ghost" onClick={cargar} disabled={loading || !tiendaId}>
-                <FiRefreshCcw /> {loading ? 'Actualizando…' : 'Actualizar'}
-              </button>
+              <button className="btn btn-secondary" onClick={() => setShowCatModal(true)}><FiTag /> Gestionar categorías</button>
+              <button className="btn btn-primary" onClick={crearProducto}><FiPlus /> Nuevo producto</button>
+              <button className="btn btn-ghost" onClick={cargar} disabled={loading || !tiendaId}><FiRefreshCcw /> {loading ? 'Actualizando…' : 'Actualizar'}</button>
             </div>
           </div>
         </header>
@@ -875,18 +635,14 @@ export default function Productos() {
             <div className="emoji">👜</div>
             <h3>Aún no tienes productos</h3>
             <p>Crea tu primer producto para comenzar a vender.</p>
-            <button className="btn btn-primary" onClick={crearProducto}>
-              <FiPlus /> Crear producto
-            </button>
+            <button className="btn btn-primary" onClick={crearProducto}><FiPlus /> Crear producto</button>
           </section>
         )}
 
         {/* Grid por categorías / skeletons */}
         {loading ? (
           <section className="productos-grid">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <article key={i} className="producto-card skeleton" />
-            ))}
+            {Array.from({ length: 6 }).map((_, i) => (<article key={i} className="producto-card skeleton" />))}
           </section>
         ) : (
           <div className="productos-por-categoria">
@@ -899,22 +655,11 @@ export default function Productos() {
 
                 <div className="productos-grid">
                   {grupo.productos.map((p) => (
-                    <article
-                      key={p.id}
-                      className="producto-card"
-                      data-estado={p.estado}
-                      data-destacado={p.destacado ? '1' : '0'}
-                    >
+                    <article key={p.id} className="producto-card" data-estado={p.estado} data-destacado={p.destacado ? '1' : '0'}>
                       <figure className="producto-media">
                         <ImageCarousel images={p.imagenes} productName={p.nombre} />
-                        {p.destacado && (
-                          <span className="producto-chip chip-star" title="Producto destacado">
-                            <FiStar />
-                          </span>
-                        )}
-                        <span className="producto-chip chip-estado" data-estado={p.estado}>
-                          {p.estado}
-                        </span>
+                        {p.destacado && (<span className="producto-chip chip-star" title="Producto destacado"><FiStar /></span>)}
+                        <span className="producto-chip chip-estado" data-estado={p.estado}>{p.estado}</span>
                       </figure>
 
                       <div className="producto-body">
@@ -926,24 +671,36 @@ export default function Productos() {
                           <span className="producto-slug">/{p.slug}</span>
                         </div>
 
+                        {/* ⭐ CHANGED: mostrar rango para VARIANTE */}
                         <div className="producto-precio">
-                          {typeof p.precio === 'number' ? (
-                            <>
-                              <span className="precio">{currency(p.precio)}</span>
-                              {typeof p.precioComparativo === 'number' && (
-                                <span className="precio-compare">{currency(p.precioComparativo)}</span>
-                              )}
-                              {p.descuentoPct ? <span className="precio-desc">-{p.descuentoPct}%</span> : null}
-                            </>
+                          {p.tipo === 'VARIANTE' ? (
+                            typeof p.precioDesde === 'number' ? (
+                              <span className="precio">
+                                Desde {currency(p.precioDesde)}
+                                {typeof p.precioHasta === 'number' && p.precioHasta !== p.precioDesde
+                                  ? ` – ${currency(p.precioHasta)}`
+                                  : ''}
+                              </span>
+                            ) : (
+                              <span className="badge">Con variantes</span>
+                            )
                           ) : (
-                            <span className="badge">Con variantes</span>
+                            typeof p.precio === 'number' ? (
+                              <>
+                                <span className="precio">{currency(p.precio)}</span>
+                                {typeof p.precioComparativo === 'number' && (
+                                  <span className="precio-compare">{currency(p.precioComparativo)}</span>
+                                )}
+                                {p.descuentoPct ? <span className="precio-desc">-{p.descuentoPct}%</span> : null}
+                              </>
+                            ) : (
+                              <span className="badge">—</span>
+                            )
                           )}
                         </div>
 
                         <div className="producto-footer">
-                          <span className="producto-stock" data-stock={calcStock(p)}>
-                            {stockText(p)}
-                          </span>
+                          <span className="producto-stock" data-stock={calcStock(p)}>{stockText(p)}</span>
                           <div className="producto-actions">
                             <button className="icon" onClick={() => toggleEstado(p)} title={p.estado === 'ACTIVE' ? 'Pausar' : 'Activar'}>
                               {p.estado === 'ACTIVE' ? <FiPause /> : <FiPlay />}
@@ -984,12 +741,7 @@ export default function Productos() {
             <p className="panel-subtitle">Crea y organiza categorías para tu catálogo.</p>
 
             <div className="categorias-new">
-              <input
-                value={newCatName}
-                onChange={(e) => setNewCatName(e.target.value)}
-                placeholder="Nombre de la nueva categoría"
-                onKeyDown={(e) => e.key === 'Enter' && agregarCategoria()}
-              />
+              <input value={newCatName} onChange={(e) => setNewCatName(e.target.value)} placeholder="Nombre de la nueva categoría" onKeyDown={(e) => e.key === 'Enter' && agregarCategoria()} />
               <button className="btn btn-primary" onClick={agregarCategoria}><FiPlus /> Agregar</button>
             </div>
 
@@ -998,28 +750,18 @@ export default function Productos() {
                 <li key={c.id}>
                   {editCatId === c.id ? (
                     <>
-                      <input
-                        value={editCatName}
-                        onChange={(e) => setEditCatName(e.target.value)}
-                        onKeyDown={(e) => e.key === 'Enter' && guardarEdicionCat()}
-                      />
+                      <input value={editCatName} onChange={(e) => setEditCatName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && guardarEdicionCat()} />
                       <div className="cat-actions">
                         <button className="btn btn-secondary" onClick={guardarEdicionCat}><FiCheck /> Guardar</button>
-                        <button className="btn btn-ghost" onClick={() => { setEditCatId(null); setEditCatName(''); }}>
-                          <FiX /> Cancelar
-                        </button>
+                        <button className="btn btn-ghost" onClick={() => { setEditCatId(null); setEditCatName(''); }}><FiX /> Cancelar</button>
                       </div>
                     </>
                   ) : (
                     <>
                       <span className="cat-name">{c.nombre}</span>
                       <div className="cat-actions">
-                        <button className="btn btn-ghost" onClick={() => { setEditCatId(c.id); setEditCatName(c.nombre); }}>
-                          <FiEdit2 /> Renombrar
-                        </button>
-                        <button className="btn btn-danger" onClick={() => eliminarCategoria(c.id)}>
-                          <FiTrash2 /> Eliminar
-                        </button>
+                        <button className="btn btn-ghost" onClick={() => { setEditCatId(c.id); setEditCatName(c.nombre); }}><FiEdit2 /> Renombrar</button>
+                        <button className="btn btn-danger" onClick={() => eliminarCategoria(c.id)}><FiTrash2 /> Eliminar</button>
                       </div>
                     </>
                   )}
@@ -1037,11 +779,7 @@ export default function Productos() {
       {/* Modal Crear/Editar Producto */}
       {showEditor && (
         <section className="panel-overlay" onClick={() => setShowEditor(false)}>
-          <form
-            className="panel-content crear-contenido"
-            onClick={(e) => e.stopPropagation()}
-            onSubmit={submitEditor}
-          >
+          <form className="panel-content crear-contenido" onClick={(e) => e.stopPropagation()} onSubmit={submitEditor}>
             {/* Cabecera */}
             <header className="panel-head">
               <div style={{display:'flex',flexDirection:'column',gap:4}}>
@@ -1049,28 +787,15 @@ export default function Productos() {
                 <div style={{fontSize:'.85rem',color:'var(--text-muted)'}}>URL: <span className="producto-slug">/{computedSlug || 'nuevo-producto'}</span></div>
               </div>
               <div style={{display:'flex',gap:12,alignItems:'center'}}>
-                <label className="check">
-                  <input type="checkbox" checked={form.visible} onChange={(e) => setForm({ ...form, visible: e.target.checked })} />
-                  <span>Visible</span>
-                </label>
-                <label className="check">
-                  <input type="checkbox" checked={form.destacado} onChange={(e) => setForm({ ...form, destacado: e.target.checked })} />
-                  <span>Destacado</span>
-                </label>
-                <select
-                  value={form.estado}
-                  onChange={(e) => setForm({ ...form, estado: e.target.value })}
-                  aria-label="Estado"
-                  className="select"
-                >
+                <label className="check"><input type="checkbox" checked={form.visible} onChange={(e) => setForm({ ...form, visible: e.target.checked })} /><span>Visible</span></label>
+                <label className="check"><input type="checkbox" checked={form.destacado} onChange={(e) => setForm({ ...form, destacado: e.target.checked })} /><span>Destacado</span></label>
+                <select value={form.estado} onChange={(e) => setForm({ ...form, estado: e.target.value })} aria-label="Estado" className="select">
                   <option value="DRAFT">Borrador</option>
                   <option value="ACTIVE">Activo</option>
                   <option value="PAUSED">Pausado</option>
                   <option value="ARCHIVED">Archivado</option>
                 </select>
-                <button type="button" className="icon" onClick={() => setShowEditor(false)} title="Cerrar">
-                  <FiX />
-                </button>
+                <button type="button" className="icon" onClick={() => setShowEditor(false)} title="Cerrar"><FiX /></button>
               </div>
             </header>
 
@@ -1081,23 +806,13 @@ export default function Productos() {
               <div className="crear-col">
                 <label className={`field ${errors.nombre ? 'has-error':''}`}>
                   <span>Nombre *</span>
-                  <input
-                    value={form.nombre}
-                    onChange={(e) => setForm({ ...form, nombre: e.target.value })}
-                    required
-                    placeholder="Ej. Tenis deportivos Falcon"
-                  />
+                  <input value={form.nombre} onChange={(e) => setForm({ ...form, nombre: e.target.value })} required placeholder="Ej. Tenis deportivos Falcon" />
                   {errors.nombre && <small className="error">{errors.nombre}</small>}
                 </label>
 
                 <label className="field">
                   <span>Descripción</span>
-                  <textarea
-                    rows={4}
-                    value={form.descripcion}
-                    onChange={(e) => setForm({ ...form, descripcion: e.target.value })}
-                    placeholder="Cuenta por qué este producto es genial…"
-                  />
+                  <textarea rows={4} value={form.descripcion} onChange={(e) => setForm({ ...form, descripcion: e.target.value })} placeholder="Cuenta por qué este producto es genial…" />
                 </label>
 
                 {/* Selector de Tipo */}
@@ -1105,42 +820,21 @@ export default function Productos() {
                   <span className="subhead">Tipo de producto</span>
                   <div className="tipo-cards">
                     {TIPOS.map(t => (
-                      <button
-                        key={t.value}
-                        type="button"
-                        className={`tipo-card ${form.tipo === t.value ? 'active':''}`}
-                        onClick={() => setForm({ ...form, tipo: t.value })}
-                        aria-pressed={form.tipo === t.value}
-                      >
+                      <button key={t.value} type="button" className={`tipo-card ${form.tipo === t.value ? 'active':''}`} onClick={() => setForm({ ...form, tipo: t.value })} aria-pressed={form.tipo === t.value}>
                         <div className="tipo-title">{t.label}</div>
                         <div className="tipo-desc">{t.desc}</div>
-                        <div className="tipo-badges">
-                          {t.badges.map(b => <span key={b} className="chip small">{b}</span>)}
-                        </div>
+                        <div className="tipo-badges">{t.badges.map(b => <span key={b} className="chip small">{b}</span>)}</div>
                       </button>
                     ))}
                   </div>
                   {(form.tipo !== 'SIMPLE') && (
-                    <p className="muted" style={{marginTop:'.25rem'}}>
-                      <FiInfo /> Por ahora el inventario por variantes/servicios/digitales se configura después.
-                      Guardaremos el producto sin inventario (no rompe tu API).
-                    </p>
+                    <p className="muted" style={{marginTop:'.25rem'}}><FiInfo /> Por ahora el inventario por variantes/servicios/digitales se configura después. Guardaremos el producto sin inventario (no rompe tu API).</p>
                   )}
-
-                  {/* CTA Variantes cuando el tipo es VARIANTE */}
                   {form.tipo === 'VARIANTE' && (
                     <div style={{marginTop:'.5rem', display:'flex', gap:8, alignItems:'center'}}>
                       {mode === 'edit' && editId ? (
-                        <button
-                          type="button"
-                          className="btn btn-secondary"
-                          onClick={() => openVariantesModal(editId)}
-                        >
-                          <FiEdit2 /> Gestionar variantes…
-                        </button>
-                      ) : (
-                        <span className="muted">Guarda el producto para agregar variantes.</span>
-                      )}
+                        <button type="button" className="btn btn-secondary" onClick={() => openVariantesModal(editId)}><FiEdit2 /> Gestionar variantes…</button>
+                      ) : (<span className="muted">Guarda el producto para agregar variantes.</span>)}
                     </div>
                   )}
                 </div>
@@ -1150,53 +844,24 @@ export default function Productos() {
                 <div className="crear-row">
                   <label className={`field ${errors.precio ? 'has-error':''}`}>
                     <span>Precio actual{form.tipo==='SIMPLE' && ' *'}</span>
-                    <input
-                      type="number" step="0.01"
-                      value={form.precio}
-                      onChange={(e) => setForm({ ...form, precio: e.target.value })}
-                      placeholder="ej. 129.99"
-                    />
+                    <input type="number" step="0.01" value={form.precio} onChange={(e) => setForm({ ...form, precio: e.target.value })} placeholder="ej. 129.99" />
                     {errors.precio && <small className="error">{errors.precio}</small>}
                   </label>
                   <label className="field">
                     <span>Precio antes (comparativo)</span>
-                    <input
-                      type="number" step="0.01"
-                      value={form.precioComparativo}
-                      onChange={(e) => setForm({ ...form, precioComparativo: e.target.value })}
-                      placeholder="ej. 169.99"
-                    />
+                    <input type="number" step="0.01" value={form.precioComparativo} onChange={(e) => setForm({ ...form, precioComparativo: e.target.value })} placeholder="ej. 169.99" />
                   </label>
                 </div>
 
                 <div className="crear-row">
-                  <label className="field">
-                    <span>Costo</span>
-                    <input type="number" step="0.01" value={form.costo} onChange={(e) => setForm({ ...form, costo: e.target.value })} />
-                  </label>
-                  <label className="field">
-                    <span>% Descuento</span>
-                    <input
-                      type="number" min="0" max="100"
-                      value={form.descuentoPct}
-                      onChange={(e) => setForm({ ...form, descuentoPct: e.target.value })}
-                      placeholder={descuentoSugerido != null ? `${descuentoSugerido} sugerido` : 'ej. 15'}
-                    />
-                  </label>
+                  <label className="field"><span>Costo</span><input type="number" step="0.01" value={form.costo} onChange={(e) => setForm({ ...form, costo: e.target.value })} /></label>
+                  <label className="field"><span>% Descuento</span><input type="number" min="0" max="100" value={form.descuentoPct} onChange={(e) => setForm({ ...form, descuentoPct: e.target.value })} placeholder={descuentoSugerido != null ? `${descuentoSugerido} sugerido` : 'ej. 15'} /></label>
                 </div>
 
                 {/* KPI cards */}
                 <div className="kpis">
-                  <div className="kpi">
-                    <div className="kpi-title"><FiInfo /> Descuento sugerido</div>
-                    <div className="kpi-value">{descuentoSugerido != null ? `-${descuentoSugerido}%` : '—'}</div>
-                  </div>
-                  <div className="kpi">
-                    <div className="kpi-title"><FiInfo /> Margen</div>
-                    <div className="kpi-value">
-                      {margen ? `${currency(margen.m)}${margen.pct != null ? ` · ${margen.pct.toFixed(0)}%` : ''}` : '—'}
-                    </div>
-                  </div>
+                  <div className="kpi"><div className="kpi-title"><FiInfo /> Descuento sugerido</div><div className="kpi-value">{descuentoSugerido != null ? `-${descuentoSugerido}%` : '—'}</div></div>
+                  <div className="kpi"><div className="kpi-title"><FiInfo /> Margen</div><div className="kpi-value">{margen ? `${currency(margen.m)}${margen.pct != null ? ` · ${margen.pct.toFixed(0)}%` : ''}` : '—'}</div></div>
                 </div>
 
                 {/* Inventario (solo SIMPLE) */}
@@ -1226,12 +891,7 @@ export default function Productos() {
                 <div className="chips">
                   {categorias.length === 0 && <span className="muted">No tienes categorías.</span>}
                   {categorias.map(c => (
-                    <button
-                      key={c.id}
-                      type="button"
-                      className={`chip ${form.categoriasIds.includes(c.id) ? 'active':''}`}
-                      onClick={() => toggleCategoria(c.id)}
-                    >
+                    <button key={c.id} type="button" className={`chip ${form.categoriasIds.includes(c.id) ? 'active':''}`} onClick={() => toggleCategoria(c.id)}>
                       {c.nombre}
                     </button>
                   ))}
@@ -1241,20 +901,10 @@ export default function Productos() {
               {/* Columna derecha: imágenes + preview */}
               <div className="crear-col">
                 <h4 className="subhead">Imágenes</h4>
-                <div
-                  className="crear-uploader"
-                  onDrop={handleDrop}
-                  onDragOver={handleDragOver}
-                >
+                <div className="crear-uploader" onDrop={handleDrop} onDragOver={handleDragOver}>
                   <label className="btn-file">
                     <FiUpload /> Seleccionar imágenes
-                    <input
-                      type="file"
-                      accept="image/png,image/jpeg,image/jpg,image/webp"
-                      multiple
-                      onChange={(e) => onUploadImages(e.target.files)}
-                      style={{ display: 'none' }}
-                    />
+                    <input type="file" accept="image/png,image/jpeg,image/jpg,image/webp" multiple onChange={(e) => onUploadImages(e.target.files)} style={{ display: 'none' }} />
                   </label>
                   <p className="muted" style={{margin:0}}>O arrastra y suelta aquí (máx. 12)</p>
 
@@ -1269,55 +919,28 @@ export default function Productos() {
                               <button type="button" className="icon" onClick={() => moveImagen(idx, +1)} title="Mover a la derecha"><FiChevronRight /></button>
                               {!img.isPrincipal ? (
                                 <button type="button" className="icon" onClick={() => setPrincipal(idx)} title="Marcar principal"><FiStar /></button>
-                              ) : (
-                                <span className="chip chip-principal"><FiStar /> Principal</span>
-                              )}
+                              ) : (<span className="chip chip-principal"><FiStar /> Principal</span>)}
                             </div>
-                            <button type="button" className="icon danger" onClick={() => removeImagen(idx)} title="Quitar">
-                              <FiX />
-                            </button>
+                            <button type="button" className="icon danger" onClick={() => removeImagen(idx)} title="Quitar"><FiX /></button>
                           </div>
-                          <input
-                            className="img-alt"
-                            value={img.alt}
-                            onChange={(e) => updateAlt(idx, e.target.value)}
-                            placeholder="Texto alternativo (accesible/SEO)"
-                          />
+                          <input className="img-alt" value={img.alt} onChange={(e) => updateAlt(idx, e.target.value)} placeholder="Texto alternativo (accesible/SEO)" />
                         </li>
                       ))}
                     </ul>
-                  ) : (
-                    <p className="muted">Aún no has subido imágenes.</p>
-                  )}
+                  ) : (<p className="muted">Aún no has subido imágenes.</p>)}
                 </div>
 
                 {/* Preview en vivo */}
                 <h4 className="subhead">Preview</h4>
-                <article
-                  className="producto-card preview"
-                  data-estado={form.estado}
-                  data-destacado={form.destacado ? '1' : '0'}
-                >
+                <article className="producto-card preview" data-estado={form.estado} data-destacado={form.destacado ? '1' : '0'}>
                   <figure className="producto-media">
-                    {form.imagenes?.length ? (
-                      <ImageCarousel images={form.imagenes} productName={form.nombre || 'Producto'} />
-                    ) : (
-                      <div className="producto-media-empty"><span>Sin imágenes</span></div>
-                    )}
-                    {form.destacado && (
-                      <span className="producto-chip chip-star" title="Producto destacado">
-                        <FiStar />
-                      </span>
-                    )}
-                    <span className="producto-chip chip-estado" data-estado={form.estado}>
-                      {form.estado}
-                    </span>
+                    {form.imagenes?.length ? (<ImageCarousel images={form.imagenes} productName={form.nombre || 'Producto'} />) : (<div className="producto-media-empty"><span>Sin imágenes</span></div>)}
+                    {form.destacado && (<span className="producto-chip chip-star" title="Producto destacado"><FiStar /></span>)}
+                    <span className="producto-chip chip-estado" data-estado={form.estado}>{form.estado}</span>
                   </figure>
                   <div className="producto-body">
                     <header className="producto-head">
-                      <h4 className="producto-title" title={form.nombre || 'Nuevo producto'}>
-                        {form.nombre || 'Nuevo producto'}
-                      </h4>
+                      <h4 className="producto-title" title={form.nombre || 'Nuevo producto'}>{form.nombre || 'Nuevo producto'}</h4>
                     </header>
                     <div className="producto-meta">
                       <span className="producto-slug">/{computedSlug || 'nuevo-producto'}</span>
@@ -1326,10 +949,8 @@ export default function Productos() {
                       {precioNum != null ? (
                         <>
                           <span className="precio">{currency(precioNum)}</span>
-                          {precioCompNum != null && (
-                            <span className="precio-compare">{currency(precioCompNum)}</span>
-                          )}
-                          {form.descuentoPct ? <span className="precio-desc">-{form.descuentoPct}%</span> : descuentoSugerido != null ? <span className="precio-desc">-{descuentoSugerido}%</span> : null}
+                          {precioCompNum != null && (<span className="precio-compare">{currency(precioCompNum)}</span>)}
+                          {form.descuentoPct ? <span className="precio-desc">-{form.descuentoPct}%</span> : (descuentoSugerido != null ? <span className="precio-desc">-{descuentoSugerido}%</span> : null)}
                         </>
                       ) : (
                         <span className="badge">{form.tipo === 'SIMPLE' ? 'Definir precio' : 'Con variantes'}</span>
@@ -1337,9 +958,7 @@ export default function Productos() {
                     </div>
                     <div className="producto-footer">
                       <span className="producto-stock" data-stock={form.tipo === 'SIMPLE' ? (Number(form.inventarioStock || 0)) : 0}>
-                        {form.tipo === 'SIMPLE'
-                          ? (Number(form.inventarioStock || 0) > 0 ? `En stock: ${form.inventarioStock}` : 'Sin stock')
-                          : '—'}
+                        {form.tipo === 'SIMPLE' ? (Number(form.inventarioStock || 0) > 0 ? `En stock: ${form.inventarioStock}` : 'Sin stock') : '—'}
                       </span>
                       <div className="producto-actions">
                         <button className="icon" type="button" title="Vista"><FiEye /></button>
@@ -1352,20 +971,8 @@ export default function Productos() {
             </div>
 
             <footer className="panel-foot crear-actions">
-              <button
-                type="button"
-                className="btn btn-ghost"
-                onClick={() => setShowEditor(false)}
-                disabled={saving}
-              >
-                Cancelar
-              </button>
-              <button
-                type="submit"
-                className="btn btn-primary"
-                disabled={saving || !form.nombre.trim()}
-                title={!form.nombre.trim() ? 'Completa el nombre' : undefined}
-              >
+              <button type="button" className="btn btn-ghost" onClick={() => setShowEditor(false)} disabled={saving}>Cancelar</button>
+              <button type="submit" className="btn btn-primary" disabled={saving || !form.nombre.trim()} title={!form.nombre.trim() ? 'Completa el nombre' : undefined}>
                 {saving ? 'Guardando…' : (<><FiCheck /> {mode === 'edit' ? 'Guardar cambios' : 'Guardar producto'}</>)}
               </button>
             </footer>
@@ -1415,9 +1022,7 @@ export default function Productos() {
                           <td>{v.sku || '—'}</td>
                           <td>
                             <div style={{fontWeight:600}}>{v.nombre || '—'}</div>
-                            {v.opciones ? (
-                              <small className="muted">{safeStringify(v.opciones)}</small>
-                            ) : <small className="muted">—</small>}
+                            {v.opciones ? (<small className="muted">{safeStringify(v.opciones)}</small>) : <small className="muted">—</small>}
                           </td>
                           <td style={{textAlign:'right'}}>{typeof v.precio === 'number' ? currency(v.precio) : '—'}</td>
                           <td style={{textAlign:'right'}}>{typeof v?.inventario?.stock === 'number' ? v.inventario.stock : 0}</td>
@@ -1439,69 +1044,32 @@ export default function Productos() {
                 <h4 style={{marginTop:0}}>{vMode === 'edit' ? 'Editar variante' : 'Nueva variante'}</h4>
 
                 <div className="crear-row">
-                  <label className="field">
-                    <span>SKU</span>
-                    <input value={vForm.sku} onChange={(e) => setVForm({ ...vForm, sku: e.target.value })} placeholder="Ej. FALCON-ROJO-M" />
-                  </label>
-                  <label className="field">
-                    <span>Nombre</span>
-                    <input value={vForm.nombre} onChange={(e) => setVForm({ ...vForm, nombre: e.target.value })} placeholder="Ej. Rojo / M" />
-                  </label>
+                  <label className="field"><span>SKU</span><input value={vForm.sku} onChange={(e) => setVForm({ ...vForm, sku: e.target.value })} placeholder="Ej. FALCON-ROJO-M" /></label>
+                  <label className="field"><span>Nombre</span><input value={vForm.nombre} onChange={(e) => setVForm({ ...vForm, nombre: e.target.value })} placeholder="Ej. Rojo / M" /></label>
                 </div>
 
-                <label className="field">
-                  <span>Opciones (JSON)</span>
-                  <input
-                    value={vForm.opcionesText}
-                    onChange={(e) => setVForm({ ...vForm, opcionesText: e.target.value })}
-                    placeholder='Ej. {"talla":"M","color":"Rojo"}'
-                  />
-                </label>
+                <label className="field"><span>Opciones (JSON)</span><input value={vForm.opcionesText} onChange={(e) => setVForm({ ...vForm, opcionesText: e.target.value })} placeholder='Ej. {"talla":"M","color":"Rojo"}' /></label>
 
                 <div className="crear-row">
-                  <label className="field">
-                    <span>Precio</span>
-                    <input type="number" step="0.01" value={vForm.precio} onChange={(e) => setVForm({ ...vForm, precio: e.target.value })} />
-                  </label>
-                  <label className="field">
-                    <span>Precio comparativo</span>
-                    <input type="number" step="0.01" value={vForm.precioComparativo} onChange={(e) => setVForm({ ...vForm, precioComparativo: e.target.value })} />
-                  </label>
+                  <label className="field"><span>Precio</span><input type="number" step="0.01" value={vForm.precio} onChange={(e) => setVForm({ ...vForm, precio: e.target.value })} /></label>
+                  <label className="field"><span>Precio comparativo</span><input type="number" step="0.01" value={vForm.precioComparativo} onChange={(e) => setVForm({ ...vForm, precioComparativo: e.target.value })} /></label>
                 </div>
 
                 <div className="crear-row">
-                  <label className="field">
-                    <span>Costo</span>
-                    <input type="number" step="0.01" value={vForm.costo} onChange={(e) => setVForm({ ...vForm, costo: e.target.value })} />
-                  </label>
-                  <label className="field">
-                    <span>Stock</span>
-                    <input type="number" min="0" value={vForm.stock} onChange={(e) => setVForm({ ...vForm, stock: e.target.value })} />
-                  </label>
+                  <label className="field"><span>Costo</span><input type="number" step="0.01" value={vForm.costo} onChange={(e) => setVForm({ ...vForm, costo: e.target.value })} /></label>
+                  <label className="field"><span>Stock</span><input type="number" min="0" value={vForm.stock} onChange={(e) => setVForm({ ...vForm, stock: e.target.value })} /></label>
                 </div>
 
                 <div className="crear-row">
-                  <label className="field">
-                    <span>Umbral alerta</span>
-                    <input type="number" min="0" value={vForm.umbral} onChange={(e) => setVForm({ ...vForm, umbral: e.target.value })} />
-                  </label>
-                  <label className="check" style={{marginTop:28}}>
-                    <input type="checkbox" checked={vForm.backorder} onChange={(e) => setVForm({ ...vForm, backorder: e.target.checked })} />
-                    <span>Permitir backorder</span>
-                  </label>
+                  <label className="field"><span>Umbral alerta</span><input type="number" min="0" value={vForm.umbral} onChange={(e) => setVForm({ ...vForm, umbral: e.target.value })} /></label>
+                  <label className="check" style={{marginTop:28}}><input type="checkbox" checked={vForm.backorder} onChange={(e) => setVForm({ ...vForm, backorder: e.target.checked })} /><span>Permitir backorder</span></label>
                 </div>
 
                 <h4 className="subhead">Imágenes de variante</h4>
                 <div className="crear-uploader" onDragOver={(e)=>{e.preventDefault();}} onDrop={(e)=>{e.preventDefault(); onUploadVImages(e.dataTransfer?.files);}}>
                   <label className="btn-file">
                     <FiUpload /> Subir imágenes
-                    <input
-                      type="file"
-                      accept="image/png,image/jpeg,image/jpg,image/webp"
-                      multiple
-                      onChange={(e) => onUploadVImages(e.target.files)}
-                      style={{ display: 'none' }}
-                    />
+                    <input type="file" accept="image/png,image/jpeg,image/jpg,image/webp" multiple onChange={(e) => onUploadVImages(e.target.files)} style={{ display: 'none' }} />
                   </label>
                   {vForm.imagenes.length > 0 ? (
                     <ul className="imgs-list">
@@ -1513,28 +1081,17 @@ export default function Productos() {
                               <button type="button" className="icon" onClick={() => moveVImagen(idx, -1)} title="Mover a la izquierda"><FiChevronLeft /></button>
                               <button type="button" className="icon" onClick={() => moveVImagen(idx, +1)} title="Mover a la derecha"><FiChevronRight /></button>
                             </div>
-                            <button type="button" className="icon danger" onClick={() => removeVImagen(idx)} title="Quitar">
-                              <FiX />
-                            </button>
+                            <button type="button" className="icon danger" onClick={() => removeVImagen(idx)} title="Quitar"><FiX /></button>
                           </div>
-                          <input
-                            className="img-alt"
-                            value={img.alt}
-                            onChange={(e) => updateVAlt(idx, e.target.value)}
-                            placeholder="Texto alternativo"
-                          />
+                          <input className="img-alt" value={img.alt} onChange={(e) => updateVAlt(idx, e.target.value)} placeholder="Texto alternativo" />
                         </li>
                       ))}
                     </ul>
-                  ) : (
-                    <p className="muted">Aún no has subido imágenes para esta variante.</p>
-                  )}
+                  ) : (<p className="muted">Aún no has subido imágenes para esta variante.</p>)}
                 </div>
 
                 <div style={{display:'flex',gap:8,justifyContent:'flex-end', marginTop:12}}>
-                  {vMode === 'edit' && (
-                    <button type="button" className="btn btn-ghost" onClick={vStartCreate}><FiX /> Cancelar edición</button>
-                  )}
+                  {vMode === 'edit' && (<button type="button" className="btn btn-ghost" onClick={vStartCreate}><FiX /> Cancelar edición</button>)}
                   <button type="submit" className="btn btn-primary" disabled={vSaving}>
                     {vSaving ? 'Guardando…' : (<><FiCheck /> {vMode === 'edit' ? 'Guardar variante' : 'Agregar variante'}</>)}
                   </button>

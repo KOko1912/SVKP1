@@ -19,6 +19,95 @@ const SystemVkodeLogo = () => (
   />
 );
 
+// Componente de Loading Screen Premium
+const LoadingScreen = () => (
+  <div className="loading-screen">
+    <div className="loading-particles">
+      {[...Array(5)].map((_, i) => (
+        <div key={i} className="loading-particle"></div>
+      ))}
+    </div>
+    
+    <div className="loading-content">
+      <motion.img 
+        src="/SVKP.png" 
+        alt="SVKP Logo" 
+        className="loading-logo"
+        initial={{ scale: 0.8, opacity: 0, rotate: -10 }}
+        animate={{ scale: 1, opacity: 1, rotate: 0 }}
+        transition={{ duration: 0.8, ease: "easeOut" }}
+      />
+      <motion.h1 
+        className="loading-title"
+        initial={{ y: 30, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        transition={{ delay: 0.3, duration: 0.8, ease: "easeOut" }}
+      >
+        SystemVkode
+      </motion.h1>
+      <motion.p 
+        className="loading-subtitle"
+        initial={{ y: 20, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        transition={{ delay: 0.6, duration: 0.8, ease: "easeOut" }}
+      >
+        Iniciando experiencia premium
+      </motion.p>
+      
+      <div className="loading-progress">
+        <motion.div 
+          className="loading-progress-bar"
+          initial={{ width: "0%" }}
+          animate={{ width: "100%" }}
+          transition={{ duration: 2.5, ease: "easeInOut" }}
+        />
+      </div>
+      
+      <div className="loading-dots">
+        <motion.div 
+          className="loading-dot"
+          animate={{ 
+            scale: [1, 1.3, 1],
+            opacity: [0.6, 1, 0.6],
+            y: [0, -15, 0]
+          }}
+          transition={{ 
+            duration: 1.8,
+            repeat: Infinity,
+            delay: 0
+          }}
+        />
+        <motion.div 
+          className="loading-dot"
+          animate={{ 
+            scale: [1, 1.3, 1],
+            opacity: [0.6, 1, 0.6],
+            y: [0, -15, 0]
+          }}
+          transition={{ 
+            duration: 1.8,
+            repeat: Infinity,
+            delay: 0.3
+          }}
+        />
+        <motion.div 
+          className="loading-dot"
+          animate={{ 
+            scale: [1, 1.3, 1],
+            opacity: [0.6, 1, 0.6],
+            y: [0, -15, 0]
+          }}
+          transition={{ 
+            duration: 1.8,
+            repeat: Infinity,
+            delay: 0.6
+          }}
+        />
+      </div>
+    </div>
+  </div>
+);
+
 const FeatureCard = ({ icon, title, description, index }) => {
   const controls = useAnimation();
 
@@ -62,15 +151,37 @@ const FeatureCard = ({ icon, title, description, index }) => {
 
 function App() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const controls = useAnimation();
-  const navigate = useNavigate(); // 👈 Para redireccionar
+  const navigate = useNavigate();
 
   useEffect(() => {
-    controls.start("visible");
-  }, [controls]);
+    // Simular carga de recursos
+    const timer = setTimeout(() => {
+      setIsLoading(false);
+    }, 3500); // 3.5 segundos de loading
+
+    return () => clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    if (!isLoading) {
+      controls.start("visible");
+    }
+  }, [isLoading, controls]);
+
+  // Mostrar loading screen mientras carga
+  if (isLoading) {
+    return <LoadingScreen />;
+  }
 
   return (
-    <div className="app">
+    <motion.div 
+      className="app"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 1.2, ease: "easeOut" }}
+    >
       {/* Navigation Bar */}
       <nav className="navbar">
         <div className="navbar-container">
@@ -99,14 +210,14 @@ function App() {
       <section className="hero">
         <motion.div
           className="hero-content"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 0.8 }}
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.8, delay: 0.2 }}
         >
           <motion.div
             initial={{ y: -20, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
-            transition={{ delay: 0.2, duration: 0.6 }}
+            transition={{ delay: 0.4, duration: 0.6 }}
             className="hero-badge"
           >
             <span>NUEVO</span> Plataforma 3.0 lanzada
@@ -114,21 +225,21 @@ function App() {
           <motion.h1
             initial={{ y: 30, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
-            transition={{ delay: 0.4, duration: 0.8 }}
+            transition={{ delay: 0.6, duration: 0.8 }}
           >
             Software de Comercio <span>Inteligente</span> para Emprendedores
           </motion.h1>
           <motion.p
             initial={{ y: 30, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
-            transition={{ delay: 0.6, duration: 0.8 }}
+            transition={{ delay: 0.8, duration: 0.8 }}
           >
             Convierte visitantes en clientes con nuestra solución todo-en-uno diseñada para escalar tu negocio digital.
           </motion.p>
           <motion.div
             initial={{ y: 30, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
-            transition={{ delay: 0.8, duration: 0.8 }}
+            transition={{ delay: 1.0, duration: 0.8 }}
             className="hero-cta"
           >
             <button
@@ -141,9 +252,9 @@ function App() {
         </motion.div>
         <motion.div
           className="hero-image"
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ delay: 1, duration: 0.8 }}
+          initial={{ opacity: 0, scale: 0.9, x: 50 }}
+          animate={{ opacity: 1, scale: 1, x: 0 }}
+          transition={{ delay: 1.2, duration: 0.8 }}
         >
           <div className="dashboard-mockup">
             {/* Imagen del dashboard */}
@@ -230,7 +341,7 @@ function App() {
           <p>© {new Date().getFullYear()} SystemVkode. Todos los derechos reservados.</p>
         </div>
       </footer>
-    </div>
+    </motion.div>
   );
 }
 

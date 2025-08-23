@@ -1,11 +1,10 @@
 // backend/src/modules/productos/routes.js
 const express = require('express');
-const prisma = require('../../config/db'); // o: const { prisma } = require('../../config/db');
+const prisma = require('../../config/db');
 
 const router = express.Router();
 
 /* ========== helpers ========== */
-
 function getUserId(req) {
   const raw = req.headers['x-user-id'] || '';
   if (raw) return Number(raw);
@@ -15,9 +14,15 @@ function getUserId(req) {
 }
 
 function toNum(x) {
-  if (x === null || x === undefined) return null;
+  if (x === null || x === undefined || x === '') return null;
   const n = Number(x);
   return Number.isNaN(n) ? null : n;
+}
+
+function toInt(x) {
+  if (x === null || x === undefined || x === '') return null;
+  const n = Number(x);
+  return Number.isFinite(n) ? Math.trunc(n) : null;
 }
 
 function slugify(str = '') {
@@ -31,10 +36,12 @@ function slugify(str = '') {
 async function uniqueSlugForProduct(tiendaId, nombre, excludeId) {
   const base = slugify(nombre) || 'producto';
   let slug = base, i = 1;
-  // uq_producto_tienda_slug
-  while (await prisma.producto.findFirst({
-    where: { tiendaId, slug, ...(excludeId ? { NOT: { id: excludeId } } : {}) }
-  })) {
+  while (
+    await prisma.producto.findFirst({
+      where: { tiendaId, slug, ...(excludeId ? { NOT: { id: excludeId } } : {}) },
+      select: { id: true },
+    })
+  ) {
     slug = `${base}-${++i}`;
   }
   return slug;
@@ -48,7 +55,7 @@ const productInclude = {
   atributos: true,
 };
 
-/** Calcula stock total y rango de precio para variantes */
+/** Agrega stockTotal y precioDesde/Hasta para variantes */
 function mapForList(p) {
   const stockProducto = p.inventario?.stock ?? 0;
   const stockVar = (p.variantes || []).reduce((acc, v) => acc + (v.inventario?.stock ?? 0), 0);
@@ -69,7 +76,7 @@ function mapForList(p) {
 
 /* ========== RUTAS ========== */
 
-// GET /api/v1/productos?tiendaId=&q=&estado=&categoria=
+// GET /api/v1/productos
 router.get('/', async (req, res) => {
   try {
     const userId = getUserId(req);
@@ -99,7 +106,7 @@ router.get('/', async (req, res) => {
       orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
     });
 
-    res.json(rows.map(mapForList)); // añadimos stockTotal y precioDesde/Hasta
+    res.json(rows.map(mapForList));
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'No se pudieron cargar los productos' });
@@ -122,7 +129,6 @@ router.get('/:id', async (req, res) => {
 });
 
 // POST /api/v1/productos
-// Soporta: SIMPLE (con inventario), VARIANTE (con variantes[]), DIGITAL (digitalUrl), SERVICIO/BUNDLE (atributos[])
 router.post('/', async (req, res) => {
   try {
     const userId = getUserId(req);
@@ -146,7 +152,7 @@ router.post('/', async (req, res) => {
     const slug = await uniqueSlugForProduct(tiendaId, nombre);
 
     // validar categorías
-    const cats = Array.isArray(categoriasIds) ? categoriasIds.map(Number) : [];
+    const cats = Array.isArray(categoriasIds) ? categoriasIds.map(Number).filter(Number.isFinite) : [];
     if (cats.length) {
       const valid = await prisma.categoria.findMany({ where: { id: { in: cats }, tiendaId } });
       if (valid.length !== cats.length) return res.status(400).json({ error: 'Categorías inválidas' });
@@ -155,22 +161,24 @@ router.post('/', async (req, res) => {
     const data = {
       tiendaId, slug, nombre, descripcion, tipo, estado, visible, destacado,
       sku, gtin, marca, condicion,
-      // precios directos solo para SIMPLE (para VARIANTE van en cada variante)
-      precio:             tipo === 'SIMPLE' ? toNum(precio) : null,
-      precioComparativo:  tipo === 'SIMPLE' ? toNum(precioComparativo) : null,
-      costo:              tipo === 'SIMPLE' ? toNum(costo) : null,
-      descuentoPct:       tipo === 'SIMPLE' ? (descuentoPct ?? null) : null,
+      // precios directos solo para SIMPLE
+      precio:            tipo === 'SIMPLE' ? toNum(precio) : null,
+      precioComparativo: tipo === 'SIMPLE' ? toNum(precioComparativo) : null,
+      costo:             tipo === 'SIMPLE' ? toNum(costo) : null,
+      descuentoPct:      tipo === 'SIMPLE' ? toInt(descuentoPct) : null,
       pesoGramos, altoCm, anchoCm, largoCm, claseEnvio, diasPreparacion,
-      politicaDevolucion, digitalUrl: tipo === 'DIGITAL' ? (digitalUrl || null) : null, licenciamiento,
-      imagenes: imagenes?.length ? {
+      politicaDevolucion,
+      digitalUrl:        tipo === 'DIGITAL' ? (digitalUrl || null) : null,
+      licenciamiento,
+      imagenes: (Array.isArray(imagenes) && imagenes.length) ? {
         create: imagenes.map((m, i) => ({
           url: m.url, alt: m.alt || null, isPrincipal: !!m.isPrincipal, orden: m.orden ?? i
         }))
       } : undefined,
-      categorias: cats.length ? {
+      categorias: (cats.length) ? {
         create: cats.map((categoriaId) => ({ categoria: { connect: { id: categoriaId } } }))
       } : undefined,
-      atributos: atributos?.length ? {
+      atributos: (Array.isArray(atributos) && atributos.length) ? {
         create: atributos.map(a => ({ clave: String(a.clave), valor: String(a.valor) }))
       } : undefined,
     };
@@ -179,8 +187,8 @@ router.post('/', async (req, res) => {
     if (tipo === 'SIMPLE' && inventario && typeof inventario.stock !== 'undefined') {
       data.inventario = {
         create: {
-          stock: Number(inventario.stock ?? 0),
-          umbralAlerta: Number(inventario.umbralAlerta ?? 0),
+          stock: toInt(inventario.stock) ?? 0,
+          umbralAlerta: toInt(inventario.umbralAlerta) ?? 0,
           permitirBackorder: !!inventario.permitirBackorder,
         }
       };
@@ -192,31 +200,25 @@ router.post('/', async (req, res) => {
         create: variantes.map((v) => ({
           sku: v.sku || null,
           nombre: v.nombre || null,
-          opciones: v.opciones || null, // JSON { color, talla, ... }
+          opciones: v.opciones || null,
           precio: toNum(v.precio),
           precioComparativo: toNum(v.precioComparativo),
           costo: toNum(v.costo),
           inventario: v.inventario ? {
             create: {
-              stock: Number(v.inventario.stock ?? 0),
-              umbralAlerta: Number(v.inventario.umbralAlerta ?? 0),
+              stock: toInt(v.inventario.stock) ?? 0,
+              umbralAlerta: toInt(v.inventario.umbralAlerta) ?? 0,
               permitirBackorder: !!v.inventario.permitirBackorder,
             }
           } : undefined,
-          imagenes: v.imagenes?.length ? {
-            create: v.imagenes.map((m, i) => ({
-              url: m.url, alt: m.alt || null, orden: m.orden ?? i
-            }))
+          imagenes: (Array.isArray(v.imagenes) && v.imagenes.length) ? {
+            create: v.imagenes.map((m, i) => ({ url: m.url, alt: m.alt || null, orden: m.orden ?? i }))
           } : undefined,
         }))
       };
     }
 
-    const creado = await prisma.producto.create({
-      data,
-      include: productInclude,
-    });
-
+    const creado = await prisma.producto.create({ data, include: productInclude });
     res.json(mapForList(creado));
   } catch (e) {
     console.error(e);
@@ -225,7 +227,6 @@ router.post('/', async (req, res) => {
 });
 
 // PATCH /api/v1/productos/:id
-// Actualiza básicos + reemplaza imágenes/categorías y upsert de inventario (solo SIMPLE).
 router.patch('/:id', async (req, res) => {
   try {
     const id = Number(req.params.id);
@@ -244,11 +245,10 @@ router.patch('/:id', async (req, res) => {
       ...(estado        !== undefined ? { estado } : {}),
       ...(visible       !== undefined ? { visible: !!visible } : {}),
       ...(destacado     !== undefined ? { destacado: !!destacado } : {}),
-      // precios directos solo si el producto es SIMPLE
       ...(p.tipo === 'SIMPLE' && precio             !== undefined ? { precio: toNum(precio) } : {}),
       ...(p.tipo === 'SIMPLE' && precioComparativo  !== undefined ? { precioComparativo: toNum(precioComparativo) } : {}),
       ...(p.tipo === 'SIMPLE' && costo              !== undefined ? { costo: toNum(costo) } : {}),
-      ...(p.tipo === 'SIMPLE' && descuentoPct       !== undefined ? { descuentoPct } : {}),
+      ...(p.tipo === 'SIMPLE' && descuentoPct       !== undefined ? { descuentoPct: toInt(descuentoPct) } : {}),
       ...(p.tipo === 'DIGITAL' && digitalUrl        !== undefined ? { digitalUrl: digitalUrl || null } : {}),
       updatedAt: new Date(),
     };
@@ -260,23 +260,25 @@ router.patch('/:id', async (req, res) => {
 
     const tx = [];
 
-    // Reemplazo de imágenes
+    // Reemplazo de imágenes (evitar createMany con array vacío)
     if (Array.isArray(imagenes)) {
       tx.push(prisma.productoImagen.deleteMany({ where: { productoId: id } }));
-      tx.push(prisma.productoImagen.createMany({
-        data: imagenes.map((m, i) => ({
-          productoId: id,
-          url: m.url,
-          alt: m.alt || null,
-          isPrincipal: !!m.isPrincipal,
-          orden: m.orden ?? i
-        }))
-      }));
+      if (imagenes.length) {
+        tx.push(prisma.productoImagen.createMany({
+          data: imagenes.map((m, i) => ({
+            productoId: id,
+            url: m.url,
+            alt: m.alt || null,
+            isPrincipal: !!m.isPrincipal,
+            orden: m.orden ?? i
+          }))
+        }));
+      }
     }
 
     // Reemplazo de categorías
     if (Array.isArray(categoriasIds)) {
-      const cats = categoriasIds.map(Number);
+      const cats = categoriasIds.map(Number).filter(Number.isFinite);
       tx.push(prisma.productoCategoria.deleteMany({ where: { productoId: id } }));
       if (cats.length) {
         tx.push(prisma.productoCategoria.createMany({
@@ -285,7 +287,7 @@ router.patch('/:id', async (req, res) => {
       }
     }
 
-    // Atributos (servicio/bundle/meta)
+    // Atributos
     if (Array.isArray(atributos)) {
       tx.push(prisma.productoAtributo.deleteMany({ where: { productoId: id } }));
       if (atributos.length) {
@@ -299,20 +301,20 @@ router.patch('/:id', async (req, res) => {
       }
     }
 
-    // Inventario para SIMPLE (upsert / delete)
+    // Inventario SIMPLE (upsert / delete)
     if (p.tipo === 'SIMPLE') {
       if (inventario) {
         tx.push(prisma.inventario.upsert({
           where: { uq_inventario_producto: { productoId: id } },
           create: {
             productoId: id,
-            stock: Number(inventario.stock ?? 0),
-            umbralAlerta: Number(inventario.umbralAlerta ?? 0),
+            stock: toInt(inventario.stock) ?? 0,
+            umbralAlerta: toInt(inventario.umbralAlerta) ?? 0,
             permitirBackorder: !!inventario.permitirBackorder,
           },
           update: {
-            stock: Number(inventario.stock ?? 0),
-            umbralAlerta: Number(inventario.umbralAlerta ?? 0),
+            stock: toInt(inventario.stock) ?? 0,
+            umbralAlerta: toInt(inventario.umbralAlerta) ?? 0,
             permitirBackorder: !!inventario.permitirBackorder,
           }
         }));
@@ -321,7 +323,7 @@ router.patch('/:id', async (req, res) => {
       }
     }
 
-    // update principal
+    // update principal primero
     tx.unshift(prisma.producto.update({ where: { id }, data }));
 
     const [updated] = await prisma.$transaction(tx, { isolationLevel: 'ReadCommitted' });
@@ -379,12 +381,12 @@ router.post('/:id/variantes', async (req, res) => {
         costo: toNum(costo),
         inventario: inventario ? {
           create: {
-            stock: Number(inventario.stock ?? 0),
-            umbralAlerta: Number(inventario.umbralAlerta ?? 0),
+            stock: toInt(inventario.stock) ?? 0,
+            umbralAlerta: toInt(inventario.umbralAlerta) ?? 0,
             permitirBackorder: !!inventario.permitirBackorder,
           }
         } : undefined,
-        imagenes: imagenes?.length ? {
+        imagenes: (Array.isArray(imagenes) && imagenes.length) ? {
           create: imagenes.map((m, i) => ({ url: m.url, alt: m.alt || null, orden: m.orden ?? i }))
         } : undefined,
       },
@@ -420,13 +422,13 @@ router.patch('/variantes/:varianteId', async (req, res) => {
         where: { uq_inventario_variante: { varianteId } },
         create: {
           varianteId,
-          stock: Number(inventario.stock ?? 0),
-          umbralAlerta: Number(inventario.umbralAlerta ?? 0),
+          stock: toInt(inventario.stock) ?? 0,
+          umbralAlerta: toInt(inventario.umbralAlerta) ?? 0,
           permitirBackorder: !!inventario.permitirBackorder,
         },
         update: {
-          stock: Number(inventario.stock ?? 0),
-          umbralAlerta: Number(inventario.umbralAlerta ?? 0),
+          stock: toInt(inventario.stock) ?? 0,
+          umbralAlerta: toInt(inventario.umbralAlerta) ?? 0,
           permitirBackorder: !!inventario.permitirBackorder,
         }
       }));
@@ -464,22 +466,19 @@ router.delete('/variantes/:varianteId', async (req, res) => {
     res.status(500).json({ error: 'Error eliminando variante' });
   }
 });
-// GET /api/v1/public/uuid/:uuid  → detalle público por UUID (sin costo)
+
+/* ===== Público por UUID ===== */
 router.get('/public/uuid/:uuid', async (req, res) => {
   try {
     const p = await prisma.producto.findUnique({
       where: { uuid: String(req.params.uuid) },
-      include: productInclude, // imágenes, inventario, variantes, categorías, atributos
+      include: productInclude,
     });
     if (!p || p.deletedAt) return res.status(404).json({ error: 'No existe' });
+    if (!p.visible || p.estado !== 'ACTIVE') return res.status(404).json({ error: 'No disponible' });
 
-    // Opcional: exponer solo si es visible/activo
-    if (!p.visible || p.estado !== 'ACTIVE') {
-      return res.status(404).json({ error: 'No disponible' });
-    }
-
-    const pub = mapForList(p);        // agrega stockTotal, precioDesde/Hasta
-    const { costo, ...safe } = pub;   // oculta costo al público
+    const pub = mapForList(p);
+    const { costo, ...safe } = pub;
     res.json(safe);
   } catch (e) {
     console.error(e);
@@ -487,8 +486,7 @@ router.get('/public/uuid/:uuid', async (req, res) => {
   }
 });
 
-/* ===== DIGITAL: set digitalUrl rápida (si subes archivo, usa upload.js/digital y luego pega la URL aquí) ===== */
-
+/* ===== DIGITAL ===== */
 router.post('/:id/digital', async (req, res) => {
   try {
     const id = Number(req.params.id);

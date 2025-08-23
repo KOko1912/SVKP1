@@ -262,7 +262,7 @@ model ProductoImagen {
   isPrincipal Boolean  @default(false)
   orden       Int      @default(0)
   createdAt   DateTime @default(now())
-
+  @@unique([productoId, url])
   @@index([productoId])
 }
 

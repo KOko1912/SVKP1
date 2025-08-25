@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   FiShoppingCart, FiHeart, FiShare2, FiChevronLeft, FiChevronRight,
-  FiStar, FiTruck, FiShield, FiArrowLeft, FiCheck, FiTag, FiPhone, FiMail
+  FiStar, FiTruck, FiShield, FiArrowLeft, FiCheck, FiTag, FiPhone, FiMail, FiClock
 } from 'react-icons/fi';
 
 const API   = (import.meta.env.VITE_API_URL    || 'http://localhost:5000').replace(/\/$/, '');
@@ -59,6 +59,20 @@ const bestTextOn = (hexA, hexB) => {
 };
 const grad = (from, to) => `linear-gradient(135deg, ${from}, ${to})`;
 
+/* Utilidades varias */
+const clamp = (n, min, max) => Math.min(max, Math.max(min, n));
+const formatDate = (d) => {
+  try {
+    const dt = new Date(d);
+    return new Intl.DateTimeFormat('es-MX', { dateStyle: 'medium' }).format(dt);
+  } catch { return ''; }
+};
+const avgFromReviews = (arr) => {
+  if (!Array.isArray(arr) || arr.length === 0) return 0;
+  const sum = arr.reduce((a, r) => a + Number(r.rating || 0), 0);
+  return sum / arr.length;
+};
+
 /* ========================================================= */
 
 export default function PublicProducto() {
@@ -71,6 +85,13 @@ export default function PublicProducto() {
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [quantity, setQuantity] = useState(1);
   const [addedToCart, setAddedToCart] = useState(false);
+
+  // Reseñas
+  const [reviews, setReviews] = useState([]);
+  const [revLoading, setRevLoading] = useState(false);
+  const [revError, setRevError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [newReview, setNewReview] = useState({ rating: 0, comment: '', authorName: '', authorEmail: '' });
 
   // Tema dinámico a partir de tienda.colorPrincipal
   const theme = useMemo(() => {
@@ -111,6 +132,9 @@ export default function PublicProducto() {
           }
         }
 
+        // Reseñas
+        fetchReviews(data?.id);
+
         // SEO básico
         document.title = `${data?.nombre || 'Producto'} – ${data?.tienda?.nombre || 'Tienda'}`;
       } catch (e) {
@@ -121,6 +145,21 @@ export default function PublicProducto() {
     })();
     return () => { alive = false; };
   }, [uuid]);
+
+  const fetchReviews = async (productoId) => {
+    if (!productoId) return;
+    setRevLoading(true); setRevError('');
+    try {
+      const r = await fetch(`${API}/api/v1/productos/${productoId}/reviews`);
+      if (!r.ok) throw new Error('No se pudieron cargar las reseñas.');
+      const data = await r.json();
+      setReviews(Array.isArray(data) ? data : []);
+    } catch (e) {
+      setReviews([]); setRevError(e?.message || 'Error al cargar reseñas');
+    } finally {
+      setRevLoading(false);
+    }
+  };
 
   // Números seguros (prisma Decimal viene string)
   const precioNumber = useMemo(() => Number(p?.precio), [p?.precio]);
@@ -148,6 +187,16 @@ export default function PublicProducto() {
     return imgs;
   }, [p?.imagenes]);
 
+  const currentAvg = useMemo(() => {
+    const baseAvg = Number(p?.ratingAvg || 0);
+    const baseCount = Number(p?.ratingCount || 0);
+    // Si el backend ya expone ratingAvg y ratingCount, úsalos.
+    if (baseCount > 0) return { avg: baseAvg, count: baseCount };
+    // Si no, calcula del arreglo reviews.
+    const localAvg = avgFromReviews(reviews);
+    return { avg: localAvg, count: reviews.length };
+  }, [p?.ratingAvg, p?.ratingCount, reviews]);
+
   const share = async () => {
     const url = window.location.href;
     const title = p?.nombre || 'Producto';
@@ -165,6 +214,42 @@ export default function PublicProducto() {
     setAddedToCart(true);
     // TODO: lógica real para carrito
     setTimeout(() => setAddedToCart(false), 1800);
+  };
+
+  const submitReview = async (e) => {
+    e.preventDefault();
+    if (!p?.id) return;
+    const rating = clamp(Number(newReview.rating || 0), 1, 5);
+    const comment = (newReview.comment || '').trim();
+    if (!rating) { alert('Selecciona una calificación de 1 a 5 estrellas.'); return; }
+    if (comment.length < 4) { alert('Escribe un comentario (mínimo 4 caracteres).'); return; }
+
+    const payload = {
+      rating,
+      comment,
+      authorName: (newReview.authorName || '').trim() || null,
+      authorEmail: (newReview.authorEmail || '').trim() || null,
+    };
+
+    try {
+      setSubmitting(true);
+      const r = await fetch(`${API}/api/v1/productos/${p.id}/reviews`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!r.ok) throw new Error((await r.text().catch(()=>'')) || 'No se pudo enviar tu reseña.');
+
+      const created = await r.json();
+      // Optimista: agrega arriba y limpia formulario
+      setReviews((prev) => [created, ...prev]);
+      setNewReview({ rating: 0, comment: '', authorName: '', authorEmail: '' });
+      alert('¡Gracias! Tu reseña se ha publicado.');
+    } catch (e2) {
+      alert(e2?.message || 'No se pudo enviar la reseña.');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   /* =========== Loaders / Not found =========== */
@@ -381,15 +466,15 @@ export default function PublicProducto() {
 
               <h1 style={{ margin: '2px 0 8px', fontWeight: 800, fontSize: 28, lineHeight: 1.15 }}>{p.nombre}</h1>
 
-              {/* Rating */}
+              {/* Rating (avg + count) */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
                 <div style={{ display: 'flex', color: '#f59e0b' }}>
                   {[...Array(5)].map((_, i) => (
-                    <FiStar key={i} fill={i < Math.round(p.ratingAvg || 0) ? '#f59e0b' : 'none'} />
+                    <FiStar key={i} fill={i < Math.round(currentAvg.avg || 0) ? '#f59e0b' : 'none'} />
                   ))}
                 </div>
                 <span style={{ fontSize: 13, color: '#6b7280' }}>
-                  {Number(p.ratingAvg || 0).toFixed(1)} · {p.ratingCount || 0} reseñas
+                  {Number(currentAvg.avg || 0).toFixed(1)} · {currentAvg.count || 0} reseñas
                 </span>
               </div>
 
@@ -498,6 +583,93 @@ export default function PublicProducto() {
                 </div>
               </div>
             )}
+
+            {/* Reseñas y calificaciones */}
+            <div style={cardBox}>
+              <h3 style={{ ...cardTitle, display: 'flex', alignItems: 'center', gap: 8 }}>
+                Opiniones de clientes
+                <span style={{ fontSize: 12, color: '#6b7280', fontWeight: 600 }}>
+                  ({currentAvg.count || 0})
+                </span>
+              </h3>
+
+              {/* Formulario */}
+              <form onSubmit={submitReview} style={{
+                border: '1px solid #e5e7eb', borderRadius: 12, padding: 12, marginBottom: 16, background: '#fafafa'
+              }}>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center' }}>
+                  <label style={{ fontWeight: 700 }}>Tu calificación:</label>
+                  <StarInput
+                    value={newReview.rating}
+                    onChange={(v) => setNewReview((prev) => ({ ...prev, rating: v }))}
+                  />
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px,1fr))', gap: 10, marginTop: 10 }}>
+                  <input
+                    placeholder="Tu nombre (opcional)"
+                    value={newReview.authorName}
+                    onChange={(e) => setNewReview((prev) => ({ ...prev, authorName: e.target.value }))}
+                    style={textInput}
+                  />
+                  <input
+                    type="email"
+                    placeholder="Tu email (opcional)"
+                    value={newReview.authorEmail}
+                    onChange={(e) => setNewReview((prev) => ({ ...prev, authorEmail: e.target.value }))}
+                    style={textInput}
+                  />
+                </div>
+
+                <textarea
+                  placeholder="Escribe tu experiencia con este producto…"
+                  value={newReview.comment}
+                  onChange={(e) => setNewReview((prev) => ({ ...prev, comment: e.target.value }))}
+                  rows={4}
+                  style={{ ...textInput, marginTop: 10, resize: 'vertical' }}
+                />
+
+                <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 10 }}>
+                  <button type="submit" disabled={submitting} style={{
+                    padding: '10px 14px', borderRadius: 10, border: 'none',
+                    background: submitting ? '#9ca3af' : grad('#10b981', '#059669'),
+                    color: '#fff', fontWeight: 800, cursor: submitting ? 'not-allowed' : 'pointer'
+                  }}>
+                    {submitting ? 'Enviando…' : 'Publicar reseña'}
+                  </button>
+                </div>
+              </form>
+
+              {/* Lista de reseñas */}
+              {revLoading ? (
+                <div className="muted">Cargando reseñas…</div>
+              ) : revError ? (
+                <div className="alert-error" role="alert" style={{ color: '#b91c1c' }}>{revError}</div>
+              ) : reviews.length === 0 ? (
+                <div style={{ color: '#6b7280' }}>Aún no hay reseñas. ¡Sé el primero en opinar!</div>
+              ) : (
+                <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'grid', gap: 12 }}>
+                  {reviews.map((r) => (
+                    <li key={r.id} style={{
+                      border: '1px solid #e5e7eb', borderRadius: 12, padding: 12, background: '#fff'
+                    }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <div style={{ display: 'flex', color: '#f59e0b' }}>
+                            {[...Array(5)].map((_, i) => (
+                              <FiStar key={i} fill={i < Number(r.rating || 0) ? '#f59e0b' : 'none'} />
+                            ))}
+                          </div>
+                          <strong>{r.authorName || 'Anónimo'}</strong>
+                        </div>
+                        <small style={{ color: '#6b7280' }}>{formatDate(r.createdAt)}</small>
+                      </div>
+                      {r.comment && <p style={{ margin: '6px 0 0', color: '#374151', lineHeight: 1.5 }}>{r.comment}</p>}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
 
             {/* Vendedor */}
             <div style={cardBox}>
@@ -614,6 +786,14 @@ const miniPill = (bg) => ({
   borderRadius: 10, background: bg, color: '#fff', textDecoration: 'none',
   fontWeight: 900, boxShadow: '0 6px 16px rgba(0,0,0,.12)'
 });
+const textInput = {
+  width: '100%',
+  padding: '10px 12px',
+  borderRadius: 10,
+  border: '1px solid #e5e7eb',
+  outline: 'none',
+  background: '#fff'
+};
 
 function KV({ k, v }) {
   return (
@@ -639,6 +819,38 @@ function Benefit({ icon, title, subtitle }) {
         <div style={{ fontWeight: 800 }}>{title}</div>
         <div style={{ fontSize: 13, color: '#6b7280' }}>{subtitle}</div>
       </div>
+    </div>
+  );
+}
+
+/* ======= Input de estrellas ======= */
+function StarInput({ value = 0, onChange }) {
+  const [hover, setHover] = useState(0);
+  const v = hover || value || 0;
+
+  return (
+    <div style={{ display: 'inline-flex', gap: 4, cursor: 'pointer' }}
+         onMouseLeave={() => setHover(0)} aria-label="Selecciona tu calificación">
+      {[1,2,3,4,5].map((n) => (
+        <button
+          key={n}
+          type="button"
+          onMouseEnter={() => setHover(n)}
+          onClick={() => onChange?.(n)}
+          style={{
+            width: 28, height: 28, borderRadius: 8,
+            border: '1px solid #e5e7eb', background: '#fff',
+            display: 'grid', placeItems: 'center'
+          }}
+          title={`${n} estrella${n>1?'s':''}`}
+          aria-pressed={value === n}
+        >
+          <FiStar fill={n <= v ? '#f59e0b' : 'none'} color="#f59e0b" />
+        </button>
+      ))}
+      <span style={{ marginLeft: 8, color: '#6b7280', fontWeight: 700 }}>
+        {v ? `${v}/5` : ''}
+      </span>
     </div>
   );
 }

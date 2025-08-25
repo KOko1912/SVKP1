@@ -1,3 +1,4 @@
+// backend/prisma/schema.prisma
 generator client {
   provider = "prisma-client-js"
 }
@@ -20,11 +21,9 @@ model Usuario {
   suscripciones  Json?
   fechaCreacion  DateTime @default(now())
 
-  // Flujo vendedor
   vendedorSolicitado Boolean @default(false)
   vendedor           Boolean @default(false)
 
-  // Relaciones
   resetTokens PasswordResetToken[]
   solicitudes SolicitudVendedor[]
   tienda      Tienda?
@@ -136,16 +135,20 @@ model Tienda {
   seoDescripcion String?
 
   // Pública / branding
-  slug        String?        // slug amigable
-  publicUuid  String? @unique
-  isPublished Boolean @default(false)
+  slug        String?
+  publicUuid  String?   @unique
+  isPublished Boolean   @default(false)
   publishedAt DateTime?
 
-  // Campos usados en rutas tienda
-  moneda   String? @default("MXN")
+  // Rutas tienda
+  moneda   String?  @default("MXN")
   ciudad   String?
   pais     String?
   whatsapp String?
+
+  // 🔎 NUEVOS para búsqueda/refs
+  skuRef   String?   @db.VarChar(64)
+  aliases  String[]  @default([])
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -157,6 +160,8 @@ model Tienda {
   @@index([usuarioId])
   @@index([slug])
   @@index([isPublished])
+  @@index([nombre])
+  @@index([skuRef])
 }
 
 /* ===========================
@@ -194,7 +199,6 @@ model Producto {
   tiendaId Int
   tienda   Tienda @relation(fields: [tiendaId], references: [id], onDelete: Cascade)
 
-  // Básicos
   slug        String
   nombre      String
   descripcion String?
@@ -203,25 +207,21 @@ model Producto {
   visible     Boolean        @default(true)
   destacado   Boolean        @default(false)
 
-  // Comercio
   sku       String?
   gtin      String?
   marca     String?
   condicion String?
 
-  // Precios (brutos)
   precio            Decimal? @db.Decimal(10, 2)
   precioComparativo Decimal? @db.Decimal(10, 2)
   costo             Decimal? @db.Decimal(10, 2)
   descuentoPct      Int?
 
-  // Métricas
   vistas      Int   @default(0)
   ventas      Int   @default(0)
   ratingAvg   Float @default(0)
   ratingCount Int   @default(0)
 
-  // Envío (si físico)
   pesoGramos      Int?
   altoCm          Decimal? @db.Decimal(10, 2)
   anchoCm         Decimal? @db.Decimal(10, 2)
@@ -229,16 +229,13 @@ model Producto {
   claseEnvio      String?
   diasPreparacion Int?
 
-  // Políticas / Digital
   politicaDevolucion String?
   digitalUrl         String?
   licenciamiento     Json?
 
-  // Publicación / borrado lógico
   publishedAt DateTime?
   deletedAt   DateTime?
 
-  // Relaciones
   imagenes   ProductoImagen[]
   variantes  Variante[]
   inventario Inventario?
@@ -293,7 +290,7 @@ model Variante {
   precioComparativo Decimal? @db.Decimal(10, 2)
   costo             Decimal? @db.Decimal(10, 2)
 
-  opciones Json? // p.ej {talla:"M", color:"Rojo"}
+  opciones Json?
 
   inventario Inventario?
   imagenes   VarianteImagen[]
@@ -325,7 +322,6 @@ model VarianteImagen {
 model Inventario {
   id Int @id @default(autoincrement())
 
-  // Uno u otro (producto simple o variante)
   productoId Int?
   producto   Producto? @relation(fields: [productoId], references: [id], onDelete: Cascade)
   varianteId Int?
@@ -402,7 +398,7 @@ model ProductoCategoria {
 }
 
 /* ===========================
-   RESEÑAS / CALIFICACIONES
+   RESEÑAS
    =========================== */
 
 model Resena {

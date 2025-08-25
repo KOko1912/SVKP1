@@ -1,7 +1,9 @@
+// frontend/src/pages/Usuario/Configuracion.jsx
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import NavBarUsuario from './NavBarUsuario';
 import { FiLock, FiChevronDown, FiChevronUp, FiEye, FiEyeOff } from 'react-icons/fi';
+import './usuario.css';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
@@ -84,14 +86,14 @@ export default function ConfiguracionUsuario() {
   if (!usuario) return null;
 
   return (
-    <>
+    <div className="page page--dark-svk">
       <NavBarUsuario />
 
-      <div className="container-svk" style={{ maxWidth: 720 }}>
+      <main className="container-svk" style={{ maxWidth: 720 }}>
         <h2 className="title-svk" style={{ marginBottom: 12 }}>Configuración</h2>
 
         {/* Seguridad / Contraseña */}
-        <div className="card-svk" style={{ marginTop: 12 }}>
+        <section className="card-svk" style={{ marginTop: 12 }}>
           <div className="block-title" style={{ marginBottom: 0 }}>
             <span className="icon"><FiLock /></span>
             <h2>Seguridad y contraseña</h2>
@@ -119,6 +121,7 @@ export default function ConfiguracionUsuario() {
                   placeholder="Contraseña actual"
                   value={actual}
                   onChange={(e) => setActual(e.target.value)}
+                  autoComplete="current-password"
                 />
                 <button
                   type="button"
@@ -136,6 +139,7 @@ export default function ConfiguracionUsuario() {
                   placeholder="Nueva contraseña"
                   value={nueva}
                   onChange={(e) => setNueva(e.target.value)}
+                  autoComplete="new-password"
                 />
                 <button
                   type="button"
@@ -153,6 +157,7 @@ export default function ConfiguracionUsuario() {
                   placeholder="Confirmar nueva contraseña"
                   value={confirmar}
                   onChange={(e) => setConfirmar(e.target.value)}
+                  autoComplete="new-password"
                 />
                 <button
                   type="button"
@@ -165,7 +170,7 @@ export default function ConfiguracionUsuario() {
               </div>
 
               <div style={{ display: 'flex', gap: 8, marginTop: 4, flexWrap: 'wrap' }}>
-                <button className="btn btn-primary" disabled={loading}>
+                <button className="btn btn-primary" disabled={loading} type="submit">
                   {loading ? 'Guardando…' : 'Actualizar contraseña'}
                 </button>
                 <button
@@ -179,9 +184,13 @@ export default function ConfiguracionUsuario() {
             </form>
           )}
 
-          {msg && <div className="note" style={{ marginTop: 12 }}>{msg}</div>}
-        </div>
-      </div>
-    </>
+          {msg && (
+            <div className="note" style={{ marginTop: 12 }} aria-live="polite">
+              {msg}
+            </div>
+          )}
+        </section>
+      </main>
+    </div>
   );
 }

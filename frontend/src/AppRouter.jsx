@@ -6,6 +6,7 @@ import App from './App';
 // Público
 // ===============================
 import PublicProducto from './pages/Public/PublicProducto';
+import SVKT from './pages/SVKT'; // Vista pública de tienda
 
 // ===============================
 // Auth (acceso público)
@@ -80,6 +81,9 @@ export default function AppRouter() {
 
       {/** Detalle público de producto por UUID (compatible con HashRouter: /#/producto/:uuid) */}
       <Route path="/producto/:uuid" element={<PublicProducto />} />
+
+      {/** Vista pública de tienda (compatible con HashRouter: /#/t/:slug) */}
+      <Route path="/t/:slug" element={<SVKT />} />
 
       <Route path="/login" element={<Login />} />
       <Route path="/registro" element={<Registro />} />
@@ -187,7 +191,7 @@ export default function AppRouter() {
           </RequireAuth>
         }
       />
-      {/*
+      {/* 
       <Route
         path="/vendedor/productos/nuevo"
         element={

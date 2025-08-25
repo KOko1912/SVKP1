@@ -1,4 +1,3 @@
-// backend/src/modules/categorias/routes.js
 const express = require('express');
 const prisma = require('../../config/db');
 
@@ -32,15 +31,29 @@ async function uniqueSlugForCategory(tiendaId, nombre, excludeId) {
   }
   return slug;
 }
+const toInt = (v) => (Number.isFinite(+v) ? Math.trunc(+v) : null);
 
 /* ========== LISTAR ========== */
-// GET /api/v1/categorias?tiendaId=123
+// GET /api/v1/categorias?tiendaId=123 | ?slug=mi-tienda
 router.get('/', async (req, res) => {
   try {
-    const userId = getUserId(req);
-    const tienda = await prisma.tienda.findFirst({ where: { usuarioId: userId } });
-    const tiendaId = Number(req.query.tiendaId || tienda?.id);
-    if (!tiendaId) return res.json([]);
+    let tiendaId = toInt(req.query.tiendaId);
+    const slug = (req.query.slug || '').toString().trim().toLowerCase();
+
+    if (!tiendaId && slug) {
+      const t = await prisma.tienda.findFirst({ where: { slug }, select: { id: true } });
+      if (t) tiendaId = t.id;
+    }
+
+    if (!tiendaId) {
+      const userId = getUserId(req);
+      if (userId) {
+        const t = await prisma.tienda.findFirst({ where: { usuarioId: userId }, select: { id: true } });
+        if (t) tiendaId = t.id;
+      }
+    }
+
+    if (!tiendaId) return res.json([]); // sin tienda => vacío
 
     const rows = await prisma.categoria.findMany({
       where: { tiendaId },
@@ -115,7 +128,6 @@ router.patch('/:id', async (req, res) => {
 router.delete('/:id', async (req, res) => {
   try {
     const id = Number(req.params.id);
-    // Eliminar relaciones de producto-categoría antes
     await prisma.productoCategoria.deleteMany({ where: { categoriaId: id } }).catch(() => {});
     await prisma.categoria.delete({ where: { id } });
     res.json({ ok: true, id });

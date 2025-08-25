@@ -1,4 +1,3 @@
-// backend/src/modules/productos/routes.js
 const express = require('express');
 const { buildAdvancedPatch } = require('./opcionesavanzadas');
 const prisma = require('../../config/db');
@@ -99,22 +98,36 @@ function inferTipo(payload) {
   return 'SIMPLE';
 }
 
-/* ========== LISTADO BÁSICO (interno) ========== */
-// GET /api/v1/productos
+/* ========== LISTADO (público o protegido) ========== */
+// GET /api/v1/productos?tiendaId=123 | ?slug=mi-tienda | (protegido por x-user-id)
 router.get('/', async (req, res) => {
   try {
-    const userId = getUserId(req);
-    const tienda = await prisma.tienda.findUnique({ where: { usuarioId: userId } });
-    const tiendaId = Number(req.query.tiendaId || tienda?.id);
-    if (!tiendaId) return res.json([]);
+    // Preferir tiendaId o slug (público)
+    let tiendaId = toInt(req.query.tiendaId);
+    const slug = (req.query.slug || '').toString().trim().toLowerCase();
+
+    if (!tiendaId && slug) {
+      const t = await prisma.tienda.findFirst({ where: { slug }, select: { id: true } });
+      if (t) tiendaId = t.id;
+    }
+
+    // Si no vino ninguno, usar userId (protegido)
+    if (!tiendaId) {
+      const userId = getUserId(req);
+      if (userId) {
+        const t = await prisma.tienda.findUnique({ where: { usuarioId: userId }, select: { id: true } });
+        if (t) tiendaId = t.id;
+      }
+    }
+
+    if (!tiendaId) return res.json([]); // sin tienda => listado vacío (no romper)
 
     const { q = '', estado = '', categoria = '' } = req.query;
 
-    // 🔧 Si NO se piden archivados, ocultamos soft-deleted
-    // Si se piden ARCHIVED, mostramos también los que tienen deletedAt != null
-    const where = { tiendaId };
-    if (estado !== 'ARCHIVED') where.deletedAt = null;
+    // por defecto ocultamos soft-deleted
+    const where = { tiendaId, deletedAt: null };
     if (estado) where.estado = String(estado);
+    if (estado === 'ARCHIVED') delete where.deletedAt;
 
     if (q) {
       const term = String(q).trim();
@@ -178,7 +191,6 @@ router.get('/:id', async (req, res) => {
 });
 
 /* ========== CREAR (unificado) ========== */
-// POST /api/v1/productos
 router.post('/', async (req, res) => {
   try {
     const userId  = getUserId(req);
@@ -196,7 +208,7 @@ router.post('/', async (req, res) => {
       diasPreparacion = null, politicaDevolucion = null,
       digitalUrl = null, licenciamiento = null,
       categoriasIds = [], imagenes = [],
-      inventario = null,   // para SIMPLE
+      inventario = null,   // SIMPLE
       variantes = [],      // manual
       opciones = [],       // autogeneración
       servicioInfo = null, bundleIncluye = '',
@@ -205,7 +217,7 @@ router.post('/', async (req, res) => {
 
     if (!isNonEmptyStr(nombre)) return res.status(400).json({ error: 'Nombre requerido' });
 
-    // validar categorías de la tienda
+    // validar categorías
     const cats = Array.isArray(categoriasIds) ? categoriasIds.map(Number).filter(Number.isFinite) : [];
     if (cats.length) {
       const valid = await prisma.categoria.findMany({ where: { id: { in: cats }, tiendaId } });
@@ -215,7 +227,7 @@ router.post('/', async (req, res) => {
     // decidir tipo final
     let finalTipo = (tipo && tipo !== 'AUTO') ? tipo : inferTipo({ variantes, opciones, servicioInfo, bundleIncluye, digitalUrl });
 
-    // si no hay variantes manuales pero hay opciones ⇒ generamos
+    // generar variantes por opciones si no hay manuales
     let finalVariantes = Array.isArray(variantes) ? variantes.slice() : [];
     if ((!finalVariantes.length) && Array.isArray(opciones) && opciones.length) {
       const combos = genCombos(opciones).slice(0, 200);
@@ -316,7 +328,6 @@ router.post('/', async (req, res) => {
 });
 
 /* ========== EDITAR ========== */
-// PATCH /api/v1/productos/:id
 router.patch('/:id', async (req, res) => {
   try {
     const id = Number(req.params.id);
@@ -347,7 +358,7 @@ router.patch('/:id', async (req, res) => {
       updatedAt: new Date(),
     };
 
-    // 👉 APLICA AQUÍ todas las “Opciones avanzadas”
+    // Opciones avanzadas
     Object.assign(data, buildAdvancedPatch(req.body, { producto: p }));
 
     if (nombre !== undefined) {
@@ -406,7 +417,7 @@ router.patch('/:id', async (req, res) => {
       }
     }
 
-    // Atributos flexibles
+    // Atributos
     if (Array.isArray(atributos)) {
       tx.push(prisma.productoAtributo.deleteMany({ where: { productoId: id } }));
       if (atributos.length) {
@@ -468,10 +479,7 @@ router.patch('/:id', async (req, res) => {
   }
 });
 
-/* ========== ELIMINAR (lógico o permanente) ========== */
-// DELETE /api/v1/productos/:id
-// - Soft delete por defecto (marca ARCHIVED, visible=false, deletedAt=now)
-// - Hard delete si viene ?force=1 (borra dependencias y el registro)
+/* ========== ELIMINAR ========== */
 router.delete('/:id', async (req, res) => {
   try {
     const id = Number(req.params.id);
@@ -480,28 +488,23 @@ router.delete('/:id', async (req, res) => {
 
     const force = String(req.query.force || '') === '1';
     if (force) {
-      // Recolectar variantes
       const vars = await prisma.variante.findMany({ where: { productoId: id }, select: { id: true } });
       const varIds = vars.map(v => v.id);
 
       await prisma.$transaction([
-        // hijos de variantes
         prisma.varianteImagen.deleteMany({ where: { varianteId: { in: varIds } } }),
         prisma.inventario.deleteMany({ where: { varianteId: { in: varIds } } }),
         prisma.variante.deleteMany({ where: { productoId: id } }),
-        // hijos del producto
         prisma.productoImagen.deleteMany({ where: { productoId: id } }),
         prisma.productoCategoria.deleteMany({ where: { productoId: id } }),
         prisma.productoAtributo.deleteMany({ where: { productoId: id } }),
         prisma.inventario.deleteMany({ where: { productoId: id } }),
-        // por último, el producto
         prisma.producto.delete({ where: { id } }),
       ], { isolationLevel: 'ReadCommitted' });
 
       return res.json({ ok: true, id, hardDeleted: true });
     }
 
-    // Soft delete
     await prisma.producto.update({
       where: { id },
       data: { deletedAt: new Date(), visible: false, estado: 'ARCHIVED' },
@@ -514,7 +517,6 @@ router.delete('/:id', async (req, res) => {
 });
 
 /* ========== VARIANTES ========== */
-// POST /api/v1/productos/:id/variantes
 router.post('/:id/variantes', async (req, res) => {
   try {
     const productoId = Number(req.params.id);
@@ -556,7 +558,6 @@ router.post('/:id/variantes', async (req, res) => {
   }
 });
 
-// PATCH /api/v1/productos/variantes/:varianteId
 router.patch('/variantes/:varianteId', async (req, res) => {
   try {
     const varianteId = Number(req.params.varianteId);
@@ -576,7 +577,6 @@ router.patch('/variantes/:varianteId', async (req, res) => {
       }
     }
 
-    // Inventario de variante — upsert manual
     if (inventario) {
       const inv = await prisma.inventario.findFirst({ where: { varianteId } });
       if (inv) {
@@ -621,7 +621,6 @@ router.patch('/variantes/:varianteId', async (req, res) => {
   }
 });
 
-// DELETE /api/v1/productos/variantes/:varianteId
 router.delete('/variantes/:varianteId', async (req, res) => {
   try {
     const varianteId = Number(req.params.varianteId);
@@ -634,7 +633,6 @@ router.delete('/variantes/:varianteId', async (req, res) => {
 });
 
 /* ========== DIGITAL rápido ========== */
-// POST /api/v1/productos/:id/digital
 router.post('/:id/digital', async (req, res) => {
   try {
     const id = Number(req.params.id);
@@ -652,7 +650,6 @@ router.post('/:id/digital', async (req, res) => {
 });
 
 /* ========== Duplicar / Restaurar / Bulk ========== */
-// POST /api/v1/productos/:id/duplicate
 router.post('/:id/duplicate', async (req, res) => {
   try {
     const id = Number(req.params.id);
@@ -716,7 +713,6 @@ router.post('/:id/duplicate', async (req, res) => {
   }
 });
 
-// POST /api/v1/productos/:id/restore
 router.post('/:id/restore', async (req, res) => {
   try {
     const id = Number(req.params.id);
@@ -732,7 +728,6 @@ router.post('/:id/restore', async (req, res) => {
   }
 });
 
-// POST /api/v1/productos/bulk  { action, ids: [..], value? }
 router.post('/bulk', async (req, res) => {
   try {
     const { action, ids = [], value } = req.body || {};

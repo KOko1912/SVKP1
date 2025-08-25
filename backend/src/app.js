@@ -71,17 +71,19 @@ const authRoutes            = require('./modules/auth/routes');
 const usuariosRoutes        = require('./modules/usuarios/routes');
 const adminRoutes           = require('./modules/admin/routes');
 const sdkadminRoutes        = require('./modules/sdkadmin/routes');
-const tiendaRoutes          = require('./modules/tienda/routes');
+const tiendaRoutes          = require('./modules/tienda/routes');   // singular (gestión propia)
+const tiendasRoutes         = require('./modules/tiendas/routes');  // plural (búsqueda pública)
 const productosRoutes       = require('./modules/productos/routes');
 const categoriasRoutes      = require('./modules/categorias/routes');
 const uploadProductoRoutes  = require('./modules/productos/upload');
 
-app.use('/api/auth',         authRoutes);       // login
-app.use('/api/usuarios',     usuariosRoutes);
-app.use('/api/admin',        adminRoutes);
-app.use('/api/sdkadmin',     sdkadminRoutes);
-app.use('/api/tienda',       tiendaRoutes);
-app.use('/api/v1/productos', productosRoutes);
+app.use('/api/auth',          authRoutes);       // login
+app.use('/api/usuarios',      usuariosRoutes);
+app.use('/api/admin',         adminRoutes);
+app.use('/api/sdkadmin',      sdkadminRoutes);
+app.use('/api/tienda',        tiendaRoutes);     // CRUD de mi tienda, publicar, uploads
+app.use('/api/tiendas',       tiendasRoutes);    // 🔎 /api/tiendas/search
+app.use('/api/v1/productos',  productosRoutes);
 app.use('/api/v1/categorias', categoriasRoutes);
 app.use('/api/v1/upload',     uploadProductoRoutes);
 

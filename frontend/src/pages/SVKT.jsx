@@ -1,42 +1,61 @@
-// frontend/src/pages/Vendedor/Pagina.jsx
-import React, { Fragment, useEffect, useMemo, useRef, useState } from "react";
-import Nabvendedor from "./Nabvendedor";
-import "./Vendedor.css";
-import "./PaginaGrid.css";
+import React, { Fragment, useEffect, useRef, useState } from "react";
+import "./Vendedor/Vendedor.css";
+import "./Vendedor/PaginaGrid.css";
 import {
   FiFacebook, FiInstagram, FiYoutube, FiPhone, FiMail, FiClock,
-  FiMapPin, FiExternalLink, FiMessageCircle, FiShoppingBag, FiStar
+  FiMapPin, FiExternalLink, FiMessageCircle, FiShoppingBag, FiStar, FiEye
 } from "react-icons/fi";
-import Swal from "sweetalert2";
+import { useParams, Link } from "react-router-dom";
 
-const API = import.meta.env.VITE_API_URL || "http://localhost:5000";
+const API   = import.meta.env.VITE_API_URL    || "http://localhost:5000";
 const FILES = import.meta.env.VITE_FILES_BASE || API;
 
-/* ===================== Helpers ===================== */
+/* =============== Helpers =============== */
 const grad = (from, to) => `linear-gradient(135deg, ${from}, ${to})`;
+
 const toPublicUrl = (u) => {
   if (!u) return "";
   if (Array.isArray(u)) return toPublicUrl(u.find(Boolean));
   if (typeof u === "object")
     return toPublicUrl(u.url || u.path || u.src || u.href || u.filepath || u.location || u.image || u.thumbnail || "");
-  const s = String(u).trim();
-  if (!s) return "";
+  const raw = String(u).trim();
+  if (!raw) return "";
+  const s = raw.replace(/\\/g, "/"); // normaliza backslashes
   if (/^https?:\/\//i.test(s)) return s;
   if (s.startsWith("/uploads") || s.startsWith("/TiendaUploads") || s.startsWith("/files")) return `${FILES}${s}`;
-  return s;
+  return s.startsWith("/") ? `${FILES}${s}` : `${FILES}/${s}`;
 };
-const slugify = (str = "") =>
-  String(str)
-    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/(^-|-$)+/g, "")
-    .slice(0, 60);
 
-export default function Pagina() {
-  const usuario = useMemo(() => JSON.parse(localStorage.getItem("usuario") || "{}"), []);
-  const headers = { "x-user-id": usuario?.id };
+// Toma principal o primera imagen válida (soporta objetos/strings)
+const primaryImageFrom = (imagenes = []) => {
+  if (!Array.isArray(imagenes) || !imagenes.length) return "";
+  const get = (o) => o?.url || o?.path || o?.src || o?.location || o?.image || o?.thumbnail || "";
+  const principal = imagenes.find(x => typeof x === "object" && x?.isPrincipal);
+  if (principal) return get(principal);
+  for (const it of imagenes) {
+    if (typeof it === "string" && it) return it;
+    const v = get(it);
+    if (v) return v;
+  }
+  return "";
+};
 
+// Fetch robusto (si el backend devuelve HTML en error)
+async function getJsonOrThrow(url) {
+  const r = await fetch(url);
+  const text = await r.text();
+  let data = null;
+  try { data = JSON.parse(text); } catch { /* noop */ }
+  if (!r.ok) {
+    const msg = data?.error || data?.message || (`HTTP ${r.status}: ` + (text || "").slice(0,120));
+    throw new Error(msg);
+  }
+  return data ?? {};
+}
+
+/* =============== Página =============== */
+export default function SVKT() {
+  const { slug } = useParams();
   const [tienda, setTienda] = useState(null);
   const [productos, setProductos] = useState([]);
   const [categorias, setCategorias] = useState([]);
@@ -49,185 +68,79 @@ export default function Pagina() {
     return () => document.body.classList.remove("vendor-theme");
   }, []);
 
-  // Propaga tema a variables CSS
+  // Variables CSS de marca
   useEffect(() => {
     if (!tienda?.colorPrincipal) return;
     const { from, to } = extractColors(tienda.colorPrincipal);
     const contrast = bestTextOn(from, to);
     const root = document.documentElement.style;
-
     root.setProperty("--brand-from", from);
     root.setProperty("--brand-to", to);
     root.setProperty("--brand-contrast", contrast);
     root.setProperty("--brand-gradient", grad(from, to));
     root.setProperty("--primary-color", from);
     root.setProperty("--primary-hover", from);
-
     const softHalos =
       `radial-gradient(900px 600px at 0% -10%, ${from}22, transparent 60%),` +
       `radial-gradient(900px 600px at 100% -10%, ${to}22, transparent 60%)`;
-    const pageBg = `${softHalos}, linear-gradient(135deg, ${from}, ${to})`;
-    root.setProperty("--page-bg", pageBg);
+    root.setProperty("--page-bg", `${softHalos}, linear-gradient(135deg, ${from}, ${to})`);
   }, [tienda?.colorPrincipal]);
 
-  // Carga datos del vendedor
+  // Carga pública por slug (endpoint correcto SINGULAR)
   useEffect(() => {
     (async () => {
+      setLoading(true);
+      setError("");
       try {
-        const rt = await fetch(`${API}/api/tienda/me`, { headers });
-        const dt = await rt.json();
-        if (!rt.ok) throw new Error(dt?.message || dt?.error || "No se pudo cargar la tienda");
-        setTienda(dt);
+        const tiendaData = await getJsonOrThrow(`${API}/api/tienda/public/${encodeURIComponent(slug)}`);
+        setTienda(tiendaData);
 
-        const rp = await fetch(`${API}/api/v1/productos?tiendaId=${dt.id}`, { headers });
-        const dp = await rp.json();
-        setProductos(Array.isArray(dp?.items) ? dp.items : Array.isArray(dp) ? dp : []);
+        try {
+          const dp = await getJsonOrThrow(`${API}/api/v1/productos?tiendaId=${tiendaData.id}`);
+          setProductos(Array.isArray(dp?.items) ? dp.items : Array.isArray(dp) ? dp : []);
+        } catch { setProductos([]); }
 
-        const rc = await fetch(`${API}/api/v1/categorias?tiendaId=${dt.id}`, { headers });
-        const dc = await rc.json();
-        setCategorias(Array.isArray(dc) ? dc : []);
+        try {
+          const dc = await getJsonOrThrow(`${API}/api/v1/categorias?tiendaId=${tiendaData.id}`);
+          setCategorias(Array.isArray(dc) ? dc : []);
+        } catch { setCategorias([]); }
       } catch (e) {
-        setError(e.message || String(e));
+        setError(e.message || "No se encontró la tienda");
       } finally {
         setLoading(false);
       }
     })();
-  }, []);
+  }, [slug]);
 
-  /* ===================== Acciones: Publicar / Ver / Copiar ===================== */
-  const computePublicKey  = (t) => t?.slug || t?.publicUuid || t?.uuid || t?.id;
-  const computePublicPath = (t) => `/t/${computePublicKey(t)}`;
-  const buildPublicUrl    = (t) => `${window.location.origin}/#${computePublicPath(t)}`;
-
-  async function publishStore(t) {
-    try {
-      if (!t) throw new Error("No hay tienda cargada");
-      if (t?.isPublished && t?.slug) {
-        throw new Error("La tienda ya fue publicada y el slug no se puede cambiar.");
-      }
-
-      const { value: desiredSlug } = await Swal.fire({
-        title: "Publicar tienda",
-        input: "text",
-        inputLabel: "Slug público (puedes personalizarlo)",
-        inputValue: t.slug || (t.nombre ? slugify(t.nombre) : "") || "",
-        inputPlaceholder: "mi-tienda-bonita",
-        showCancelButton: true,
-        confirmButtonText: "Publicar",
-        cancelButtonText: "Cancelar",
-        allowOutsideClick: false
-      });
-      if (desiredSlug === undefined) return; // cancelado
-
-      const resp = await fetch(`${API}/api/tienda/publicar`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json", "x-user-id": t.usuarioId || usuario?.id },
-        body: JSON.stringify({ publish: true, slug: desiredSlug || t.slug || t.nombre || "" })
-      });
-
-      const raw = await resp.text();
-      let data;
-      try { data = JSON.parse(raw); } catch {
-        throw new Error(`HTTP ${resp.status}: ${raw?.slice(0, 120) || 'Respuesta no JSON'}`);
-      }
-      if (!resp.ok) throw new Error(data?.error || data?.message || "No se pudo publicar");
-
-      setTienda((prev) => ({
-        ...prev,
-        slug: data?.tienda?.slug || prev?.slug,
-        isPublished: true,
-        publishedAt: data?.tienda?.publishedAt
-      }));
-
-      await Swal.fire({ icon: "success", title: "¡Tienda publicada!", timer: 1400, showConfirmButton: false });
-    } catch (e) {
-      Swal.fire({ icon: "error", title: "Error al publicar", text: e.message || String(e) });
-    }
-  }
-
-  function openPublicView(t) {
-    if (!t) return;
-    if (!t?.isPublished || !computePublicKey(t)) {
-      Swal.fire({ icon: "info", title: "Aún sin publicar", text: "Publica tu tienda para ver la URL pública." });
-      return;
-    }
-    window.open(buildPublicUrl(t), "_blank", "noopener,noreferrer");
-  }
-
-  async function copyPublicLink(t) {
-    try {
-      if (!t?.isPublished || !computePublicKey(t)) {
-        throw new Error("Publica la tienda primero para obtener tu enlace.");
-      }
-      const url = buildPublicUrl(t);
-      await navigator.clipboard.writeText(url);
-      Swal.fire({ icon: "success", title: "Enlace copiado", text: url, timer: 1500, showConfirmButton: false });
-    } catch (e) {
-      Swal.fire({ icon: "error", title: "No se pudo copiar", text: e.message || String(e) });
-    }
-  }
-
-  /* ===================== Render principal ===================== */
-  if (loading) return (
-    <div className="vendedor-container">
-      <Nabvendedor />
-      <div className="loading-screen">
-        <div className="loading-spinner" />
-        <div>Cargando tienda...</div>
+  if (loading) {
+    return (
+      <div className="vendedor-container">
+        <div className="loading-screen">
+          <div className="loading-spinner" />
+          <div>Cargando tienda...</div>
+        </div>
       </div>
-    </div>
-  );
+    );
+  }
 
-  if (error) return (
-    <div className="vendedor-container">
-      <Nabvendedor />
-      <div className="error-message">Error: {error}</div>
-    </div>
-  );
+  if (error) {
+    return (
+      <div className="vendedor-container">
+        <div className="error-message">Error: {error}</div>
+      </div>
+    );
+  }
 
   const blocks = tienda?.homeLayout?.blocks;
 
   return (
     <div className="vendedor-container">
-      <Nabvendedor />
-
-      {/* Barra de publicación / compartir */}
-      {tienda && (
-        <div style={{
-          display: "flex", gap: "12px", padding: "12px 16px",
-          background: "rgba(255,255,255,0.85)", backdropFilter: "blur(8px)",
-          borderBottom: "1px solid rgba(226,232,240,0.7)", position: "sticky",
-          top: "var(--vendor-safe-top, 0px)", zIndex: 9
-        }}>
-          <button
-            className="btn primary"
-            onClick={() => publishStore(tienda)}
-            disabled={Boolean(tienda?.isPublished && tienda?.slug)}
-            title={tienda?.isPublished ? "Ya publicada" : "Publicar tienda"}
-          >
-            {tienda?.isPublished ? "Ya publicada" : "Publicar tienda"}
-          </button>
-          <button className="btn" onClick={() => openPublicView(tienda)}>
-            Ver vista pública
-          </button>
-          <button className="btn" onClick={() => copyPublicLink(tienda)}>
-            Copiar enlace público
-          </button>
-          <span style={{ marginLeft: "auto", alignSelf: "center", fontSize: 14, opacity: 0.8 }}>
-            {tienda?.isPublished && tienda?.slug
-              ? `URL: ${window.location.origin}/#/t/${tienda.slug}`
-              : "URL: Aún sin publicar"}
-          </span>
-        </div>
+      {Array.isArray(blocks) && blocks.some(b => b.type === "hero") ? null : (
+        <HeroPortada tienda={tienda} />
       )}
 
-      {/* Hero default si el layout no trae hero */}
-      {Array.isArray(blocks) && blocks.some(b => b.type === "hero") ? null : <HeroPortada tienda={tienda} />}
-
-      {/* Ficha + horario */}
       <VendorInfoSection tienda={tienda} />
 
-      {/* Render según layout configurado */}
       {Array.isArray(blocks) && blocks.length > 0 ? (
         <RenderBlocks layout={blocks} productos={productos} categorias={categorias} tienda={tienda} />
       ) : (
@@ -238,23 +151,14 @@ export default function Pagina() {
           )}
           {categorias.map(cat => {
             const items = productos.filter(p =>
-              Array.isArray(p.categorias) &&
-              p.categorias.some(pc => pc.categoriaId === cat.id)
+              Array.isArray(p.categorias) && p.categorias.some(pc => pc.categoriaId === cat.id)
             );
             if (!items.length) return null;
-            return (
-              <RowSection
-                key={cat.id}
-                title={cat.nombre}
-                icon={<FiShoppingBag />}
-                items={items}
-              />
-            );
+            return <RowSection key={cat.id} title={cat.nombre} icon={<FiShoppingBag />} items={items} />;
           })}
         </>
       )}
 
-      {/* Políticas, redes, footer */}
       <StorePolicies tienda={tienda} />
       <SocialLinks redes={tienda?.redes} />
       <ContactFooter tienda={tienda} />
@@ -262,7 +166,7 @@ export default function Pagina() {
   );
 }
 
-/* =================== Render de bloques (homeLayout) =================== */
+/* =============== Render de bloques =============== */
 function RenderBlocks({ layout = [], productos = [], categorias = [], tienda }) {
   if (!Array.isArray(layout) || !layout.length) return null;
   const catName = (id) => categorias.find(c => Number(c.id) === Number(id))?.nombre || "Categoría";
@@ -274,15 +178,7 @@ function RenderBlocks({ layout = [], productos = [], categorias = [], tienda }) 
         const p = b.props || {};
 
         if (type === "hero") {
-          return (
-            <HeroPortada
-              key={b.id}
-              tienda={tienda}
-              align={p.align}
-              showLogo={p.showLogo}
-              showDescripcion={p.showDescripcion}
-            />
-          );
+          return <HeroPortada key={b.id} tienda={tienda} align={p.align} showLogo={p.showLogo} showDescripcion={p.showDescripcion} />;
         }
 
         if (type === "featured") {
@@ -343,17 +239,13 @@ function RenderBlocks({ layout = [], productos = [], categorias = [], tienda }) 
   );
 }
 
-/* =================== Componentes =================== */
-
+/* =============== Componentes =============== */
 function HeroPortada({ tienda, align = "center", showLogo = true, showDescripcion = true }) {
   const portada = toPublicUrl(tienda?.portadaUrl);
   const logo = toPublicUrl(tienda?.logoUrl);
   const colors = extractColors(tienda?.colorPrincipal || grad("#6d28d9", "#c026d3"));
 
-  const justify =
-    align === "left" ? "flex-start" :
-    align === "right" ? "flex-end" :
-    "center";
+  const justify = align === "left" ? "flex-start" : align === "right" ? "flex-end" : "center";
 
   return (
     <header
@@ -382,19 +274,12 @@ function VendorInfoSection({ tienda }) {
     <section className="store-section">
       <div className="store-info-card">
         <div className="store-info-header">
-          <img
-            src={toPublicUrl(tienda?.logoUrl)}
-            alt="Logo"
-            className="store-logo"
-            loading="lazy"
-          />
+          <img src={toPublicUrl(tienda?.logoUrl)} alt="Logo" className="store-logo" loading="lazy" />
           <div>
             <h2>{tienda?.nombre || "Mi Tienda"}</h2>
             <div className="store-categories">
               {tienda?.categoria && <span>{tienda.categoria}</span>}
-              {(tienda?.subcategorias || []).map((cat, i) => (
-                <span key={i}>{cat}</span>
-              ))}
+              {(tienda?.subcategorias || []).map((cat, i) => (<span key={i}>{cat}</span>))}
             </div>
           </div>
         </div>
@@ -404,25 +289,14 @@ function VendorInfoSection({ tienda }) {
 
           <div className="store-contact-buttons">
             {tienda?.telefonoContacto && (
-              <a href={`tel:${tienda.telefonoContacto}`} className="btn primary">
-                <FiPhone /> Llamar
-              </a>
+              <a href={`tel:${tienda.telefonoContacto}`} className="btn primary"><FiPhone /> Llamar</a>
             )}
             {tienda?.telefonoContacto && (
-              <a
-                className="btn"
-                href={`https://wa.me/${String(tienda.telefonoContacto).replace(/[^0-9]/g, "")}`}
-                target="_blank"
-                rel="noreferrer"
-              >
+              <a className="btn" href={`https://wa.me/${String(tienda.telefonoContacto).replace(/[^0-9]/g, "")}`} target="_blank" rel="noreferrer">
                 <FiMessageCircle /> WhatsApp
               </a>
             )}
-            {tienda?.email && (
-              <a href={`mailto:${tienda.email}`} className="btn">
-                <FiMail /> Email
-              </a>
-            )}
+            {tienda?.email && (<a href={`mailto:${tienda.email}`} className="btn"><FiMail /> Email</a>)}
             {tienda?.ubicacionUrl && (
               <a href={tienda.ubicacionUrl} className="btn" target="_blank" rel="noreferrer">
                 <FiMapPin /> Ubicación <FiExternalLink />
@@ -443,7 +317,6 @@ function StoreHours({ horario = {} }) {
     { id: "mie", label: "Miércoles" }, { id: "jue", label: "Jueves" },
     { id: "vie", label: "Viernes" }, { id: "sab", label: "Sábado" }, { id: "dom", label: "Domingo" },
   ];
-
   return (
     <div className="store-hours">
       <h3><FiClock /> Horario de atención</h3>
@@ -489,15 +362,12 @@ function RowSection({ title, icon, items = [] }) {
   };
 
   return (
-    <section
-      className="store-section"
+    <section className="store-section"
       onMouseEnter={() => setShowControls(true)}
       onMouseLeave={() => setShowControls(false)}
     >
       <div className="row-head">
-        <h2 className="section-title">
-          {icon} {title} <span className="item-count">({items.length})</span>
-        </h2>
+        <h2 className="section-title">{icon} {title} <span className="item-count">({items.length})</span></h2>
         {items.length > 0 && (
           <div className={`row-actions ${showControls ? "visible" : ""}`}>
             <button type="button" className="btn-circle" onClick={() => scrollBy(-380)} disabled={!canScrollLeft} aria-label="Scroll left">◀</button>
@@ -507,9 +377,7 @@ function RowSection({ title, icon, items = [] }) {
       </div>
 
       <div ref={ref} className="row-scroll">
-        {items.length > 0 ? (
-          items.map((p) => <PosterCard key={p.id || `p-${p._id}`} p={p} />)
-        ) : (
+        {items.length > 0 ? items.map((p) => <PosterCard key={p.id || `p-${p._id}`} p={p} />) : (
           <div className="empty-state">
             <FiShoppingBag size={48} />
             <p>No hay productos en esta sección</p>
@@ -521,45 +389,92 @@ function RowSection({ title, icon, items = [] }) {
 }
 
 function PosterCard({ p = {} }) {
-  const pickImage = (prod) => {
-    const cand = [
-      prod?.imagenes?.find(x => x?.isPrincipal)?.url,
-      prod?.imagenes?.[0]?.url,
-      prod?.imagen, prod?.thumb, prod?.foto, prod?.cover
-    ];
-    return toPublicUrl(cand.find(Boolean));
-  };
+  const img = toPublicUrl(primaryImageFrom(p?.imagenes)) ||
+              toPublicUrl(p?.imagen || p?.thumb || p?.foto || p?.cover);
 
-  const img = pickImage(p);
-  const categoria = p?.categoria || p?.category || (p?.categorias?.[0]?.nombre) || "";
-  const conPrecio = typeof p?.precio === "number" || (typeof p?.precio === "string" && p.precio.trim() !== "");
+  const categoria =
+    p?.categoria || p?.category || (Array.isArray(p?.categorias) && p.categorias[0]?.nombre) || "";
+
+  const conPrecio =
+    typeof p?.precio === "number" || (typeof p?.precio === "string" && p.precio.trim() !== "");
+
   const desc = (p?.descripcion || p?.detalle || p?.resumen || "").toString().trim();
+
+  const publicHref = p?.slug
+    ? `/producto/${p.slug}`
+    : (p?.uuid ? `/producto/${p.uuid}` : (p?.id ? `/producto/${p.id}` : null));
+
+  const Media = ({ children }) =>
+    publicHref ? (
+      <Link to={publicHref} className="poster-media" aria-label={`Ver ${p?.nombre || "producto"}`}>
+        {children}
+      </Link>
+    ) : (
+      <div className="poster-media">{children}</div>
+    );
 
   return (
     <article className="poster-card">
-      <div className="poster-media">
-        {img ? <img src={img} alt={p?.nombre || "producto"} loading="lazy" /> : (
-          <div className="image-placeholder"><FiShoppingBag size={24} color="#9ca3af" /></div>
+      <Media>
+        {img ? (
+          <img
+            src={img}
+            alt={p?.nombre || "producto"}
+            loading="eager"          // fuerza carga inmediata
+            decoding="async"
+            width={480}
+            height={360}
+            onError={(e) => {
+              e.currentTarget.onerror = null;
+              e.currentTarget.src =
+                "data:image/svg+xml;utf8," +
+                encodeURIComponent(
+                  `<svg xmlns='http://www.w3.org/2000/svg' width='480' height='360'>
+                      <rect width='100%' height='100%' fill='#f3f4f6'/>
+                      <text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' fill='#9ca3af' font-family='sans-serif' font-size='16'>Sin imagen</text>
+                   </svg>`
+                );
+            }}
+          />
+        ) : (
+          <div className="image-placeholder"><FiShoppingBag size={24} /></div>
         )}
         {p.destacado && <div className="featured-badge"><FiStar size={14} /></div>}
-      </div>
+      </Media>
+
       <div className="poster-body">
-        <h4 className="poster-title" title={p?.nombre}>{p?.nombre || p?.title || "Producto"}</h4>
-        {categoria && <div className="poster-meta">{categoria}</div>}
-        {desc && <div className="poster-desc">{desc.length > 60 ? `${desc.substring(0, 60)}...` : desc}</div>}
-        {conPrecio ? (
-          <div className="poster-price">
-            <span className="price">${Number(p.precio || 0).toFixed(2)}</span>
-            {p.precioOriginal && (<span className="original-price">${Number(p.precioOriginal).toFixed(2)}</span>)}
-          </div>
+        {publicHref ? (
+          <Link to={publicHref} className="poster-title linklike" title={p?.nombre}>
+            {p?.nombre || p?.title || "Producto"}
+          </Link>
         ) : (
-          <div className="poster-price"><span className="badge">Ver variantes</span></div>
+          <h4 className="poster-title" title={p?.nombre}>{p?.nombre || p?.title || "Producto"}</h4>
         )}
+
+        {categoria && <div className="poster-meta">{categoria}</div>}
+        {desc && <div className="poster-desc">{desc.length > 80 ? `${desc.substring(0, 80)}…` : desc}</div>}
+
+        <div className="poster-actions-row">
+          {conPrecio ? (
+            <div className="poster-price">
+              <span className="price">${Number(p.precio || 0).toFixed(2)}</span>
+              {p.precioOriginal && (<span className="original-price">${Number(p.precioOriginal).toFixed(2)}</span>)}
+            </div>
+          ) : (
+            <div className="poster-price"><span className="badge">Ver variantes</span></div>
+          )}
+          {publicHref && (
+            <Link to={publicHref} className="btn btn-secondary btn-sm">
+              <FiEye /> Ver detalle
+            </Link>
+          )}
+        </div>
       </div>
     </article>
   );
 }
 
+/* =============== Policies / Social / Footer =============== */
 function StorePolicies({ tienda }) {
   return (
     <section className="store-section policies-section">
@@ -584,7 +499,7 @@ function StorePolicies({ tienda }) {
 }
 
 function SocialLinks({ redes = {} }) {
-  if (!redes?.facebook && !redes?.instagram && !redes?.tiktok) return null;
+  if (!redes.facebook && !redes.instagram && !redes.tiktok) return null;
   return (
     <section className="store-section social-section">
       <h2 className="section-title">Síguenos</h2>
@@ -625,7 +540,7 @@ function ContactFooter({ tienda }) {
   );
 }
 
-/* ===================== Helpers color ===================== */
+/* =============== Helpers color =============== */
 function extractColors(gradientString) {
   const m = gradientString?.match(/#([0-9a-f]{6})/gi);
   return { from: m?.[0] || "#6d28d9", to: m?.[1] || "#c026d3" };

@@ -51,7 +51,7 @@ const LoadingScreen = () => (
         animate={{ y: 0, opacity: 1 }}
         transition={{ delay: 0.6, duration: 0.8, ease: "easeOut" }}
       >
-        Iniciando experiencia premium
+        
       </motion.p>
       
       <div className="loading-progress">

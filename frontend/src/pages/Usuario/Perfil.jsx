@@ -1,14 +1,17 @@
+// frontend/src/pages/Usuario/Perfil.jsx
 import { useEffect, useRef, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import NavBarUsuario from './NavBarUsuario';
-import { FiUpload, FiUser, FiPhone, FiShoppingBag, FiLogOut, FiMessageSquare } from 'react-icons/fi';
+import {
+  FiUpload, FiUser, FiPhone, FiShoppingBag, FiLogOut, FiMessageSquare,
+  FiHeart, FiMapPin, FiSettings, FiChevronRight, FiBookmark
+} from 'react-icons/fi';
 import './usuario.css';
 
 const RAW_API = import.meta.env.VITE_API_URL || '';
 const API_URL = RAW_API.replace(/\/$/, '');
 const WA_SOPORTE = '528441786280';
 
-// Helpers URL
 const toPublicUrl = (u) => {
   if (!u) return '';
   if (/^https?:\/\//i.test(u)) return u;
@@ -126,29 +129,30 @@ export default function Perfil() {
   };
 
   const irPanelVendedor = () => navigate('/vendedor/perfil');
-  const logout = () => {
-    localStorage.removeItem('usuario');
-    navigate('/login');
-  };
+  const irCompras = () => navigate('/usuario/compras');
+  const irDirecciones = () => navigate('/usuario/configuracion?tab=direcciones');
+  const irTiendas = () => navigate('/usuario/tiendas');
+  const irConfig = () => navigate('/usuario/configuracion');
+  const logout = () => { localStorage.removeItem('usuario'); navigate('/login'); };
 
   if (!usuario) return null;
 
   const BotonVendedor = () => {
     if (usuario.vendedor) {
       return (
-        <button className="btn btn-primary" onClick={irPanelVendedor}>
+        <button className="btn btn-primary w-full" onClick={irPanelVendedor}>
           <FiShoppingBag /> Ir al panel de vendedor
         </button>
       );
     }
     if (usuario.vendedorSolicitado) {
       return (
-        <div className="stack-8">
+        <div className="stack-12">
           <div className="note success">
             <p>Solicitud enviada. Nuestro soporte te contactará.</p>
           </div>
           <button
-            className="btn btn-outline"
+            className="btn btn-outline w-full"
             onClick={() =>
               abrirWhatsApp(`Hola, soy ${usuario.nombre} (ID ${usuario.id}). Di seguimiento a mi solicitud de vendedor.`)
             }
@@ -159,21 +163,21 @@ export default function Perfil() {
       );
     }
     return (
-      <button className="btn btn-primary" onClick={solicitarVendedor}>
+      <button className="btn btn-primary w-full" onClick={solicitarVendedor}>
         <FiShoppingBag /> Solicitar modo vendedor
       </button>
     );
   };
 
   return (
-    <div className="page page--light">
+    <div className="page page--dark-svk">
       <NavBarUsuario />
 
-      <main className="container">
-        {/* Encabezado */}
-        <header className="card card--header profile-header">
-          <div className="avatar-block">
-            <div className="avatar">
+      <main className="container-svk">
+        {/* Header */}
+        <header className="card-svk header-svk">
+          <div className="header-left">
+            <div className="avatar-svk">
               {fotoSrc ? (
                 <img src={fotoSrc} alt="Foto de perfil" />
               ) : (
@@ -182,13 +186,13 @@ export default function Perfil() {
                 </div>
               )}
               <button
-                className={`btn btn-small btn-secondary avatar__action ${subiendo ? 'is-loading' : ''}`}
+                className={`btn btn-secondary avatar__action ${subiendo ? 'is-loading' : ''}`}
                 onClick={abrirFilePicker}
                 disabled={subiendo}
                 aria-label="Cambiar foto"
                 title="Cambiar foto"
               >
-                <FiUpload /> {subiendo ? 'Subiendo…' : 'Cambiar foto'}
+                <FiUpload /> {subiendo ? 'Subiendo…' : 'Cambiar'}
               </button>
               <input
                 ref={fileInputRef}
@@ -201,44 +205,100 @@ export default function Perfil() {
             </div>
 
             <div className="user-head">
-              <h1 className="title">Mi Perfil</h1>
-              <p className="subtitle">Gestiona tu información y configuración de vendedor</p>
+              <h1 className="title-svk">{usuario.nombre || 'Usuario'}</h1>
+              <p className="subtitle-svk">Administra tu cuenta, tus compras y tu tienda.</p>
               {msg && <div className="note">{msg}</div>}
             </div>
           </div>
+
+          <div className="header-actions">
+            <button className="btn btn-outline" onClick={irConfig}>
+              <FiSettings /> Configuración
+            </button>
+            <button className="btn btn-danger" onClick={logout}>
+              <FiLogOut /> Cerrar sesión
+            </button>
+          </div>
         </header>
 
-        {/* Información principal */}
-        <section className="grid">
-          <div className="card">
-            <h2 className="section-title">Información personal</h2>
+        {/* Grid principal */}
+        <section className="grid-svk">
+          {/* Información personal */}
+          <div className="card-svk">
+            <div className="block-title">
+              <span className="icon"><FiUser /></span>
+              <h2>Información personal</h2>
+            </div>
             <div className="info-list">
               <div className="info-row">
-                <span className="info-label"><FiUser /> Nombre</span>
+                <span className="info-label">Nombre</span>
                 <span className="info-value">{usuario.nombre || '—'}</span>
               </div>
               <div className="info-row">
-                <span className="info-label"><FiPhone /> Teléfono</span>
+                <span className="info-label">Teléfono</span>
                 <span className="info-value">{usuario.telefono || '—'}</span>
               </div>
             </div>
           </div>
 
-          <div className="card">
-            <h2 className="section-title">Modo vendedor</h2>
-            <div className="stack-12">
-              <p className="muted">
-                Activa tu perfil de vendedor para administrar tu tienda y productos.
-              </p>
-              <BotonVendedor />
+          {/* Modo vendedor */}
+          <div className="card-svk">
+            <div className="block-title">
+              <span className="icon"><FiShoppingBag /></span>
+              <h2>Modo vendedor</h2>
+            </div>
+            <p className="muted-svk">Administra una tienda y comienza a vender.</p>
+            <BotonVendedor />
+          </div>
+
+          {/* Compras */}
+          <div className="card-svk">
+            <div className="block-title">
+              <span className="icon"><FiBookmark /></span>
+              <h2>Resumen de compras</h2>
+            </div>
+            <ul className="bullets">
+              <li>Última compra: <strong>—</strong></li>
+              <li>Pedidos en curso: <strong>—</strong></li>
+            </ul>
+            <button className="btn btn-ghost" onClick={irCompras}>
+              Ver mis compras <FiChevronRight />
+            </button>
+          </div>
+
+          {/* Direcciones / Favoritos */}
+          <div className="card-svk">
+            <div className="block-title">
+              <span className="icon"><FiMapPin /></span>
+              <h2>Direcciones & Favoritos</h2>
+            </div>
+            <div className="row-actions">
+              <button className="chip" onClick={irDirecciones}><FiMapPin /> Gestionar direcciones</button>
+              <button className="chip" onClick={irTiendas}><FiHeart /> Tiendas guardadas</button>
             </div>
           </div>
-        </section>
 
-        <section className="actions-row">
-          <button onClick={logout} className="btn btn-danger">
-            <FiLogOut /> Cerrar sesión
-          </button>
+          {/* Soporte */}
+          <div className="card-svk span-2">
+            <div className="block-title">
+              <span className="icon"><FiMessageSquare /></span>
+              <h2>Soporte</h2>
+            </div>
+            <p className="muted-svk">¿Dudas o ayuda? Estamos para ti.</p>
+            <div className="row-actions">
+              <button
+                className="btn btn-outline"
+                onClick={() =>
+                  abrirWhatsApp(`Hola, soy ${usuario.nombre || ''} (ID ${usuario.id}). Necesito ayuda con mi cuenta.`)
+                }
+              >
+                WhatsApp Soporte
+              </button>
+              <a className="btn btn-ghost" href="https://systemvkode.com/ayuda" target="_blank" rel="noreferrer">
+                Centro de ayuda
+              </a>
+            </div>
+          </div>
         </section>
       </main>
     </div>

@@ -1,18 +1,27 @@
-// frontend/src/pages/Usuario/Configuracion.jsx
 import { useState, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import NavBarUsuario from './NavBarUsuario';
+import { FiLock, FiChevronDown, FiChevronUp, FiEye, FiEyeOff } from 'react-icons/fi';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 export default function ConfiguracionUsuario() {
   const navigate = useNavigate();
+
   const [usuario, setUsuario] = useState(null);
+
   const [actual, setActual] = useState('');
   const [nueva, setNueva] = useState('');
   const [confirmar, setConfirmar] = useState('');
+
   const [msg, setMsg] = useState('');
   const [loading, setLoading] = useState(false);
+
+  // visibilidad del formulario y de los inputs
+  const [mostrarForm, setMostrarForm] = useState(false);
+  const [verActual, setVerActual] = useState(false);
+  const [verNueva, setVerNueva] = useState(false);
+  const [verConfirmar, setVerConfirmar] = useState(false);
 
   // Cargar usuario desde localStorage (protegemos el acceso)
   useEffect(() => {
@@ -25,6 +34,15 @@ export default function ConfiguracionUsuario() {
       navigate('/login');
     }
   }, [navigate]);
+
+  const resetForm = () => {
+    setActual('');
+    setNueva('');
+    setConfirmar('');
+    setVerActual(false);
+    setVerNueva(false);
+    setVerConfirmar(false);
+  };
 
   const cambiarPassword = async (e) => {
     e.preventDefault();
@@ -54,9 +72,8 @@ export default function ConfiguracionUsuario() {
       if (!res.ok) throw new Error(data?.error || 'No se pudo actualizar la contraseña');
 
       setMsg('Contraseña actualizada correctamente ✅');
-      setActual('');
-      setNueva('');
-      setConfirmar('');
+      resetForm();
+      setMostrarForm(false);
     } catch (err) {
       setMsg(err.message);
     } finally {
@@ -70,37 +87,99 @@ export default function ConfiguracionUsuario() {
     <>
       <NavBarUsuario />
 
-      <div style={{ maxWidth: 680, margin: '24px auto', padding: '0 16px' }}>
-        <h2>Configuración</h2>
+      <div className="container-svk" style={{ maxWidth: 720 }}>
+        <h2 className="title-svk" style={{ marginBottom: 12 }}>Configuración</h2>
 
+        {/* Seguridad / Contraseña */}
+        <div className="card-svk" style={{ marginTop: 12 }}>
+          <div className="block-title" style={{ marginBottom: 0 }}>
+            <span className="icon"><FiLock /></span>
+            <h2>Seguridad y contraseña</h2>
+          </div>
 
-        {/* Cambio de contraseña con la actual */}
-        <div className="card" style={{ marginTop: 16, padding: 16 }}>
-          <h3 style={{ marginTop: 0 }}>Cambiar contraseña</h3>
-          <form onSubmit={cambiarPassword} style={{ display: 'grid', gap: 12, maxWidth: 420 }}>
-            <input
-              type="password"
-              placeholder="Contraseña actual"
-              value={actual}
-              onChange={(e) => setActual(e.target.value)}
-            />
-            <input
-              type="password"
-              placeholder="Nueva contraseña"
-              value={nueva}
-              onChange={(e) => setNueva(e.target.value)}
-            />
-            <input
-              type="password"
-              placeholder="Confirmar nueva contraseña"
-              value={confirmar}
-              onChange={(e) => setConfirmar(e.target.value)}
-            />
-            <button className="primary-button" disabled={loading}>
-              {loading ? 'Guardando…' : 'Actualizar contraseña'}
-            </button>
-          </form>
-          {msg && <p style={{ marginTop: 8 }}>{msg}</p>}
+          <p className="muted-svk" style={{ marginTop: 10 }}>
+            Mantén tu cuenta protegida. Te recomendamos cambiar tu contraseña periódicamente.
+          </p>
+
+          {/* Trigger para mostrar/ocultar formulario */}
+          <button
+            className="btn btn-primary"
+            onClick={() => setMostrarForm(v => !v)}
+            style={{ marginTop: 10 }}
+          >
+            {mostrarForm ? <>Ocultar formulario <FiChevronUp /></> : <>Cambiar contraseña <FiChevronDown /></>}
+          </button>
+
+          {/* Formulario oculto por defecto */}
+          {mostrarForm && (
+            <form onSubmit={cambiarPassword} className="form-svk" style={{ marginTop: 14 }}>
+              <div className="input-wrap-svk">
+                <input
+                  type={verActual ? 'text' : 'password'}
+                  placeholder="Contraseña actual"
+                  value={actual}
+                  onChange={(e) => setActual(e.target.value)}
+                />
+                <button
+                  type="button"
+                  className="input-icon-btn"
+                  onClick={() => setVerActual(v => !v)}
+                  aria-label="Ver/Ocultar contraseña actual"
+                >
+                  {verActual ? <FiEyeOff /> : <FiEye />}
+                </button>
+              </div>
+
+              <div className="input-wrap-svk">
+                <input
+                  type={verNueva ? 'text' : 'password'}
+                  placeholder="Nueva contraseña"
+                  value={nueva}
+                  onChange={(e) => setNueva(e.target.value)}
+                />
+                <button
+                  type="button"
+                  className="input-icon-btn"
+                  onClick={() => setVerNueva(v => !v)}
+                  aria-label="Ver/Ocultar nueva contraseña"
+                >
+                  {verNueva ? <FiEyeOff /> : <FiEye />}
+                </button>
+              </div>
+
+              <div className="input-wrap-svk">
+                <input
+                  type={verConfirmar ? 'text' : 'password'}
+                  placeholder="Confirmar nueva contraseña"
+                  value={confirmar}
+                  onChange={(e) => setConfirmar(e.target.value)}
+                />
+                <button
+                  type="button"
+                  className="input-icon-btn"
+                  onClick={() => setVerConfirmar(v => !v)}
+                  aria-label="Ver/Ocultar confirmación de contraseña"
+                >
+                  {verConfirmar ? <FiEyeOff /> : <FiEye />}
+                </button>
+              </div>
+
+              <div style={{ display: 'flex', gap: 8, marginTop: 4, flexWrap: 'wrap' }}>
+                <button className="btn btn-primary" disabled={loading}>
+                  {loading ? 'Guardando…' : 'Actualizar contraseña'}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  onClick={() => { resetForm(); setMostrarForm(false); }}
+                >
+                  Cancelar
+                </button>
+              </div>
+            </form>
+          )}
+
+          {msg && <div className="note" style={{ marginTop: 12 }}>{msg}</div>}
         </div>
       </div>
     </>

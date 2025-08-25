@@ -5,20 +5,20 @@ import Nabvendedor from './Nabvendedor';
 import {
   FiPlus, FiRefreshCcw, FiSearch, FiTag, FiEdit2, FiTrash2,
   FiEye, FiStar, FiUpload, FiX, FiCheck, FiPause, FiPlay,
-  FiChevronLeft, FiChevronRight, FiInfo
+  FiChevronLeft, FiChevronRight, FiInfo, FiSettings
 } from 'react-icons/fi';
 import './Productos.css';
 
 const API   = import.meta.env.VITE_API_URL   || 'http://localhost:5000';
 const FILES = import.meta.env.VITE_FILES_BASE || API;
 
-/* -------------------- Tipos de producto (explicación) -------------------- */
+/* -------------------- Tipos de producto -------------------- */
 const TIPOS = [
-  { value: 'SIMPLE',   label: 'Simple',   desc: 'Un solo SKU con precio y stock únicos.',           badges: ['Inventario', 'Precio único'],       supports: { inventory: true,  variants: false, digital: false, service: false, bundle: false } },
-  { value: 'VARIANTE', label: 'Con variantes', desc: 'Varias combinaciones (talla, color…).',      badges: ['Variantes', 'Precios por variante'], supports: { inventory: false, variants: true,  digital: false, service: false, bundle: false } },
-  { value: 'DIGITAL',  label: 'Digital',  desc: 'Archivo descargable (no requiere stock).',        badges: ['Descargable'],                       supports: { inventory: false, variants: false, digital: true,  service: false, bundle: false } },
-  { value: 'SERVICIO', label: 'Servicio', desc: 'Reservas/citas; precio por sesión.',              badges: ['Agenda'],                            supports: { inventory: false, variants: false, digital: false, service: true,  bundle: false } },
-  { value: 'BUNDLE',   label: 'Bundle',   desc: 'Paquete de varios productos (combos).',           badges: ['Pack'],                              supports: { inventory: false, variants: false, digital: false, service: false, bundle: true  } },
+  { value: 'SIMPLE',   label: 'Simple',     desc: 'Un solo SKU con precio y stock únicos.' },
+  { value: 'VARIANTE', label: 'Con variantes', desc: 'Varias combinaciones (talla, color…).'},
+  { value: 'DIGITAL',  label: 'Digital',    desc: 'Archivo descargable (no requiere stock).'},
+  { value: 'SERVICIO', label: 'Servicio',   desc: 'Reservas/citas; precio por sesión.' },
+  { value: 'BUNDLE',   label: 'Bundle',     desc: 'Paquete de varios productos (combos).'},
 ];
 
 /* -------------------- helpers de tema -------------------- */
@@ -27,6 +27,20 @@ const hexToRgb = (hex) => { const m = hex?.match(/^#?([a-f\d]{2})([a-f\d]{2})([a
 const luminance = ([r,g,b]) => { const a=[r,g,b].map(v=>{v/=255;return v<=0.03928?v/12.92:Math.pow((v+0.055)/1.055,2.4);}); return 0.2126*a[0]+0.7152*a[1]+0.0722*a[2]; };
 const bestTextOn = (hexA, hexB) => { const L=(luminance(hexToRgb(hexA))+luminance(hexToRgb(hexB)))/2; return L>0.45?'#111111':'#ffffff'; };
 const extractColors = (gradientString) => { const m = gradientString?.match(/#([0-9a-f]{6})/gi); return { from: m?.[0] || '#6d28d9', to: m?.[1] || '#c026d3' }; };
+
+/* -------------------- Normalizador numérico -------------------- */
+// Convierte Decimal|string|number|null -> number | ''
+const asNum = (x) => {
+  if (x === null || x === undefined) return '';
+  if (typeof x === 'number') return x;
+  if (typeof x === 'string') return x.trim() === '' ? '' : Number(x);
+  if (typeof x === 'object') {
+    if (typeof x.toNumber === 'function') { try { return x.toNumber(); } catch {} }
+    const v = x.valueOf?.(); if (typeof v === 'number') return v;
+  }
+  const n = Number(x);
+  return Number.isFinite(n) ? n : '';
+};
 
 /* -------------------- Carrusel de imágenes -------------------- */
 const ImageCarousel = ({ images, productName }) => {
@@ -68,7 +82,6 @@ export default function Productos() {
   /* -------------------- estado base -------------------- */
   const navigate = useNavigate();
   const [tiendaId, setTiendaId] = useState(null);
-  const [theme, setTheme] = useState({ from: '#6d28d9', to: '#c026d3', contrast: '#ffffff' });
 
   const [q, setQ] = useState('');
   const [categoriaSel, setCategoriaSel] = useState('todas');
@@ -88,6 +101,8 @@ export default function Productos() {
   const [showEditor, setShowEditor] = useState(false);
   const [mode, setMode] = useState('create');
   const [editId, setEditId] = useState(null);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+
   const [form, setForm] = useState(defaultForm());
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState({});
@@ -106,115 +121,22 @@ export default function Productos() {
   const refCatInput   = useRef(null);
   const refProdNombre = useRef(null);
 
-  /* -------------------- offsets navbar móvil -------------------- */
-  const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' ? window.innerWidth < 768 : false);
-  useEffect(() => {
-    const onResize = () => setIsMobile(window.innerWidth < 768);
-    window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
-  }, []);
-  const mobileTopOffset = 'calc(60px + env(safe-area-inset-top, 0px))';
-  const mobileBottomOffset = 'calc(72px + env(safe-area-inset-bottom, 0px))';
-
   /* -------------------- auth headers -------------------- */
   const usuario = (() => { try { return JSON.parse(localStorage.getItem('usuario') || '{}'); } catch { return {}; } })();
   const token = localStorage.getItem('token');
   const baseHeaders = { ...(usuario?.id ? { 'x-user-id': usuario.id } : {}), ...(token ? { Authorization: `Bearer ${token}` } : {}), };
 
-  /* -------------------- tema brand -------------------- */
+  /* -------------------- tema brand (solo variables CSS) -------------------- */
   useEffect(() => {
     document.body.classList.add('vendor-theme', 'has-topfixed', 'has-bottomnav');
     (async () => {
       try {
         const r = await fetch(`${API}/api/tienda/me`, { headers: baseHeaders });
         const d = await r.json();
-        if (r.ok && d) {
-          const { from, to } = extractColors(d.colorPrincipal || grad('#6d28d9', '#c026d3'));
-          const contrast = bestTextOn(from, to);
-          setTheme({ from, to, contrast });
-          const root = document.documentElement.style;
-          root.setProperty('--brand-from', from);
-          root.setProperty('--brand-to', to);
-          root.setProperty('--brand-contrast', contrast);
-          root.setProperty('--brand-gradient', grad(from, to));
-          root.setProperty('--primary-color', from);
-          root.setProperty('--primary-hover', from);
-          const [rC, gC, bC] = hexToRgb(from);
-          root.setProperty('--primary-color-rgb', `${rC}, ${gC}, ${bC}`);
-          const halos = `radial-gradient(900px 600px at 0% -10%, ${from}22, transparent 60%),
-                         radial-gradient(900px 600px at 100% -10%, ${to}22, transparent 60%)`;
-          root.setProperty('--page-bg', `${halos}, linear-gradient(135deg, ${from}, ${to})`);
-          localStorage.setItem('brandFrom', from);
-          localStorage.setItem('brandTo', to);
-          localStorage.setItem('brandContrast', contrast);
-        }
-      } catch {/* tema por defecto */}
+        if (r.ok && d?.id) setTiendaId(Number(d.id));
+      } catch {}
     })();
     return () => document.body.classList.remove('vendor-theme', 'has-topfixed', 'has-bottomnav');
-  }, []);
-
-  /* --------- cierre con Esc + scroll lock en modales ---------- */
-  const anyModalOpen = showCatModal || showEditor || showVariantes;
-  useEffect(() => {
-    const onKey = (e) => {
-      if (e.key === 'Escape') {
-        if (showVariantes) setShowVariantes(false);
-        else if (showEditor) setShowEditor(false);
-        else if (showCatModal) setShowCatModal(false);
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    document.body.style.overflow = anyModalOpen ? 'hidden' : '';
-    return () => {
-      window.removeEventListener('keydown', onKey);
-      document.body.style.overflow = '';
-    };
-  }, [showCatModal, showEditor, showVariantes, anyModalOpen]);
-
-  /* -------- foco inicial en cada modal -------- */
-  useEffect(() => {
-    if (showCatModal) setTimeout(() => refCatInput.current?.focus(), 0);
-  }, [showCatModal]);
-  useEffect(() => {
-    if (showEditor) setTimeout(() => refProdNombre.current?.focus(), 0);
-  }, [showEditor]);
-
-  /* -------------------- helpers -------------------- */
-  function slugify(str) { return String(str || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)+/g, ''); }
-  function calcStock(p) {
-    if (p?.inventario) return p.inventario.stock ?? 0;
-    if (Array.isArray(p?.variantes)) return p.variantes.reduce((acc, v) => acc + (v?.inventario?.stock ?? 0), 0);
-    return 0;
-  }
-  function stockText(p) {
-    const s = calcStock(p);
-    const umbral = p?.inventario?.umbralAlerta ?? 3;
-    if (s <= 0) return 'Sin stock';
-    if (s <= umbral) return `Stock bajo (${s})`;
-    return `En stock: ${s}`;
-  }
-  function currency(n) { if (typeof n !== 'number') return ''; try { return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(n); } catch { return `$${Number(n || 0).toFixed(2)}`; } }
-
-  /* -------------------- asegurar tienda -------------------- */
-  useEffect(() => {
-    const localTiendaId = usuario?.tiendaId ?? usuario?.tienda?.id ?? null;
-    if (localTiendaId) setTiendaId(Number(localTiendaId));
-    if (!localTiendaId) {
-      (async () => {
-        try {
-          const r = await fetch(`${API}/api/tienda/me`, { headers: baseHeaders });
-          if (!r.ok) throw new Error('No se encontró tu tienda. Configúrala en tu perfil.');
-          const d = await r.json();
-          if (d?.id) {
-            setTiendaId(Number(d.id));
-            try {
-              const u = JSON.parse(localStorage.getItem('usuario') || '{}');
-              localStorage.setItem('usuario', JSON.stringify({ ...u, tienda: d }));
-            } catch {}
-          }
-        } catch (e) { setError(e.message || 'No se encontró tu tienda. Ve a Configuración → Perfil.'); }
-      })();
-    }
   }, []);
 
   /* -------------------- cargar categorías -------------------- */
@@ -224,21 +146,17 @@ export default function Productos() {
       setCargandoCats(true);
       try {
         const res = await fetch(`${API}/api/v1/categorias?tiendaId=${tiendaId}`, { headers: baseHeaders });
-        if (!res.ok) throw new Error('No se pudieron cargar las categorías.');
-        const data = await res.json();
+        const data = res.ok ? await res.json() : [];
         setCategorias(Array.isArray(data) ? data : []);
-      } catch (e) {
-        console.warn(e?.message || e);
-        setCategorias((prev) => (prev.length ? prev : []));
-      } finally { setCargandoCats(false); }
+      } catch { setCategorias([]); }
+      finally { setCargandoCats(false); }
     })();
   }, [tiendaId]);
 
   /* -------------------- cargar productos -------------------- */
   const cargar = async () => {
     if (!tiendaId) return;
-    setLoading(true);
-    setError('');
+    setLoading(true); setError('');
     try {
       const params = new URLSearchParams();
       params.set('tiendaId', String(tiendaId));
@@ -249,21 +167,19 @@ export default function Productos() {
       if (!res.ok) throw new Error('No se pudieron cargar los productos.');
       const data = await res.json();
       setProductos(Array.isArray(data) ? data : []);
-    } catch (e) {
-      setError(e?.message || 'Ocurrió un error al actualizar.');
-    } finally { setLoading(false); }
+    } catch (e) { setError(e?.message || 'Ocurrió un error al actualizar.'); }
+    finally { setLoading(false); }
   };
   useEffect(() => { if (tiendaId) cargar(); }, [tiendaId, q, categoriaSel, estadoSel]);
 
   /* -------------------- organizar productos por categoría -------------------- */
   const productosPorCategoria = useMemo(() => {
-    const productosFiltrados = productos.filter((p) => {
-      const term = q.trim().toLowerCase();
+    const term = q.trim().toLowerCase();
+    const fil = productos.filter((p) => {
       if (categoriaSel !== 'todas') {
-        const tieneCat =
-          p?.categoria?.slug === categoriaSel ||
+        const ok = p?.categoria?.slug === categoriaSel ||
           (Array.isArray(p?.categorias) && p.categorias.some((pc) => pc?.categoria?.slug === categoriaSel));
-        if (!tieneCat) return false;
+        if (!ok) return false;
       }
       if (estadoSel && p?.estado !== estadoSel) return false;
       if (!term) return true;
@@ -273,37 +189,40 @@ export default function Productos() {
         p?.sku?.toLowerCase?.().includes(term)
       );
     });
+
     if (categoriaSel !== 'todas') {
-      return [{
-        categoria: categorias.find(c => c.slug === categoriaSel) || { id: -1, nombre: 'Seleccionados' },
-        productos: productosFiltrados
-      }];
+      return [{ categoria: categorias.find(c => c.slug === categoriaSel) || { id: -1, nombre: 'Seleccionados' }, productos: fil }];
     }
-    const categoriasConProductos = categorias.map(cat => ({
+    const catCon = categorias.map(cat => ({
       categoria: cat,
-      productos: productosFiltrados.filter(p =>
-        p?.categoria?.id === cat.id ||
-        p?.categorias?.some(pc => pc.categoriaId === cat.id)
+      productos: fil.filter(p =>
+        p?.categoria?.id === cat.id || p?.categorias?.some(pc => pc.categoriaId === cat.id)
       )
     }));
-    const productosSinCategoria = productosFiltrados.filter(p =>
-      !p?.categoria?.id && (!p?.categorias || p.categorias.length === 0)
-    );
-    if (productosSinCategoria.length > 0) {
-      categoriasConProductos.push({
-        categoria: { id: 0, nombre: 'Sin categoría', slug: 'sin-categoría' },
-        productos: productosSinCategoria
-      });
-    }
-    return categoriasConProductos.filter(g => g.productos.length > 0);
+    const sinCat = fil.filter(p => !p?.categoria?.id && (!p?.categorias || p.categorias.length === 0));
+    if (sinCat.length) catCon.push({ categoria: { id: 0, nombre: 'Sin categoría', slug: 'sin-categoría' }, productos: sinCat });
+    return catCon.filter(g => g.productos.length > 0);
   }, [productos, categorias, q, categoriaSel, estadoSel]);
+
+  /* -------------------- helpers -------------------- */
+  function slugify(str) { return String(str || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)+/g, ''); }
+  function calcStock(p) {
+    if (p?.inventario) return asNum(p.inventario.stock) || 0;
+    if (Array.isArray(p?.variantes)) return p.variantes.reduce((acc, v) => acc + (asNum(v?.inventario?.stock) || 0), 0);
+    return 0;
+  }
+  function stockText(p) {
+    const s = calcStock(p);
+    const umbral = asNum(p?.inventario?.umbralAlerta) || 3;
+    if (s <= 0) return 'Sin stock';
+    if (s <= umbral) return `Stock bajo (${s})`;
+    return `En stock: ${s}`;
+  }
+  function currency(n) { if (!Number.isFinite(n)) return ''; try { return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(n); } catch { return `$${Number(n || 0).toFixed(2)}`; } }
 
   /* -------------------- acciones productos -------------------- */
   const crearProducto = () => {
-    setMode('create');
-    setEditId(null);
-    setForm(defaultForm());
-    setErrors({});
+    setMode('create'); setEditId(null); setForm(defaultForm()); setErrors({});
     setShowEditor(true);
   };
 
@@ -311,27 +230,39 @@ export default function Productos() {
     const catIds = Array.isArray(p?.categorias)
       ? p.categorias.map((x) => x?.categoriaId ?? x?.categoria?.id ?? x?.id).filter(Boolean)
       : p?.categoriaId ? [p.categoriaId] : [];
+
     return {
+      // básicos
       nombre: p?.nombre || '', descripcion: p?.descripcion || '', tipo: p?.tipo || 'SIMPLE',
       estado: p?.estado || 'DRAFT', visible: !!p?.visible, destacado: !!p?.destacado,
-      precio: typeof p?.precio === 'number' ? p.precio : '', precioComparativo: typeof p?.precioComparativo === 'number' ? p.precioComparativo : '',
-      costo: typeof p?.costo === 'number' ? p.costo : '', descuentoPct: typeof p?.descuentoPct === 'number' ? p.descuentoPct : '',
-      inventarioStock: typeof p?.inventario?.stock === 'number' ? p.inventario.stock : '',
-      inventarioUmbral: typeof p?.inventario?.umbralAlerta === 'number' ? p.inventario.umbralAlerta : 3,
+      // comercio (normalizado)
+      precio: asNum(p?.precio),
+      precioComparativo: asNum(p?.precioComparativo),
+      costo: asNum(p?.costo),
+      descuentoPct: asNum(p?.descuentoPct),
+      // inventario simple
+      inventarioStock: asNum(p?.inventario?.stock),
+      inventarioUmbral: (asNum(p?.inventario?.umbralAlerta) === '' ? 3 : asNum(p?.inventario?.umbralAlerta)),
       backorder: !!p?.inventario?.permitirBackorder,
+      // categorías e imágenes
       categoriasIds: catIds,
       imagenes: Array.isArray(p?.imagenes)
         ? p.imagenes.map((m, i) => ({ url: m.url, alt: m.alt || '', isPrincipal: !!m.isPrincipal, orden: typeof m.orden === 'number' ? m.orden : i }))
         : [],
+      // avanzados (normalizados donde aplica)
+      sku: p?.sku || '', gtin: p?.gtin || '', marca: p?.marca || '', condicion: p?.condicion || '',
+      pesoGramos: asNum(p?.pesoGramos),
+      altoCm: asNum(p?.altoCm), anchoCm: asNum(p?.anchoCm), largoCm: asNum(p?.largoCm),
+      claseEnvio: p?.claseEnvio || '', diasPreparacion: asNum(p?.diasPreparacion),
+      politicaDevolucion: p?.politicaDevolucion || '',
+      digitalUrl: p?.digitalUrl || '',
+      licOriginal: Boolean(p?.licenciamiento?.original),
+      licNotas: typeof p?.licenciamiento?.notas === 'string' ? p.licenciamiento.notas : '',
     };
   };
 
   const editarProducto = (p) => {
-    setMode('edit');
-    setEditId(p.id);
-    setForm(productToForm(p));
-    setErrors({});
-    setShowEditor(true);
+    setMode('edit'); setEditId(p.id); setForm(productToForm(p)); setErrors({}); setShowEditor(true);
   };
 
   const verPublico = (p) => {
@@ -340,12 +271,22 @@ export default function Productos() {
   };
 
   const eliminarProducto = async (p) => {
-    if (!confirm(`¿Eliminar "${p.nombre}"? Esta acción no se puede deshacer.`)) return;
+    if (!confirm(`¿Eliminar "${p.nombre}"? Esto lo archivará (borrado lógico).`)) return;
     try {
       const res = await fetch(`${API}/api/v1/productos/${p.id}`, { method: 'DELETE', headers: baseHeaders });
       if (!res.ok) throw new Error('No se pudo eliminar el producto.');
       setProductos((prev) => prev.filter((x) => x.id !== p.id));
     } catch (e) { alert(e?.message || 'Error al eliminar'); }
+  };
+
+  // 🔥 Eliminación permanente (solo para ARCHIVED)
+  const eliminarProductoPermanente = async (p) => {
+    if (!confirm(`⚠️ Eliminación PERMANENTE\n\nSe borrará "${p.nombre}" y TODAS sus variantes, inventarios e imágenes.\n\nEsta acción es IRREVERSIBLE. ¿Continuar?`)) return;
+    try {
+      const res = await fetch(`${API}/api/v1/productos/${p.id}?force=1`, { method: 'DELETE', headers: baseHeaders });
+      if (!res.ok) throw new Error('No se pudo eliminar permanentemente.');
+      setProductos((prev) => prev.filter((x) => x.id !== p.id));
+    } catch (e) { alert(e?.message || 'Error al eliminar permanentemente'); }
   };
 
   const toggleEstado = async (p) => {
@@ -381,14 +322,12 @@ export default function Productos() {
     if (!nombre || !tiendaId) { alert('Escribe un nombre para la categoría.'); return; }
     try {
       const res = await fetch(`${API}/api/v1/categorias`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...baseHeaders },
+        method: 'POST', headers: { 'Content-Type': 'application/json', ...baseHeaders },
         body: JSON.stringify({ tiendaId, nombre }),
       });
       if (!res.ok) throw new Error('No se pudo crear la categoría.');
       const creada = await res.json();
-      setCategorias((prev) => [creada, ...prev]);
-      setNewCatName('');
+      setCategorias((prev) => [creada, ...prev]); setNewCatName('');
     } catch (e) { alert(e?.message || 'Error al crear categoría'); }
   };
 
@@ -397,12 +336,10 @@ export default function Productos() {
     if (!nombre || !editCatId) return;
     try {
       const res = await fetch(`${API}/api/v1/categorias/${editCatId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', ...baseHeaders },
+        method: 'PATCH', headers: { 'Content-Type': 'application/json', ...baseHeaders },
         body: JSON.stringify({ nombre }),
       });
-      if (!res.ok) throw new Error('No se pudo renombrar la categoría.');
-      const act = await res.json();
+      const act = await (res.ok ? res.json() : Promise.reject());
       setCategorias((prev) => prev.map((c) => (c.id === act.id ? act : c)));
       setEditCatId(null); setEditCatName('');
     } catch (e) { alert(e?.message || 'Error al renombrar categoría'); }
@@ -414,31 +351,40 @@ export default function Productos() {
       const res = await fetch(`${API}/api/v1/categorias/${id}`, { method: 'DELETE', headers: baseHeaders });
       if (!res.ok) throw new Error('No se pudo eliminar la categoría.');
       setCategorias((prev) => prev.filter((c) => c.id !== id));
-      if (categoriaSel !== 'todas' && categorias.find((c) => c.id === id)?.slug === categoriaSel) {
-        setCategoriaSel('todas');
-      }
+      if (categoriaSel !== 'todas' && categorias.find((c) => c.id === id)?.slug === categoriaSel) setCategoriaSel('todas');
     } catch (e) { alert(e?.message || 'Error al eliminar categoría'); }
   };
 
   /* -------------------- editor (crear/editar) -------------------- */
   function defaultForm() {
     return {
+      // básicos
       nombre: '', descripcion: '', tipo: 'SIMPLE', estado: 'DRAFT', visible: true, destacado: false,
+      // comercio
       precio: '', precioComparativo: '', costo: '', descuentoPct: '',
+      // inventario simple
       inventarioStock: '', inventarioUmbral: 3, backorder: false,
+      // taxonomía y media
       categoriasIds: [], imagenes: [],
+      // avanzados
+      sku: '', gtin: '', marca: '', condicion: '',
+      pesoGramos: '', altoCm: '', anchoCm: '', largoCm: '',
+      claseEnvio: '', diasPreparacion: '', politicaDevolucion: '',
+      digitalUrl: '', licOriginal: false, licNotas: '',
     };
   }
 
   const precioNum     = useMemo(() => (form.precio === '' ? null : Number(form.precio)), [form.precio]);
   const precioCompNum = useMemo(() => (form.precioComparativo === '' ? null : Number(form.precioComparativo)), [form.precioComparativo]);
   const costoNum      = useMemo(() => (form.costo === '' ? null : Number(form.costo)), [form.costo]);
+
   const descuentoSugerido = useMemo(() => {
     if (precioNum != null && precioCompNum && precioCompNum > 0) {
       return Math.max(0, Math.round((1 - (precioNum / precioCompNum)) * 100));
     }
     return null;
   }, [precioNum, precioCompNum]);
+
   const margen = useMemo(() => {
     if (precioNum != null && costoNum != null) {
       const m = precioNum - costoNum; const pct = costoNum > 0 ? (m / costoNum) * 100 : null;
@@ -446,6 +392,7 @@ export default function Productos() {
     }
     return null;
   }, [precioNum, costoNum]);
+
   const computedSlug = useMemo(() => slugify(form.nombre), [form.nombre]);
 
   /* -------------------- imágenes producto -------------------- */
@@ -468,7 +415,6 @@ export default function Productos() {
       } catch (e) { alert(e?.message || 'Error subiendo imagen'); }
     }
   };
-
   const setPrincipal = (idx) => {
     setForm((prev) => {
       const next = prev.imagenes.map((img, i) => ({ ...img, isPrincipal: i === idx, orden: i === idx ? 0 : img.orden }));
@@ -525,6 +471,11 @@ export default function Productos() {
     return Object.keys(errs).length === 0;
   }
 
+  const buildLicenciamiento = () => {
+    if (!form.licOriginal && !form.licNotas) return null;
+    return { original: !!form.licOriginal, ...(form.licNotas ? { notas: form.licNotas } : {}) };
+  };
+
   const submitEditor = async (e) => {
     e.preventDefault();
     if (!tiendaId) { alert('No se encontró tu tienda. Ve a Configuración → Perfil.'); return; }
@@ -532,18 +483,37 @@ export default function Productos() {
 
     const payload = {
       tiendaId,
+      // básicos
       nombre: form.nombre.trim(),
       descripcion: form.descripcion || null,
       tipo: form.tipo,
       estado: form.estado,
       visible: !!form.visible,
       destacado: !!form.destacado,
+      // comercio
       precio: form.precio === '' ? null : Number(form.precio),
       precioComparativo: form.precioComparativo === '' ? null : Number(form.precioComparativo),
       costo: form.costo === '' ? null : Number(form.costo),
       descuentoPct: form.descuentoPct === '' ? null : Number(form.descuentoPct),
+      // identificadores
+      sku: form.sku || null,
+      gtin: form.gtin || null,
+      marca: form.marca || null,
+      condicion: form.condicion || null,
+      // envío y dimensiones
+      pesoGramos: form.pesoGramos === '' ? null : Number(form.pesoGramos),
+      altoCm: form.altoCm === '' ? null : Number(form.altoCm),
+      anchoCm: form.anchoCm === '' ? null : Number(form.anchoCm),
+      largoCm: form.largoCm === '' ? null : Number(form.largoCm),
+      claseEnvio: form.claseEnvio || null,
+      diasPreparacion: form.diasPreparacion === '' ? null : Number(form.diasPreparacion),
+      politicaDevolucion: form.politicaDevolucion || null,
+      digitalUrl: form.tipo === 'DIGITAL' ? (form.digitalUrl || null) : null,
+      licenciamiento: buildLicenciamiento(),
+      // taxonomía e imágenes
       categoriasIds: form.categoriasIds,
       imagenes: form.imagenes.map((m, i) => ({ url: m.url, alt: m.alt || null, isPrincipal: !!m.isPrincipal, orden: i })),
+      // inventario producto simple
       inventario: form.tipo === 'SIMPLE' && form.inventarioStock !== ''
         ? { stock: Number(form.inventarioStock), umbralAlerta: form.inventarioUmbral === '' ? 0 : Number(form.inventarioUmbral), permitirBackorder: !!form.backorder }
         : null,
@@ -561,35 +531,21 @@ export default function Productos() {
           method: 'POST', headers: { 'Content-Type': 'application/json', ...baseHeaders }, body: JSON.stringify(payload),
         });
       }
-      if (!res.ok) {
-        const msg = await res.text().catch(() => '');
-        throw new Error(msg || 'No se pudo guardar el producto.');
-      }
+      if (!res.ok) throw new Error((await res.text().catch(()=>'')) || 'No se pudo guardar el producto.');
       const data = await res.json();
-      setShowEditor(false); setForm(defaultForm()); setEditId(null);
-      setErrors({});
+      setShowEditor(false); setForm(defaultForm()); setEditId(null); setErrors({});
       if (mode === 'edit') setProductos((prev) => prev.map((p) => (p.id === data.id ? data : p)));
       else setProductos((prev) => [data, ...prev]);
-    } catch (e) {
-      alert(e?.message || 'Error al guardar producto');
-    } finally {
-      setSaving(false);
-    }
+    } catch (e) { alert(e?.message || 'Error al guardar producto'); }
+    finally { setSaving(false); }
   };
 
-  /* -------------------- Variantes: helpers y API -------------------- */
+  /* -------------------- Variantes -------------------- */
   function defaultVForm() {
-    return {
-      sku: '', nombre: '', opcionesText: '',
-      precio: '', precioComparativo: '', costo: '',
-      stock: '', umbral: 0, backorder: false,
-      imagenes: [],
-    };
+    return { sku: '', nombre: '', opcionesText: '', precio: '', precioComparativo: '', costo: '', stock: '', umbral: 0, backorder: false, imagenes: [] };
   }
-
   const openVariantesModal = async (productoId) => {
-    if (!productoId) return;
-    setVError(''); setVLoading(true); setShowVariantes(true);
+    if (!productoId) return; setVError(''); setVLoading(true); setShowVariantes(true);
     try {
       const res = await fetch(`${API}/api/v1/productos/${productoId}`, { headers: baseHeaders });
       if (!res.ok) throw new Error('No se pudo cargar el producto.');
@@ -599,7 +555,6 @@ export default function Productos() {
     } catch (e) { setVError(e?.message || 'Error al cargar variantes'); }
     finally { setVLoading(false); }
   };
-
   const refreshProductoLocal = async () => {
     if (!editId) return;
     try {
@@ -608,34 +563,29 @@ export default function Productos() {
       const data = await res.json();
       setVList(Array.isArray(data?.variantes) ? data.variantes : []);
       setProductos((prev) => prev.map((p) => (p.id === data.id ? data : p)));
-    } catch {/* noop */}
+    } catch {}
   };
-
   const vStartCreate = () => { setVMode('create'); setVEditId(null); setVForm(defaultVForm()); };
+  const safeStringify = (o) => { try { return JSON.stringify(o); } catch { return ''; } };
+  const parseOpciones = (t) => { const s = String(t||'').trim(); if(!s) return null; try { const o = JSON.parse(s); return (o && typeof o==='object')?o:null; } catch { return null; } };
   const vStartEdit = (v) => {
     setVMode('edit'); setVEditId(v.id);
     setVForm({
-      sku: v.sku || '', nombre: v.nombre || '',
-      opcionesText: v.opciones ? safeStringify(v.opciones) : '',
-      precio: typeof v.precio === 'number' ? String(v.precio) : '',
-      precioComparativo: typeof v.precioComparativo === 'number' ? String(v.precioComparativo) : '',
-      costo: typeof v.costo === 'number' ? String(v.costo) : '',
-      stock: typeof v?.inventario?.stock === 'number' ? String(v.inventario.stock) : '',
-      umbral: typeof v?.inventario?.umbralAlerta === 'number' ? Number(v.inventario.umbralAlerta) : 0,
+      sku: v.sku || '', nombre: v.nombre || '', opcionesText: v.opciones ? safeStringify(v.opciones) : '',
+      precio: asNum(v.precio) === '' ? '' : String(asNum(v.precio)),
+      precioComparativo: asNum(v.precioComparativo) === '' ? '' : String(asNum(v.precioComparativo)),
+      costo: asNum(v.costo) === '' ? '' : String(asNum(v.costo)),
+      stock: asNum(v?.inventario?.stock) === '' ? '' : String(asNum(v?.inventario?.stock)),
+      umbral: Number(asNum(v?.inventario?.umbralAlerta) || 0),
       backorder: !!v?.inventario?.permitirBackorder,
       imagenes: Array.isArray(v?.imagenes) ? v.imagenes.map((m, i) => ({ url: m.url, alt: m.alt || '', orden: typeof m.orden === 'number' ? m.orden : i })) : [],
     });
   };
-  function safeStringify(obj) { try { return JSON.stringify(obj); } catch { return ''; } }
-  function parseOpciones(text) { const t = String(text || '').trim(); if (!t) return null; try { const o = JSON.parse(t); return (o && typeof o === 'object') ? o : null; } catch { return null; } }
-
   const submitVariante = async (e) => {
     e.preventDefault();
     if (!editId) { alert('Primero guarda el producto.'); return; }
     const payload = {
-      sku: vForm.sku || null,
-      nombre: vForm.nombre || null,
-      opciones: parseOpciones(vForm.opcionesText),
+      sku: vForm.sku || null, nombre: vForm.nombre || null, opciones: parseOpciones(vForm.opcionesText),
       precio: vForm.precio === '' ? null : Number(vForm.precio),
       precioComparativo: vForm.precioComparativo === '' ? null : Number(vForm.precioComparativo),
       costo: vForm.costo === '' ? null : Number(vForm.costo),
@@ -644,54 +594,38 @@ export default function Productos() {
         : { stock: vForm.stock === '' ? 0 : Number(vForm.stock), umbralAlerta: Number(vForm.umbral || 0), permitirBackorder: !!vForm.backorder },
       imagenes: vForm.imagenes.map((m, i) => ({ url: m.url, alt: m.alt || null, orden: i })),
     };
-
     try {
       setVSaving(true);
-      let res, data;
+      let res;
       if (vMode === 'edit' && vEditId) {
         res = await fetch(`${API}/api/v1/variantes/${vEditId}`, {
           method: 'PATCH', headers: { 'Content-Type': 'application/json', ...baseHeaders }, body: JSON.stringify(payload),
         });
-        if (!res.ok) throw new Error('No se pudo actualizar la variante.');
-        data = await res.json();
       } else {
         res = await fetch(`${API}/api/v1/productos/${editId}/variantes`, {
           method: 'POST', headers: { 'Content-Type': 'application/json', ...baseHeaders }, body: JSON.stringify(payload),
         });
-        if (!res.ok) throw new Error('No se pudo crear la variante.');
-        data = await res.json();
       }
-
-      await refreshProductoLocal();
-      setVForm(defaultVForm());
-      setVMode('create');
-      setVEditId(null);
-    } catch (e2) {
-      alert(e2?.message || 'Error al guardar variante');
-    } finally {
-      setVSaving(false);
-    }
+      if (!res.ok) throw new Error('No se pudo guardar la variante.');
+      await refreshProductoLocal(); vStartCreate();
+    } catch (e2) { alert(e2?.message || 'Error al guardar variante'); }
+    finally { setVSaving(false); }
   };
-
   const eliminarVariante = async (v) => {
     if (!confirm(`¿Eliminar variante "${v.nombre || v.sku || v.id}"?`)) return;
     try {
       const res = await fetch(`${API}/api/v1/variantes/${v.id}`, { method: 'DELETE', headers: baseHeaders });
       if (!res.ok) throw new Error('No se pudo eliminar la variante.');
-      await refreshProductoLocal();
-      if (vEditId === v.id) vStartCreate();
+      await refreshProductoLocal(); if (vEditId === v.id) vStartCreate();
     } catch (e) { alert(e?.message || 'Error al eliminar variante'); }
   };
-
-  /* -------------------- imágenes de variante -------------------- */
   const onUploadVImages = async (files) => {
     if (!files?.length) return;
-    if (!tiendaId) { alert('No se encontró tu tienda. Ve a Configuración → Perfil.'); return; }
+    if (!tiendaId) { alert('No se encontró tu tienda.'); return; }
     const uploads = Array.from(files).slice(0, 12 - vForm.imagenes.length);
     for (const f of uploads) {
       try {
-        const fd = new FormData();
-        fd.append('file', f);
+        const fd = new FormData(); fd.append('file', f);
         const res = await fetch(`${API}/api/v1/upload/producto`, { method: 'POST', headers: { ...baseHeaders }, body: fd });
         if (!res.ok) throw new Error('No se pudo subir imagen');
         const { url } = await res.json();
@@ -699,13 +633,13 @@ export default function Productos() {
       } catch (e) { alert(e?.message || 'Error subiendo imagen'); }
     }
   };
-  const moveVImagen = (idx, dir = -1) => { setVForm((prev) => { const arr = [...prev.imagenes]; const j = idx + dir; if (j < 0 || j >= arr.length) return prev; const tmp = arr[idx]; arr[idx] = arr[j]; arr[j] = tmp; arr.forEach((img, i) => (img.orden = i)); return { ...prev, imagenes: arr }; }); };
+  const moveVImagen = (idx, dir = -1) => { setVForm((prev) => { const arr = [...prev.imagenes]; const j = idx + dir; if (j < 0 || j >= arr.length) return prev; const t = arr[idx]; arr[idx] = arr[j]; arr[j] = t; arr.forEach((img, i) => (img.orden = i)); return { ...prev, imagenes: arr }; }); };
   const removeVImagen = (idx) => { setVForm((prev) => { const arr = prev.imagenes.filter((_, i) => i !== idx).map((m, i) => ({ ...m, orden: i })); return { ...prev, imagenes: arr }; }); };
   const updateVAlt = (idx, alt) => { setVForm((prev) => { const arr = [...prev.imagenes]; if (!arr[idx]) return prev; arr[idx] = { ...arr[idx], alt }; return { ...prev, imagenes: arr }; }); };
 
   /* -------------------- render -------------------- */
   return (
-    <div className="productos-page" style={{ paddingTop: isMobile ? mobileTopOffset : undefined, paddingBottom: isMobile ? mobileBottomOffset : undefined }}>
+    <div className="productos-page">
       <Nabvendedor />
 
       <main className="productos-main">
@@ -714,36 +648,31 @@ export default function Productos() {
           <div className="toolbar-card">
             <div className="productos-header">
               <h1>Productos</h1>
-              <p>Administra tu catálogo: crea productos, ordénalos por categorías y mantén todo al día.</p>
+              <p>Agrega y administra tu catálogo de forma rápida.</p>
             </div>
 
             <div className="productos-actions">
               <label className="buscar" aria-label="Buscar">
                 <FiSearch className="i" />
-                <input
-                  value={q}
-                  onChange={(e) => setQ(e.target.value)}
-                  placeholder="Buscar por nombre, URL (slug) o SKU…"
-                  aria-label="Buscar productos"
-                />
+                <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar por nombre, slug o SKU…" />
               </label>
 
-              <select value={categoriaSel} onChange={(e) => setCategoriaSel(e.target.value)} aria-label="Filtrar por categoría" disabled={cargandoCats} title="Filtrar por categoría">
+              <select value={categoriaSel} onChange={(e) => setCategoriaSel(e.target.value)} disabled={cargandoCats} title="Filtrar por categoría">
                 <option value="todas">Todas las categorías</option>
                 {categorias.map((c) => (<option key={c.id} value={c.slug}>{c.nombre}</option>))}
               </select>
 
-              <select value={estadoSel} onChange={(e) => setEstadoSel(e.target.value)} aria-label="Filtrar por estado" title="Filtrar por estado">
-                <option value="">Todos los estados</option>
+              <select value={estadoSel} onChange={(e) => setEstadoSel(e.target.value)} title="Filtrar por estado">
+                <option value="">Todos</option>
                 <option value="ACTIVE">Activo</option>
                 <option value="DRAFT">Borrador</option>
                 <option value="PAUSED">Pausado</option>
                 <option value="ARCHIVED">Archivado</option>
               </select>
 
-              <button className="btn btn-secondary" onClick={() => setShowCatModal(true)} title="Crear, renombrar o eliminar categorías"><FiTag /> Gestionar categorías</button>
-              <button className="btn btn-primary" onClick={crearProducto} title="Crear un nuevo producto"><FiPlus /> Nuevo producto</button>
-              <button className="btn btn-ghost" onClick={cargar} disabled={loading || !tiendaId} title="Actualizar lista de productos"><FiRefreshCcw /> {loading ? 'Actualizando…' : 'Actualizar'}</button>
+              <button className="btn btn-secondary" onClick={() => setShowCatModal(true)}><FiTag /> Categorías</button>
+              <button className="btn btn-primary" onClick={crearProducto}><FiPlus /> Nuevo producto</button>
+              <button className="btn btn-ghost" onClick={cargar} disabled={loading || !tiendaId}><FiRefreshCcw /> {loading ? 'Actualizando…' : 'Actualizar'}</button>
             </div>
           </div>
         </header>
@@ -775,74 +704,94 @@ export default function Productos() {
                 </h2>
 
                 <div className="productos-grid">
-                  {grupo.productos.map((p) => (
-                    <article key={p.id} className="producto-card" data-estado={p.estado} data-destacado={p.destacado ? '1' : '0'}>
-                      <figure className="producto-media">
-                        <ImageCarousel images={p.imagenes} productName={p.nombre} />
-                        {p.destacado && (<span className="producto-chip chip-star" title="Producto destacado"><FiStar /></span>)}
-                        <span className="producto-chip chip-estado" data-estado={p.estado}>{p.estado}</span>
-                      </figure>
+                  {grupo.productos.map((p) => {
+                    const simplePrice = asNum(p.precio);
+                    const hasSimplePrice = Number.isFinite(simplePrice);
+                    const varDesde = asNum(p.precioDesde);
+                    const varHasta = asNum(p.precioHasta);
+                    const hasVarPrices = Number.isFinite(varDesde);
+                    const comparativo = asNum(p.precioComparativo);
+                    const descPct = asNum(p.descuentoPct);
 
-                      <div className="producto-body">
-                        <header className="producto-head">
-                          <h4 className="producto-title" title={p.nombre}>{p.nombre}</h4>
-                        </header>
+                    return (
+                      <article key={p.id} className="producto-card" data-estado={p.estado} data-destacado={p.destacado ? '1' : '0'}>
+                        <figure className="producto-media">
+                          <ImageCarousel images={p.imagenes} productName={p.nombre} />
+                          {p.destacado && (<span className="producto-chip chip-star" title="Producto destacado"><FiStar /></span>)}
+                          <span className="producto-chip chip-estado" data-estado={p.estado}>{p.estado}</span>
+                        </figure>
 
-                        <div className="producto-meta">
-                          <span className="producto-slug">/{p.slug}</span>
-                        </div>
+                        <div className="producto-body">
+                          <header className="producto-head">
+                            <h4 className="producto-title" title={p.nombre}>{p.nombre}</h4>
+                          </header>
 
-                        {/* Rango para VARIANTE */}
-                        <div className="producto-precio">
-                          {p.tipo === 'VARIANTE' ? (
-                            typeof p.precioDesde === 'number' ? (
-                              <span className="precio">
-                                Desde {currency(p.precioDesde)}
-                                {typeof p.precioHasta === 'number' && p.precioHasta !== p.precioDesde
-                                  ? ` – ${currency(p.precioHasta)}`
-                                  : ''}
-                              </span>
+                          <div className="producto-meta">
+                            <span className="producto-slug">/{p.slug}</span>
+                            <span style={{ marginLeft: 8, fontSize: '0.85rem', color: 'var(--text-2)' }}>
+                              👁 {p.vistas ?? 0} · 🛒 {p.ventas ?? 0}
+                            </span>
+                          </div>
+
+                          {/* Precios */}
+                          <div className="producto-precio">
+                            {p.tipo === 'VARIANTE' ? (
+                              hasVarPrices ? (
+                                <span className="precio">
+                                  Desde {currency(varDesde)}{(Number.isFinite(varHasta) && varHasta !== varDesde) ? ` – ${currency(varHasta)}` : ''}
+                                </span>
+                              ) : (<span className="badge">Con variantes</span>)
                             ) : (
-                              <span className="badge">Con variantes</span>
-                            )
-                          ) : (
-                            typeof p.precio === 'number' ? (
-                              <>
-                                <span className="precio">{currency(p.precio)}</span>
-                                {typeof p.precioComparativo === 'number' && (
-                                  <span className="precio-compare">{currency(p.precioComparativo)}</span>
-                                )}
-                                {p.descuentoPct ? <span className="precio-desc">-{p.descuentoPct}%</span> : null}
-                              </>
-                            ) : (
-                              <span className="badge">—</span>
-                            )
-                          )}
-                        </div>
+                              hasSimplePrice ? (
+                                <>
+                                  <span className="precio">{currency(simplePrice)}</span>
+                                  {Number.isFinite(comparativo) && (<span className="precio-compare">{currency(comparativo)}</span>)}
+                                  {Number.isFinite(descPct) && descPct > 0 ? <span className="precio-desc">-{descPct}%</span> : null}
+                                </>
+                              ) : (<span className="badge">—</span>)
+                            )}
+                          </div>
 
-                        <div className="producto-footer">
-                          <span className="producto-stock" data-stock={calcStock(p)}>{stockText(p)}</span>
-                          <div className="producto-actions">
-                            <button className="icon" onClick={() => toggleEstado(p)} title={p.estado === 'ACTIVE' ? 'Pausar producto' : 'Activar producto'}>
-                              {p.estado === 'ACTIVE' ? <FiPause /> : <FiPlay />}
-                            </button>
-                            <button className="icon" onClick={() => toggleDestacado(p)} title={p.destacado ? 'Quitar destacado' : 'Marcar como destacado'}>
-                              <FiStar />
-                            </button>
-                            <button className="icon" onClick={() => verPublico(p)} title="Ver página pública del producto">
-                              <FiEye />
-                            </button>
-                            <button className="icon" onClick={() => editarProducto(p)} title="Editar producto">
-                              <FiEdit2 />
-                            </button>
-                            <button className="icon danger" onClick={() => eliminarProducto(p)} title="Eliminar producto">
-                              <FiTrash2 />
-                            </button>
+                          <div className="producto-footer">
+                            <span className="producto-stock" data-stock={calcStock(p)}>{stockText(p)}</span>
+                            <div className="producto-actions">
+                              <button className="icon" onClick={() => toggleEstado(p)} title={p.estado === 'ACTIVE' ? 'Pausar producto' : 'Activar producto'}>
+                                {p.estado === 'ACTIVE' ? <FiPause /> : <FiPlay />}
+                              </button>
+                              <button className="icon" onClick={() => toggleDestacado(p)} title={p.destacado ? 'Quitar destacado' : 'Marcar como destacado'}>
+                                <FiStar />
+                              </button>
+                              <button className="icon" onClick={() => verPublico(p)} title="Ver página pública del producto">
+                                <FiEye />
+                              </button>
+                              <button className="icon" onClick={() => editarProducto(p)} title="Editar producto">
+                                <FiEdit2 />
+                              </button>
+
+                              {/* Eliminar: lógico (normal) vs permanente (solo ARCHIVED) */}
+                              {p.estado === 'ARCHIVED' ? (
+                                <button
+                                  className="icon danger"
+                                  onClick={() => eliminarProductoPermanente(p)}
+                                  title="Eliminar permanentemente (irrevocable)"
+                                >
+                                  <FiTrash2 />
+                                </button>
+                              ) : (
+                                <button
+                                  className="icon danger"
+                                  onClick={() => eliminarProducto(p)}
+                                  title="Eliminar (archivar)"
+                                >
+                                  <FiTrash2 />
+                                </button>
+                              )}
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    </article>
-                  ))}
+                      </article>
+                    );
+                  })}
                 </div>
               </section>
             ))}
@@ -862,14 +811,7 @@ export default function Productos() {
             <p className="panel-subtitle">Crea y organiza categorías para tu catálogo.</p>
 
             <div className="categorias-new">
-              <input
-                ref={refCatInput}
-                value={newCatName}
-                onChange={(e) => setNewCatName(e.target.value)}
-                placeholder="Ej. Calzado, Postres, Electrónica…"
-                onKeyDown={(e) => e.key === 'Enter' && agregarCategoria()}
-                aria-label="Nombre de la nueva categoría"
-              />
+              <input ref={refCatInput} value={newCatName} onChange={(e) => setNewCatName(e.target.value)} placeholder="Ej. Calzado, Postres, Electrónica…" onKeyDown={(e) => e.key === 'Enter' && agregarCategoria()} />
               <button className="btn btn-primary" onClick={agregarCategoria}><FiPlus /> Agregar</button>
             </div>
 
@@ -878,12 +820,7 @@ export default function Productos() {
                 <li key={c.id}>
                   {editCatId === c.id ? (
                     <>
-                      <input
-                        value={editCatName}
-                        onChange={(e) => setEditCatName(e.target.value)}
-                        onKeyDown={(e) => e.key === 'Enter' && guardarEdicionCat()}
-                        aria-label="Nuevo nombre de la categoría"
-                      />
+                      <input value={editCatName} onChange={(e) => setEditCatName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && guardarEdicionCat()} />
                       <div className="cat-actions">
                         <button className="btn btn-secondary" onClick={guardarEdicionCat}><FiCheck /> Guardar</button>
                         <button className="btn btn-ghost" onClick={() => { setEditCatId(null); setEditCatName(''); }}><FiX /> Cancelar</button>
@@ -919,7 +856,7 @@ export default function Productos() {
                 <h3 style={{margin:0}}>{mode === 'edit' ? 'Editar producto' : 'Nuevo producto'}</h3>
                 <div style={{fontSize:'.85rem',color:'var(--text-muted)'}}>URL: <span className="producto-slug">/{computedSlug || 'nuevo-producto'}</span></div>
               </div>
-              <div style={{display:'flex',gap:12,alignItems:'center'}}>
+              <div style={{display:'flex',gap:8,alignItems:'center', flexWrap:'wrap'}}>
                 <label className="check"><input type="checkbox" checked={form.visible} onChange={(e) => setForm({ ...form, visible: e.target.checked })} /><span>Visible</span></label>
                 <label className="check"><input type="checkbox" checked={form.destacado} onChange={(e) => setForm({ ...form, destacado: e.target.checked })} /><span>Destacado</span></label>
                 <select value={form.estado} onChange={(e) => setForm({ ...form, estado: e.target.value })} aria-label="Estado" className="select">
@@ -928,6 +865,7 @@ export default function Productos() {
                   <option value="PAUSED">Pausado</option>
                   <option value="ARCHIVED">Archivado</option>
                 </select>
+                <button type="button" className="btn btn-secondary" onClick={() => setShowAdvanced(true)} title="Opciones avanzadas"><FiSettings /> Opciones avanzadas</button>
                 <button type="button" className="icon" onClick={() => setShowEditor(false)} title="Cerrar"><FiX /></button>
               </div>
             </header>
@@ -939,15 +877,8 @@ export default function Productos() {
               <div className="crear-col">
                 <label className={`field ${errors.nombre ? 'has-error':''}`}>
                   <span>Nombre *</span>
-                  <input
-                    ref={refProdNombre}
-                    value={form.nombre}
-                    onChange={(e) => setForm({ ...form, nombre: e.target.value })}
-                    required
-                    placeholder="Ej. Tenis Falcon para correr"
-                    aria-describedby={errors.nombre ? 'err-nombre' : undefined}
-                  />
-                  {errors.nombre && <small id="err-nombre" className="error">{errors.nombre}</small>}
+                  <input ref={refProdNombre} value={form.nombre} onChange={(e) => setForm({ ...form, nombre: e.target.value })} required placeholder="Ej. Tenis Falcon para correr" />
+                  {errors.nombre && <small className="error">{errors.nombre}</small>}
                 </label>
 
                 <label className="field">
@@ -955,29 +886,21 @@ export default function Productos() {
                   <textarea rows={4} value={form.descripcion} onChange={(e) => setForm({ ...form, descripcion: e.target.value })} placeholder="Cuenta por qué este producto es genial, beneficios y materiales…" />
                 </label>
 
-                {/* Selector de Tipo */}
-                <div className="tipo-grid">
-                  <span className="subhead">Tipo de producto</span>
-                  <div className="tipo-cards">
-                    {TIPOS.map(t => (
-                      <button key={t.value} type="button" className={`tipo-card ${form.tipo === t.value ? 'active':''}`} onClick={() => setForm({ ...form, tipo: t.value })} aria-pressed={form.tipo === t.value}>
-                        <div className="tipo-title">{t.label}</div>
-                        <div className="tipo-desc">{t.desc}</div>
-                        <div className="tipo-badges">{t.badges.map(b => <span key={b} className="chip small">{b}</span>)}</div>
-                      </button>
-                    ))}
-                  </div>
-                  {(form.tipo !== 'SIMPLE') && (
-                    <p className="muted" style={{marginTop:'.25rem'}}><FiInfo /> El inventario de variantes/servicios/digitales se configura después. Guardaremos el producto sin inventario.</p>
-                  )}
+                {/* Tipo */}
+                <label className="field">
+                  <span>Tipo de producto</span>
+                  <select value={form.tipo} onChange={(e) => setForm({ ...form, tipo: e.target.value })}>
+                    {TIPOS.map(t => (<option key={t.value} value={t.value}>{t.label}</option>))}
+                  </select>
+                  {form.tipo !== 'SIMPLE' && (<small className="muted"><FiInfo /> El inventario de variantes/servicios/digitales se configura después.</small>)}
                   {form.tipo === 'VARIANTE' && (
-                    <div style={{marginTop:'.5rem', display:'flex', gap:8, alignItems:'center'}}>
-                      {mode === 'edit' && editId ? (
-                        <button type="button" className="btn btn-secondary" onClick={() => openVariantesModal(editId)}><FiEdit2 /> Gestionar variantes…</button>
-                      ) : (<span className="muted">Guarda el producto para agregar variantes.</span>)}
+                    <div style={{marginTop:'.5rem'}}>
+                      {mode === 'edit' && editId
+                        ? <button type="button" className="btn btn-secondary" onClick={() => openVariantesModal(editId)}><FiEdit2 /> Gestionar variantes…</button>
+                        : <span className="muted">Guarda el producto para agregar variantes.</span>}
                     </div>
                   )}
-                </div>
+                </label>
 
                 {/* Precios */}
                 <h4 className="subhead">Precios</h4>
@@ -994,14 +917,20 @@ export default function Productos() {
                 </div>
 
                 <div className="crear-row">
-                  <label className="field"><span>Costo</span><input type="number" step="0.01" value={form.costo} onChange={(e) => setForm({ ...form, costo: e.target.value })} placeholder="Costo de adquisición" /></label>
+                  <label className="field"><span>Costo (producción/compra)</span><input type="number" step="0.01" value={form.costo} onChange={(e) => setForm({ ...form, costo: e.target.value })} placeholder="Ej. 80.00" /></label>
                   <label className="field"><span>% Descuento</span><input type="number" min="0" max="100" value={form.descuentoPct} onChange={(e) => setForm({ ...form, descuentoPct: e.target.value })} placeholder={descuentoSugerido != null ? `${descuentoSugerido} sugerido` : 'Ej. 15'} /></label>
                 </div>
 
-                {/* KPI cards */}
+                {/* KPIs */}
                 <div className="kpis">
-                  <div className="kpi"><div className="kpi-title"><FiInfo /> Descuento sugerido</div><div className="kpi-value">{descuentoSugerido != null ? `-${descuentoSugerido}%` : '—'}</div></div>
-                  <div className="kpi"><div className="kpi-title"><FiInfo /> Margen</div><div className="kpi-value">{margen ? `${currency(margen.m)}${margen.pct != null ? ` · ${margen.pct.toFixed(0)}%` : ''}` : '—'}</div></div>
+                  <div className="kpi">
+                    <div className="kpi-title"><FiInfo /> Descuento sugerido</div>
+                    <div className="kpi-value">{descuentoSugerido != null ? `-${descuentoSugerido}%` : '—'}</div>
+                  </div>
+                  <div className="kpi">
+                    <div className="kpi-title"><FiInfo /> Margen</div>
+                    <div className="kpi-value">{margen ? `${currency(margen.m)}${margen.pct != null ? ` · ${margen.pct.toFixed(0)}%` : ''}` : '—'}</div>
+                  </div>
                 </div>
 
                 {/* Inventario (solo SIMPLE) */}
@@ -1026,12 +955,12 @@ export default function Productos() {
                   </>
                 )}
 
-                {/* Categorías (chips) */}
+                {/* Categorías */}
                 <h4 className="subhead" style={{marginTop:'1rem'}}>Categorías</h4>
                 <div className="chips">
                   {categorias.length === 0 && <span className="muted">No tienes categorías todavía.</span>}
                   {categorias.map(c => (
-                    <button key={c.id} type="button" className={`chip ${form.categoriasIds.includes(c.id) ? 'active':''}`} onClick={() => toggleCategoria(c.id)} title={form.categoriasIds.includes(c.id) ? 'Quitar de esta categoría' : 'Agregar a esta categoría'}>
+                    <button key={c.id} type="button" className={`chip ${form.categoriasIds.includes(c.id) ? 'active':''}`} onClick={() => toggleCategoria(c.id)}>
                       {c.nombre}
                     </button>
                   ))}
@@ -1063,14 +992,14 @@ export default function Productos() {
                             </div>
                             <button type="button" className="icon danger" onClick={() => removeImagen(idx)} title="Quitar imagen"><FiX /></button>
                           </div>
-                          <input className="img-alt" value={img.alt} onChange={(e) => updateAlt(idx, e.target.value)} placeholder="Texto alternativo (para accesibilidad/SEO)" />
+                          <input className="img-alt" value={img.alt} onChange={(e) => updateAlt(idx, e.target.value)} placeholder="Texto alternativo (accesibilidad/SEO)" />
                         </li>
                       ))}
                     </ul>
                   ) : (<p className="muted">Aún no has subido imágenes.</p>)}
                 </div>
 
-                {/* Preview en vivo */}
+                {/* Preview */}
                 <h4 className="subhead">Vista previa</h4>
                 <article className="producto-card preview" data-estado={form.estado} data-destacado={form.destacado ? '1' : '0'}>
                   <figure className="producto-media">
@@ -1120,6 +1049,72 @@ export default function Productos() {
         </section>
       )}
 
+      {/* Modal: OPCIONES AVANZADAS */}
+      {showEditor && showAdvanced && (
+        <section className="panel-overlay" onClick={() => setShowAdvanced(false)}>
+          <div className="panel-content" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Opciones avanzadas del producto">
+            <header className="panel-head">
+              <h3><FiSettings /> Opciones avanzadas</h3>
+              <button className="icon" onClick={() => setShowAdvanced(false)} title="Cerrar"><FiX /></button>
+            </header>
+
+            <div className="crear-grid" style={{alignItems:'start'}}>
+              <div className="crear-col">
+                <h4 className="subhead">Identificación</h4>
+                <div className="crear-row">
+                  <label className="field"><span>SKU</span><input value={form.sku} onChange={(e) => setForm({ ...form, sku: e.target.value })} placeholder="Código interno" /></label>
+                  <label className="field"><span>GTIN (EAN/UPC)</span><input value={form.gtin} onChange={(e) => setForm({ ...form, gtin: e.target.value })} placeholder="Código de barras" /></label>
+                </div>
+                <div className="crear-row">
+                  <label className="field"><span>Marca</span><input value={form.marca} onChange={(e) => setForm({ ...form, marca: e.target.value })} placeholder="Ej. MiMarca" /></label>
+                  <label className="field">
+                    <span>Condición</span>
+                    <input list="cond-list" value={form.condicion} onChange={(e) => setForm({ ...form, condicion: e.target.value })} placeholder="NUEVO / USADO / REACONDICIONADO" />
+                    <datalist id="cond-list">
+                      <option value="NUEVO" />
+                      <option value="USADO" />
+                      <option value="REACONDICIONADO" />
+                    </datalist>
+                  </label>
+                </div>
+
+                <h4 className="subhead">Envío y dimensiones</h4>
+                <div className="crear-row">
+                  <label className="field"><span>Peso (g)</span><input type="number" min="0" value={form.pesoGramos} onChange={(e) => setForm({ ...form, pesoGramos: e.target.value })} /></label>
+                  <label className="field"><span>Clase de envío</span><input value={form.claseEnvio} onChange={(e) => setForm({ ...form, claseEnvio: e.target.value })} placeholder="ligero / frágil / oversize" /></label>
+                </div>
+                <div className="crear-row">
+                  <label className="field"><span>Alto (cm)</span><input type="number" step="0.01" value={form.altoCm} onChange={(e) => setForm({ ...form, altoCm: e.target.value })} /></label>
+                  <label className="field"><span>Ancho (cm)</span><input type="number" step="0.01" value={form.anchoCm} onChange={(e) => setForm({ ...form, anchoCm: e.target.value })} /></label>
+                </div>
+                <div className="crear-row">
+                  <label className="field"><span>Largo (cm)</span><input type="number" step="0.01" value={form.largoCm} onChange={(e) => setForm({ ...form, largoCm: e.target.value })} /></label>
+                  <label className="field"><span>Días de preparación</span><input type="number" min="0" value={form.diasPreparacion} onChange={(e) => setForm({ ...form, diasPreparacion: e.target.value })} /></label>
+                </div>
+              </div>
+
+              <div className="crear-col">
+                <h4 className="subhead">Políticas y digital</h4>
+                <label className="field"><span>Política de devolución</span><textarea rows={4} value={form.politicaDevolucion} onChange={(e) => setForm({ ...form, politicaDevolucion: e.target.value })} placeholder="Describe condiciones de devolución, cambios, etc." /></label>
+
+                {form.tipo === 'DIGITAL' && (
+                  <label className="field"><span>URL de archivo digital</span><input value={form.digitalUrl} onChange={(e) => setForm({ ...form, digitalUrl: e.target.value })} placeholder="/TiendaUploads/tienda-1/productos/manual.pdf" /></label>
+                )}
+
+                <h4 className="subhead">Licenciamiento</h4>
+                <label className="check"><input type="checkbox" checked={form.licOriginal} onChange={(e) => setForm({ ...form, licOriginal: e.target.checked })} /><span>Es diseño/obra original del vendedor</span></label>
+                <label className="field"><span>Notas de licenciamiento (opcional)</span><input value={form.licNotas} onChange={(e) => setForm({ ...form, licNotas: e.target.value })} placeholder="Información adicional sobre derechos/autorizaciones" /></label>
+              </div>
+            </div>
+
+            <footer className="panel-foot">
+              <button className="btn btn-ghost" onClick={() => setShowAdvanced(false)}>Cerrar</button>
+              <button className="btn btn-secondary" onClick={() => setShowAdvanced(false)}><FiCheck /> Listo</button>
+            </footer>
+          </div>
+        </section>
+      )}
+
       {/* Sub-modal Variantes */}
       {showVariantes && (
         <section className="panel-overlay" onClick={() => setShowVariantes(false)}>
@@ -1164,8 +1159,8 @@ export default function Productos() {
                             <div style={{fontWeight:600}}>{v.nombre || '—'}</div>
                             {v.opciones ? (<small className="muted">{safeStringify(v.opciones)}</small>) : <small className="muted">—</small>}
                           </td>
-                          <td style={{textAlign:'right'}}>{typeof v.precio === 'number' ? currency(v.precio) : '—'}</td>
-                          <td style={{textAlign:'right'}}>{typeof v?.inventario?.stock === 'number' ? v.inventario.stock : 0}</td>
+                          <td style={{textAlign:'right'}}>{Number.isFinite(asNum(v.precio)) ? currency(asNum(v.precio)) : '—'}</td>
+                          <td style={{textAlign:'right'}}>{Number.isFinite(asNum(v?.inventario?.stock)) ? asNum(v?.inventario?.stock) : 0}</td>
                           <td>
                             <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
                               <button className="btn btn-ghost" onClick={() => vStartEdit(v)}><FiEdit2 /> Editar</button>

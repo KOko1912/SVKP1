@@ -3,10 +3,13 @@ const express = require('express');
 const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
-const prisma = require('../../config/db'); // o: const { prisma } = require('../../config/db');
+const prisma = require('../../config/db');
 
 const router = express.Router();
 
+/* =========================
+   Helpers
+   ========================= */
 function getUserId(req) {
   const raw = req.headers['x-user-id'] || '';
   if (raw) return Number(raw);
@@ -14,120 +17,126 @@ function getUserId(req) {
   const m = auth.match(/^Bearer\s+(\d+)$/i);
   return m ? Number(m[1]) : null;
 }
-
-function slugify(str = '') {
-  return String(str)
-    .toLowerCase()
-    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/(^-|-$)+/g, '');
+function ensureDir(p) { if (!fs.existsSync(p)) fs.mkdirSync(p, { recursive: true }); }
+function genName(original = 'file.bin') {
+  const ext = (path.extname(original) || '').toLowerCase();
+  const base = String(Date.now()) + '_' + Math.random().toString(36).slice(2, 10);
+  return base + (ext || '');
 }
 
-function ensureDir(p) {
-  if (!fs.existsSync(p)) fs.mkdirSync(p, { recursive: true });
-}
+/**
+ * Resuelve carpeta física y baseUrl pública donde guardar el archivo.
+ * - Si el usuario tiene tienda: TiendaUploads/tienda-<id>/<subdir>
+ * - Si no: uploads/user-<id>/<subdir>
+ */
+async function resolveTarget(req, subdir) {
+  const tiendaUploadsDir = process.env.TIENDA_UPLOADS_DIR || path.join(process.cwd(), 'TiendaUploads');
+  const userUploadsDir   = process.env.USER_UPLOADS_DIR   || path.join(process.cwd(), 'uploads');
 
-const storage = multer.diskStorage({
-  destination: async (req, file, cb) => {
-    try {
-      const userId = getUserId(req);
-      const tienda = await prisma.tienda.findUnique({ where: { usuarioId: userId } });
-      if (!tienda) return cb(new Error('Tienda no encontrada'));
-
-      const tiendaSlug = slugify(tienda.nombre || String(tienda.id));
-      const baseDir = path.join(process.cwd(), 'TiendaUploads', String(tienda.id), tiendaSlug, 'productos');
-      ensureDir(baseDir);
-      cb(null, baseDir);
-    } catch (e) { cb(e); }
-  },
-  filename: (req, file, cb) => {
-    const ext = (path.extname(file.originalname) || '.jpg').toLowerCase();
-    const base = slugify(path.parse(file.originalname).name) || 'img';
-    cb(null, `${base}${ext}`);
-  },
-});
-
-const upload = multer({
-  storage,
-  fileFilter: (_req, file, cb) => {
-    const ok = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp'];
-    if (!ok.includes(file.mimetype)) return cb(new Error('Usa PNG, JPG o WEBP'));
-    cb(null, true);
-  },
-  limits: { fileSize: 5 * 1024 * 1024 },
-});
-
-// POST /api/v1/upload/producto   (FormData: file)
-router.post('/producto', upload.single('file'), async (req, res) => {
-  try {
-    const userId = getUserId(req);
-    const tienda = await prisma.tienda.findUnique({ where: { usuarioId: userId } });
-    const tiendaSlug = slugify(tienda.nombre || String(tienda.id));
-    const url = `/TiendaUploads/${tienda.id}/${tiendaSlug}/productos/${req.file.filename}`.replace(/\\/g,'/');
-    res.json({ url });
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: 'Error subiendo archivo' });
+  const userId = getUserId(req);
+  if (userId) {
+    const tienda = await prisma.tienda.findFirst({ where: { usuarioId: userId }, select: { id: true } }).catch(() => null);
+    if (tienda?.id) {
+      const dir = path.join(tiendaUploadsDir, `tienda-${tienda.id}`, subdir);
+      const baseUrl = `/TiendaUploads/tienda-${tienda.id}/${subdir}`;
+      ensureDir(dir);
+      return { dir, baseUrl };
+    }
+    const dir = path.join(userUploadsDir, `user-${userId}`, subdir);
+    const baseUrl = `/uploads/user-${userId}/${subdir}`;
+    ensureDir(dir);
+    return { dir, baseUrl };
   }
-});
-// POST /api/v1/upload/producto/imagenes (FormData: files[])
 
-// === SUBIDA DE ARCHIVO DIGITAL (PDF/ZIP/etc.) ===
-// Guarda en: /TiendaUploads/<tiendaId>/<slug>/digital/<archivo>
-const multer2 = require('multer');
+  // Fallback anónimo
+  const dir = path.join(userUploadsDir, 'anon', subdir);
+  const baseUrl = `/uploads/anon/${subdir}`;
+  ensureDir(dir);
+  return { dir, baseUrl };
+}
 
-const digitalStorage = multer2.diskStorage({
-  destination: async (req, file, cb) => {
-    try {
-      const userId = getUserId(req);
-      const tienda = await prisma.tienda.findUnique({ where: { usuarioId: userId } });
-      if (!tienda) return cb(new Error('Tienda no encontrada'));
-      const tiendaSlug = slugify(tienda.nombre || String(tienda.id));
-      const baseDir = path.join(process.cwd(), 'TiendaUploads', String(tienda.id), tiendaSlug, 'digital');
-      ensureDir(baseDir);
-      cb(null, baseDir);
-    } catch (e) { cb(e); }
-  },
-  filename: (_req, file, cb) => {
-    const ext = (path.extname(file.originalname) || '').toLowerCase();
-    const base = slugify(path.parse(file.originalname).name) || 'archivo';
-    cb(null, `${base}${ext || '.bin'}`);
-  },
-});
-
-const okDigital = new Set([
+/* =========================
+   Multer factories
+   ========================= */
+const IMAGE_MIME = new Set(['image/png', 'image/jpeg', 'image/jpg', 'image/webp']);
+const DIGITAL_MIME = new Set([
   'application/pdf', 'application/zip', 'application/x-zip-compressed',
-  'application/octet-stream',
-  'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  'application/vnd.ms-powerpoint', 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-  'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  'audio/mpeg', 'video/mp4',
-  // puedes ampliar esta lista
+  // Permitimos imágenes como archivo digital (ej. mockups/arte)
+  'image/png', 'image/jpeg', 'image/jpg', 'image/webp',
 ]);
 
-const uploadDigital = multer2({
-  storage: digitalStorage,
-  fileFilter: (_req, file, cb) => {
-    if (!okDigital.has(file.mimetype)) {
-      return cb(new Error('Tipo no permitido para digital. Usa PDF, ZIP u otros formatos habilitados.'));
+function makeUploader({ subdir, maxSizeBytes, allowedMime }) {
+  const storage = multer.diskStorage({
+    destination: async function (req, _file, cb) {
+      try {
+        if (!req._uploadTarget) req._uploadTarget = await resolveTarget(req, subdir);
+        cb(null, req._uploadTarget.dir);
+      } catch (e) { cb(e); }
+    },
+    filename: function (_req, file, cb) {
+      cb(null, genName(file.originalname));
+    }
+  });
+
+  const fileFilter = function (_req, file, cb) {
+    if (!allowedMime.has(file.mimetype)) {
+      return cb(new Error('Tipo de archivo no permitido'), false);
     }
     cb(null, true);
-  },
-  limits: { fileSize: 100 * 1024 * 1024 }, // 100MB
+  };
+
+  return multer({
+    storage,
+    fileFilter,
+    limits: { fileSize: maxSizeBytes }
+  }).single('file'); // Frontend envía 'file'
+}
+
+/* =========================
+   Endpoints
+   ========================= */
+
+// Imágenes de producto
+const uploadProducto = makeUploader({
+  subdir: 'productos',
+  maxSizeBytes: Number(process.env.MAX_IMAGE_SIZE || 8 * 1024 * 1024), // 8MB
+  allowedMime: IMAGE_MIME,
 });
 
-// POST /api/v1/upload/digital   (FormData: file)
-router.post('/digital', uploadDigital.single('file'), async (req, res) => {
-  try {
-    const userId = getUserId(req);
-    const tienda = await prisma.tienda.findUnique({ where: { usuarioId: userId } });
-    const tiendaSlug = slugify(tienda.nombre || String(tienda.id));
-    const url = `/TiendaUploads/${tienda.id}/${tiendaSlug}/digital/${req.file.filename}`.replace(/\\/g,'/');
-    res.json({ url });
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: 'Error subiendo archivo digital' });
-  }
+router.post('/producto', (req, res) => {
+  uploadProducto(req, res, (err) => {
+    if (err) {
+      const msg = err?.message || 'No se pudo subir la imagen';
+      return res.status(400).json({ error: msg });
+    }
+    if (!req.file || !req._uploadTarget) {
+      return res.status(400).json({ error: 'Archivo faltante' });
+    }
+    const url = `${req._uploadTarget.baseUrl}/${req.file.filename}`.replace(/\\/g, '/');
+    // Respuesta estándar que tu frontend ya consume
+    res.json({ ok: true, url, name: req.file.originalname, size: req.file.size });
+  });
+});
+
+// Archivos digitales (PDF/ZIP/IMG)
+const uploadDigital = makeUploader({
+  subdir: 'digital',
+  maxSizeBytes: Number(process.env.MAX_DIGITAL_SIZE || 100 * 1024 * 1024), // 100MB
+  allowedMime: DIGITAL_MIME,
+});
+
+router.post('/digital', (req, res) => {
+  uploadDigital(req, res, (err) => {
+    if (err) {
+      const msg = err?.message || 'No se pudo subir el archivo';
+      return res.status(400).json({ error: msg });
+    }
+    if (!req.file || !req._uploadTarget) {
+      return res.status(400).json({ error: 'Archivo faltante' });
+    }
+    const url = `${req._uploadTarget.baseUrl}/${req.file.filename}`.replace(/\\/g, '/');
+    res.json({ ok: true, url, name: req.file.originalname, size: req.file.size });
+  });
 });
 
 module.exports = router;

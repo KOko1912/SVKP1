@@ -7,36 +7,30 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-/**
- * ===========================
- * MODELOS EXISTENTES + FLAGS
- * ===========================
- */
+/* ===========================
+   USUARIOS + TOKENS
+   =========================== */
 
 model Usuario {
-  id            Int      @id @default(autoincrement())
-  nombre        String
-  telefono      String   @unique
-  contraseña   String
-  fotoUrl       String?
-  suscripciones Json?
-  fechaCreacion DateTime @default(now())
+  id             Int      @id @default(autoincrement())
+  nombre         String
+  telefono       String   @unique
+  contraseña     String
+  fotoUrl        String?
+  suscripciones  Json?
+  fechaCreacion  DateTime @default(now())
 
-  // Campos para flujo de vendedor
+  // Flujo vendedor
   vendedorSolicitado Boolean @default(false)
   vendedor           Boolean @default(false)
 
-  // Relación con tokens de reseteo
+  // Relaciones
   resetTokens PasswordResetToken[]
-
-  // Relación con solicitudes de vendedor
   solicitudes SolicitudVendedor[]
+  tienda      Tienda?
+  resenas     Resena[]
 
-  // Backref 1–1 con Tienda (no crea columnas)
-  tienda Tienda?
-
-  // Backref reseñas
-  resenas Resena[]
+  @@index([telefono])
 }
 
 model PasswordResetToken {
@@ -49,13 +43,12 @@ model PasswordResetToken {
   createdAt DateTime @default(now())
 
   @@index([usuarioId])
+  @@index([expiresAt])
 }
 
-/**
- * ===========================
- * NUEVOS PARA SOLICITUD VENDEDOR
- * ===========================
- */
+/* ===========================
+   SOLICITUDES DE VENDEDOR
+   =========================== */
 
 enum EstadoSolicitud {
   PENDIENTE
@@ -84,7 +77,12 @@ model SolicitudVendedor {
   rechazadoAt DateTime?
 
   @@index([usuarioId])
+  @@index([estado])
 }
+
+/* ===========================
+   SDK ADMIN
+   =========================== */
 
 model SDKADMIN {
   id           Int      @id @default(1)
@@ -95,11 +93,16 @@ model SDKADMIN {
   @@map("SDKADMIN")
 }
 
+/* ===========================
+   TIENDA
+   =========================== */
+
 model Tienda {
   id         Int     @id @default(autoincrement())
   usuarioId  Int     @unique
   usuario    Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
-  homeLayout Json? // <-- NUEVO
+
+  homeLayout Json?
 
   // Básicos
   nombre        String
@@ -132,11 +135,17 @@ model Tienda {
   seoKeywords    String[]
   seoDescripcion String?
 
-  // 🔥 Publicación (campos públicos de la tienda)
-  slug        String? // slug amigable en URL
-  publicUuid  String?   @unique // identificador estable para la URL pública
-  isPublished Boolean   @default(false)
+  // Pública / branding
+  slug        String?        // slug amigable
+  publicUuid  String? @unique
+  isPublished Boolean @default(false)
   publishedAt DateTime?
+
+  // Campos usados en rutas tienda
+  moneda   String? @default("MXN")
+  ciudad   String?
+  pais     String?
+  whatsapp String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -147,13 +156,12 @@ model Tienda {
 
   @@index([usuarioId])
   @@index([slug])
+  @@index([isPublished])
 }
 
-/**
- * ===========================
- * ENUMS PRODUCTOS
- * ===========================
- */
+/* ===========================
+   ENUMS PRODUCTOS / RESEÑAS
+   =========================== */
 
 enum EstadoProducto {
   DRAFT
@@ -176,11 +184,9 @@ enum EstadoResena {
   RECHAZADA
 }
 
-/**
- * ===========================
- * PRODUCTO BASE
- * ===========================
- */
+/* ===========================
+   PRODUCTOS
+   =========================== */
 
 model Producto {
   id       Int    @id @default(autoincrement())
@@ -228,7 +234,7 @@ model Producto {
   digitalUrl         String?
   licenciamiento     Json?
 
-  // Publicación
+  // Publicación / borrado lógico
   publishedAt DateTime?
   deletedAt   DateTime?
 
@@ -245,13 +251,13 @@ model Producto {
 
   @@unique([tiendaId, slug], name: "uq_producto_tienda_slug")
   @@index([tiendaId, estado, visible, destacado, deletedAt], name: "idx_producto_listado")
+  @@index([tiendaId, nombre])
+  @@index([estado, visible])
 }
 
-/**
- * ===========================
- * MEDIOS
- * ===========================
- */
+/* ===========================
+   MEDIOS
+   =========================== */
 
 model ProductoImagen {
   id          Int      @id @default(autoincrement())
@@ -262,15 +268,16 @@ model ProductoImagen {
   isPrincipal Boolean  @default(false)
   orden       Int      @default(0)
   createdAt   DateTime @default(now())
+
   @@unique([productoId, url])
   @@index([productoId])
+  @@index([productoId, isPrincipal])
+  @@index([productoId, orden])
 }
 
-/**
- * ===========================
- * VARIANTES + INVENTARIO
- * ===========================
- */
+/* ===========================
+   VARIANTES + IMÁGENES
+   =========================== */
 
 model Variante {
   id         Int      @id @default(autoincrement())
@@ -286,7 +293,7 @@ model Variante {
   precioComparativo Decimal? @db.Decimal(10, 2)
   costo             Decimal? @db.Decimal(10, 2)
 
-  opciones Json? // {talla:"M", color:"Rojo"}
+  opciones Json? // p.ej {talla:"M", color:"Rojo"}
 
   inventario Inventario?
   imagenes   VarianteImagen[]
@@ -295,6 +302,7 @@ model Variante {
   updatedAt DateTime @updatedAt
 
   @@index([productoId])
+  @@index([sku])
 }
 
 model VarianteImagen {
@@ -307,12 +315,17 @@ model VarianteImagen {
   createdAt  DateTime @default(now())
 
   @@index([varianteId])
+  @@index([varianteId, orden])
 }
+
+/* ===========================
+   INVENTARIO (1–1)
+   =========================== */
 
 model Inventario {
   id Int @id @default(autoincrement())
 
-  // Uno u otro
+  // Uno u otro (producto simple o variante)
   productoId Int?
   producto   Producto? @relation(fields: [productoId], references: [id], onDelete: Cascade)
   varianteId Int?
@@ -336,11 +349,9 @@ model Inventario {
   @@index([varianteId])
 }
 
-/**
- * ===========================
- * ATRIBUTOS FLEXIBLES
- * ===========================
- */
+/* ===========================
+   ATRIBUTOS FLEXIBLES
+   =========================== */
 
 model ProductoAtributo {
   id         Int      @id @default(autoincrement())
@@ -351,13 +362,12 @@ model ProductoAtributo {
 
   @@unique([productoId, clave], name: "uq_producto_clave")
   @@index([productoId])
+  @@index([clave])
 }
 
-/**
- * ===========================
- * TAXONOMÍA: CATEGORÍAS POR TIENDA
- * ===========================
- */
+/* ===========================
+   TAXONOMÍA (CATEGORÍAS)
+   =========================== */
 
 model Categoria {
   id          Int         @id @default(autoincrement())
@@ -378,6 +388,7 @@ model Categoria {
 
   @@unique([tiendaId, slug], name: "uq_categoria_tienda_slug")
   @@index([tiendaId, parentId])
+  @@index([tiendaId, nombre])
 }
 
 model ProductoCategoria {
@@ -390,11 +401,9 @@ model ProductoCategoria {
   @@index([categoriaId])
 }
 
-/**
- * ===========================
- * RESEÑAS / CALIFICACIONES
- * ===========================
- */
+/* ===========================
+   RESEÑAS / CALIFICACIONES
+   =========================== */
 
 model Resena {
   id            Int          @id @default(autoincrement())
@@ -413,4 +422,5 @@ model Resena {
 
   @@index([productoId])
   @@index([usuarioId])
+  @@index([estado])
 }

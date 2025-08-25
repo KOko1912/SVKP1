@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import {
   FiTag, FiBox, FiHash, FiInfo, FiShoppingCart, FiChevronLeft, FiPackage,
-  FiAlertTriangle, FiClipboard, FiTruck, FiShield, FiImage, FiExternalLink
+  FiAlertTriangle, FiClipboard, FiTruck, FiShield, FiImage, FiExternalLink, FiX
 } from 'react-icons/fi';
 import './PublicProducto.css';
 
@@ -72,7 +72,10 @@ export default function PublicProducto() {
   const [err, setErr] = useState('');
   const [qty, setQty] = useState(1);
 
+  // variantes
   const [selectedOps, setSelectedOps] = useState({});
+  const [showConfirm, setShowConfirm] = useState(false); // <-- modal confirmar
+
   const user = useMemo(() => { try { return JSON.parse(localStorage.getItem('usuario') || '{}'); } catch { return {}; } }, []);
   const headers = useMemo(() => (user?.id ? { 'x-user-id': user.id } : {}), [user?.id]);
 
@@ -88,7 +91,7 @@ export default function PublicProducto() {
     root.setProperty('--primary-hover', theme.from);
   }, [theme]);
 
-  // Try to load store config if there is a session (keeps public flow working)
+  // Try to load store config if there is a session
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -141,7 +144,7 @@ export default function PublicProducto() {
     return () => { cancelled = true; };
   }, [id, uuid]);
 
-  // Derived
+  // Derivados
   const galeria = useMemo(() => {
     const base = producto?.imagenes || [];
     if (!base.length && producto?.variantes?.length) {
@@ -207,21 +210,57 @@ export default function PublicProducto() {
     [tienda.portadaUrl, theme.from, theme.to, imgV.portada]
   );
 
-  // UI handlers
+  // Helpers
+  const precioMostrar = tipoVariante ? (activeVar?.precio ?? null) : (producto?.precio ?? null);
+  const precioComparativoMostrar = tipoVariante ? (activeVar?.precioComparativo ?? null) : (producto?.precioComparativo ?? null);
+  const descuentoPct = producto?.descuentoPct ?? (activeVar?.descuentoPct ?? null);
+
+  const stockTotal = producto?.stockTotal ?? producto?.inventario?.stock ?? 0;
+  const hayStock = stockTotal > 0 || producto?.inventario?.permitirBackorder;
+
   const onSelectOpcion = (nombre, valor) => setSelectedOps(prev => ({ ...prev, [nombre]: valor }));
   const addQty = () => setQty(n => Math.max(1, (n || 1) + 1));
   const subQty = () => setQty(n => Math.max(1, (n || 1) - 1));
-  const handleAddToCart = () => alert('Añadido al carrito (demo UI)');
-  const handleWhatsApp = () => {
-    const phone = tienda?.telefonoContacto || '';
-    const clean = phone.replace(/\D/g, '');
+
+  // Construye el texto que se envía a WhatsApp
+  const buildWhatsAppText = () => {
     const titulo = producto?.nombre || 'Producto';
-    const url = `${window.location.origin}${location.pathname}`;
-    const msg = encodeURIComponent(`Hola, me interesa "${titulo}".\n${url}`);
-    const wa = clean ? `https://wa.me/${clean}?text=${msg}` : `https://wa.me/?text=${msg}`;
-    window.open(wa, '_blank', 'noopener,noreferrer');
+    const url = window.location.href; // incluye uuid/id y query actuales
+    const varianteTxt = activeVar
+      ? (activeVar.nombre || Object.values(activeVar.opciones || {}).join(' / '))
+      : '';
+    const precioTxt = precioMostrar != null ? money(precioMostrar) : 'A consultar';
+    const tiendaTxt = tienda?.nombre ? `Tienda: ${tienda.nombre}` : null;
+
+    const lines = [
+      `🛒 *Quiero comprar*: ${titulo}`,
+      varianteTxt ? `• Variante: ${varianteTxt}` : null,
+      `• Cantidad: ${qty}`,
+      `• Precio: ${precioTxt}`,
+      tiendaTxt,
+      '',
+      `🔗 ${url}`
+    ].filter(Boolean);
+
+    return lines.join('\n');
   };
 
+  // Mostrar modal de confirmación
+  const handleWhatsAppClick = () => {
+    if (!tienda?.telefonoContacto) return;
+    setShowConfirm(true);
+  };
+
+  // Confirmar e ir a WhatsApp
+  const confirmWhatsApp = () => {
+    const phone = tienda?.telefonoContacto?.replace(/\D/g, '') || '';
+    const msg = encodeURIComponent(buildWhatsAppText());
+    const wa = phone ? `https://wa.me/${phone}?text=${msg}` : `https://wa.me/?text=${msg}`;
+    window.open(wa, '_blank', 'noopener,noreferrer');
+    setShowConfirm(false);
+  };
+
+  /* ===================== Render ===================== */
   if (loading) {
     return (
       <div className="pp-loading">
@@ -240,14 +279,6 @@ export default function PublicProducto() {
     );
   }
 
-  const stockTotal = producto?.stockTotal ?? producto?.inventario?.stock ?? 0;
-  const hayStock = stockTotal > 0 || producto?.inventario?.permitirBackorder;
-
-  const precioMostrar = tipoVariante ? (activeVar?.precio ?? null) : (producto?.precio ?? null);
-  const precioComparativoMostrar = tipoVariante ? (activeVar?.precioComparativo ?? null) : (producto?.precioComparativo ?? null);
-  const descuentoPct = producto?.descuentoPct ?? (activeVar?.descuentoPct ?? null);
-
-  // Flags de secciones condicionales (solo si hay datos)
   const showEnvio = Boolean(
     producto?.diasPreparacion != null ||
     producto?.claseEnvio ||
@@ -255,7 +286,7 @@ export default function PublicProducto() {
     tienda?.envioCobertura || tienda?.envioCosto || tienda?.envioTiempo || tienda?.devoluciones
   );
   const showDims = Boolean(producto?.altoCm || producto?.anchoCm || producto?.largoCm || producto?.pesoGramos);
-  const showAttrs = atributos.length > 0;
+  const showAttrs = (producto?.atributos || []).some(a => a?.clave && String(a.valor || '').trim() !== '');
 
   return (
     <div className="pp-wrap">
@@ -335,7 +366,6 @@ export default function PublicProducto() {
               {producto?.destacado && <span className="pp-pill">Destacado</span>}
             </header>
 
-            {/* Meta compacta, solo si existen */}
             <div className="pp-meta">
               {producto?.marca && <div className="pp-meta-item"><FiTag /> Marca: <strong>{producto.marca}</strong></div>}
               {producto?.sku && <div className="pp-meta-item"><FiHash /> SKU: <strong>{producto.sku}</strong></div>}
@@ -406,11 +436,11 @@ export default function PublicProducto() {
                 />
                 <button onClick={addQty} aria-label="Más">+</button>
               </div>
-              <button className="btn btn-primary" disabled={!hayStock} onClick={handleAddToCart}>
+              <button className="btn btn-primary" disabled={!hayStock}>
                 <FiShoppingCart /> Agregar al carrito
               </button>
               {tienda?.telefonoContacto && (
-                <button className="btn btn-ghost" onClick={handleWhatsApp}>
+                <button className="btn btn-ghost" onClick={handleWhatsAppClick}>
                   Comprar por WhatsApp ahora
                 </button>
               )}
@@ -434,7 +464,7 @@ export default function PublicProducto() {
             )}
           </section>
 
-          {/* Aside — SOLO si hay data */}
+          {/* Aside condicional */}
           <aside className="pp-aside">
             {showEnvio && (
               <div className="card pp-block">
@@ -497,6 +527,86 @@ export default function PublicProducto() {
             {tienda.redes.tiktok && <a href={tienda.redes.tiktok} target="_blank" rel="noreferrer">TikTok</a>}
           </div>
         </footer>
+      )}
+
+      {/* ===== Modal de Confirmación WhatsApp ===== */}
+      {showConfirm && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Confirmar compra por WhatsApp"
+          style={{
+            position: 'fixed', inset: 0, zIndex: 1000,
+            display: 'grid', placeItems: 'center',
+            background: 'rgba(0,0,0,.45)'
+          }}
+          onClick={() => setShowConfirm(false)}
+        >
+          <div
+            className="card"
+            style={{
+              width: 'min(720px, 92vw)',
+              padding: '1rem',
+              background: 'var(--bg-card)',
+              border: '1px solid var(--border-color)',
+              borderRadius: '14px',
+              boxShadow: '0 20px 40px rgba(0,0,0,.4)'
+            }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'.5rem' }}>
+              <h3 style={{ margin:0 }}>¿Confirmar compra por WhatsApp?</h3>
+              <button
+                onClick={() => setShowConfirm(false)}
+                className="btn btn-ghost"
+                aria-label="Cerrar"
+                style={{ padding: '.4rem .6rem' }}
+              >
+                <FiX />
+              </button>
+            </div>
+
+            {/* Vista previa compacta del pedido */}
+            <div style={{ display:'grid', gridTemplateColumns:'100px 1fr', gap:'1rem', alignItems:'center', marginBottom:'.75rem' }}>
+              <div className="pp-thumb-frame" style={{ width:100, height:100 }}>
+                {principal
+                  ? <img src={principal} alt="" style={{ width:'100%', height:'100%', objectFit:'cover', borderRadius:5 }} />
+                  : <div className="pp-main-placeholder" style={{ height:100 }}><FiImage />Sin imagen</div>
+                }
+              </div>
+              <div style={{ display:'grid', gap:'.2rem' }}>
+                <strong>{producto?.nombre}</strong>
+                {activeVar && (
+                  <div style={{ color:'var(--text-2)' }}>
+                    Variante: <strong>{activeVar.nombre || Object.values(activeVar.opciones || {}).join(' / ')}</strong>
+                  </div>
+                )}
+                <div style={{ color:'var(--text-2)' }}>
+                  Cantidad: <strong>{qty}</strong>
+                </div>
+                <div style={{ display:'flex', alignItems:'baseline', gap:'.5rem' }}>
+                  <span style={{ fontWeight:800 }}>{precioMostrar != null ? money(precioMostrar) : 'A consultar'}</span>
+                  {(precioComparativoMostrar != null && precioMostrar != null && precioComparativoMostrar > precioMostrar) && (
+                    <span className="pp-price-compare">{money(precioComparativoMostrar)}</span>
+                  )}
+                </div>
+                <a
+                  href={window.location.href}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{ color:'#fff', textDecoration:'underline', wordBreak:'break-all' }}
+                >
+                  {window.location.href}
+                </a>
+              </div>
+            </div>
+
+            <div style={{ display:'flex', gap:'.5rem', justifyContent:'flex-end' }}>
+              <button className="btn btn-ghost" onClick={() => setShowConfirm(false)}>Cancelar</button>
+              <button className="btn btn-primary" onClick={confirmWhatsApp}>Confirmar y abrir WhatsApp</button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

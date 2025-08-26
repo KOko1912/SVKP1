@@ -1,7 +1,8 @@
 // frontend/src/pages/Admin/Home.jsx
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
-const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+const RAW_API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+const API = RAW_API.replace(/\/$/, ''); // evita doble slash
 const LOCAL_SECRET_KEY = 'admin_secret';
 const DEFAULT_SECRET = 'super_admin_123'; // Debe coincidir con ADMIN_SECRET del backend
 
@@ -12,77 +13,143 @@ export default function AdminHome() {
   const [error, setError] = useState('');
   const [solicitudes, setSolicitudes] = useState([]);
 
-  // Carga solicitudes usando el secret indicado (evita la carrera con setState)
+  const hasSecret = useMemo(() => Boolean(secret && secret.trim()), [secret]);
+
+  const setAndPersistSecret = (sec) => {
+    localStorage.setItem(LOCAL_SECRET_KEY, sec);
+    setSecret(sec);
+  };
+
+  const clearSecret = () => {
+    localStorage.removeItem(LOCAL_SECRET_KEY);
+    setSecret('');
+  };
+
+  const fetchJSON = async (url, init = {}) => {
+    const opts = {
+      mode: 'cors',
+      ...init,
+    };
+    const res = await fetch(url, opts);
+    // Intenta parsear JSON siempre, aún en error
+    let data = null;
+    try {
+      data = await res.json();
+    } catch {
+      // si no es JSON, data queda null
+    }
+    if (!res.ok) {
+      const msg =
+        data?.error ||
+        data?.message ||
+        `Error ${res.status} al consultar ${url}`;
+      const err = new Error(msg);
+      err.status = res.status;
+      err.payload = data;
+      throw err;
+    }
+    return data;
+  };
+
+  // Carga solicitudes usando el secret (si falta, lanzará 401/403)
   const cargarSolicitudes = async (sec = secret) => {
     setError('');
     setCargando(true);
     try {
-      const res = await fetch(`${API}/api/admin/solicitudes-vendedor`, {
+      const data = await fetchJSON(`${API}/api/admin/solicitudes-vendedor`, {
         headers: { 'x-admin-secret': sec || '' },
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || 'No autorizado');
-      setSolicitudes(data.data || []);
+      setSolicitudes(data?.data || data?.items || []);
     } catch (e) {
-      setError(e.message);
       setSolicitudes([]);
+      // Si el backend rechaza por credenciales, limpiamos el secret
+      if (e?.status === 401 || e?.status === 403) {
+        clearSecret();
+        setError('No autorizado. Vuelve a iniciar sesión como admin.');
+      } else if (e?.message?.includes('Failed to fetch') || e?.message?.includes('ERR_FAILED')) {
+        setError('No se pudo conectar con el servidor (CORS o servidor caído).');
+      } else {
+        setError(e.message || 'Error al cargar solicitudes');
+      }
     } finally {
       setCargando(false);
     }
   };
 
-  // Login con contraseña almacenada en tabla SDKADMIN
+  // Login con contraseña almacenada en la tabla SDKADMIN
   const loginAdmin = async () => {
     setError('');
+    if (!adminPass) {
+      setError('Ingresa la contraseña de SDKADMIN');
+      return;
+    }
     try {
-      if (!adminPass) throw new Error('Ingresa la contraseña de SDKADMIN');
-
-      const res = await fetch(`${API}/api/sdkadmin/verify`, {
+      const data = await fetchJSON(`${API}/api/sdkadmin/verify`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ password: adminPass }),
       });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || !data?.ok) throw new Error('Contraseña incorrecta');
+      if (!data?.ok) throw new Error('Contraseña incorrecta');
 
-      // Guarda el secret y úsalo de inmediato
-      const SEC = DEFAULT_SECRET;
-      localStorage.setItem(LOCAL_SECRET_KEY, SEC);
-      setSecret(SEC);
+      // Usa el secret del backend: si tu backend expone ADMIN_SECRET en la respuesta, úsalo.
+      // Si no lo expone, usamos el DEFAULT_SECRET (asegúrate que coincide con ADMIN_SECRET del backend).
+      const SEC = data?.secret || DEFAULT_SECRET;
+      setAndPersistSecret(SEC);
 
-      await cargarSolicitudes(SEC); // ← usa el secret sin esperar al setState
       setAdminPass('');
+      await cargarSolicitudes(SEC);
     } catch (e) {
-      setError(e.message);
+      if (e?.message?.includes('Failed to fetch') || e?.message?.includes('ERR_FAILED')) {
+        setError('No se pudo conectar con el servidor (CORS o servidor caído).');
+      } else {
+        setError(e.message || 'No se pudo iniciar sesión');
+      }
     }
   };
 
   const logoutAdmin = () => {
-    localStorage.removeItem(LOCAL_SECRET_KEY);
-    setSecret('');
+    clearSecret();
     setSolicitudes([]);
     setAdminPass('');
     setError('');
   };
 
+  // Si hay secret almacenado, intenta cargar de inmediato (y se limpiará si es inválido)
   useEffect(() => {
-    if (secret) cargarSolicitudes(secret);
+    if (hasSecret) {
+      cargarSolicitudes(secret);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [secret]);
+  }, [hasSecret]);
 
   const accion = async (id, tipo) => {
     setError('');
+    setCargando(true);
     try {
       const url = `${API}/api/admin/vendedores/${id}/${tipo}`;
-      const res = await fetch(url, {
+      await fetchJSON(url, {
         method: 'POST',
         headers: { 'x-admin-secret': secret || '' },
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || `No se pudo ${tipo}`);
       await cargarSolicitudes(secret);
     } catch (e) {
-      setError(e.message);
+      if (e?.status === 401 || e?.status === 403) {
+        clearSecret();
+        setError('No autorizado. Vuelve a iniciar sesión como admin.');
+      } else if (e?.message?.includes('Failed to fetch') || e?.message?.includes('ERR_FAILED')) {
+        setError('No se pudo conectar con el servidor (CORS o servidor caído).');
+      } else {
+        setError(e.message || `No se pudo ${tipo}`);
+      }
+    } finally {
+      setCargando(false);
+    }
+  };
+
+  const onKeyDown = (ev) => {
+    if (ev.key === 'Enter') {
+      ev.preventDefault();
+      loginAdmin();
     }
   };
 
@@ -90,15 +157,17 @@ export default function AdminHome() {
     <div style={{ maxWidth: 1000, margin: '32px auto', padding: '0 16px' }}>
       <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
         <h2 style={{ margin: 0 }}>👑 SystemVkode Administrador</h2>
-        {secret ? (
+        {hasSecret ? (
           <div style={{ display: 'flex', gap: 8 }}>
-            <button onClick={() => cargarSolicitudes(secret)} className="secondary-button">Actualizar</button>
+            <button onClick={() => cargarSolicitudes(secret)} className="secondary-button" disabled={cargando}>
+              {cargando ? 'Actualizando…' : 'Actualizar'}
+            </button>
             <button onClick={logoutAdmin} className="secondary-button">Salir</button>
           </div>
         ) : null}
       </header>
 
-      {!secret ? (
+      {!hasSecret ? (
         <div
           style={{
             display: 'flex',
@@ -113,7 +182,15 @@ export default function AdminHome() {
             placeholder="Contraseña SDKADMIN"
             value={adminPass}
             onChange={(e) => setAdminPass(e.target.value)}
-            style={{ flex: 1, padding: 8 }}
+            onKeyDown={onKeyDown}
+            style={{
+              flex: 1,
+              padding: 10,
+              border: '1px solid #2b2e3d',
+              borderRadius: 10,
+              background: 'rgba(255,255,255,.06)',
+              color: '#e9edf5',
+            }}
           />
           <button onClick={loginAdmin} className="primary-button">
             Ingresar
@@ -123,43 +200,69 @@ export default function AdminHome() {
         <p style={{ color: 'green', marginTop: 0 }}>Sesión admin activa</p>
       )}
 
-      {error && <p style={{ color: 'crimson' }}>{error}</p>}
+      {error && (
+        <p style={{ color: 'salmon', marginTop: 8 }}>
+          {error}
+          {error.includes('CORS') && (
+            <>
+              <br />
+              <small>
+                Revisa CORS en backend: permite el header <code>x-admin-secret</code> y el origen <code>http://localhost:5173</code>.
+              </small>
+            </>
+          )}
+        </p>
+      )}
       {cargando && <p>Cargando…</p>}
 
-      {secret && !cargando && solicitudes.length === 0 && (
+      {hasSecret && !cargando && solicitudes.length === 0 && !error && (
         <p>No hay solicitudes pendientes.</p>
       )}
 
-      {secret && solicitudes.length > 0 && (
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-          <thead>
-            <tr>
-              <th style={{ textAlign: 'left', padding: 8 }}>ID</th>
-              <th style={{ textAlign: 'left', padding: 8 }}>Nombre</th>
-              <th style={{ textAlign: 'left', padding: 8 }}>Teléfono</th>
-              <th style={{ textAlign: 'left', padding: 8 }}>Foto</th>
-              <th style={{ textAlign: 'left', padding: 8 }}>Acciones</th>
-            </tr>
-          </thead>
-          <tbody>
-            {solicitudes.map((u) => (
-              <tr key={u.id} style={{ borderTop: '1px solid #eee' }}>
-                <td style={{ padding: 8 }}>{u.id}</td>
-                <td style={{ padding: 8 }}>{u.nombre}</td>
-                <td style={{ padding: 8 }}>{u.telefono}</td>
-                <td style={{ padding: 8 }}>
-                  {u.fotoUrl
-                    ? <img src={`${API}${u.fotoUrl}`} alt="foto" width={40} height={40} style={{ objectFit: 'cover', borderRadius: 6 }} />
-                    : '—'}
-                </td>
-                <td style={{ padding: 8, display: 'flex', gap: 8 }}>
-                  <button className="primary-button" onClick={() => accion(u.id, 'aprobar')}>Aprobar</button>
-                  <button className="secondary-button" onClick={() => accion(u.id, 'rechazar')}>Rechazar</button>
-                </td>
+      {hasSecret && solicitudes.length > 0 && (
+        <div className="card-svk" style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 640 }}>
+            <thead>
+              <tr>
+                <th style={{ textAlign: 'left', padding: 8 }}>ID</th>
+                <th style={{ textAlign: 'left', padding: 8 }}>Nombre</th>
+                <th style={{ textAlign: 'left', padding: 8 }}>Teléfono</th>
+                <th style={{ textAlign: 'left', padding: 8 }}>Foto</th>
+                <th style={{ textAlign: 'left', padding: 8 }}>Acciones</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {solicitudes.map((u) => (
+                <tr key={u.id} style={{ borderTop: '1px solid #2b2e3d' }}>
+                  <td style={{ padding: 8 }}>{u.id}</td>
+                  <td style={{ padding: 8 }}>{u.nombre}</td>
+                  <td style={{ padding: 8 }}>{u.telefono}</td>
+                  <td style={{ padding: 8 }}>
+                    {u.fotoUrl
+                      ? (
+                        <img
+                          src={`${API}${u.fotoUrl}`}
+                          alt="foto"
+                          width={40}
+                          height={40}
+                          style={{ objectFit: 'cover', borderRadius: 6 }}
+                        />
+                        )
+                      : '—'}
+                  </td>
+                  <td style={{ padding: 8, display: 'flex', gap: 8 }}>
+                    <button className="primary-button" onClick={() => accion(u.id, 'aprobar')} disabled={cargando}>
+                      Aprobar
+                    </button>
+                    <button className="secondary-button" onClick={() => accion(u.id, 'rechazar')} disabled={cargando}>
+                      Rechazar
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );

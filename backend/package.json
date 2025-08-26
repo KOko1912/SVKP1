@@ -2,7 +2,9 @@
   "name": "backend",
   "version": "1.0.0",
   "main": "server.js",
-  "engines": { "node": ">=18 <23" },
+  "engines": {
+    "node": ">=18 <23"
+  },
   "scripts": {
     "dev": "nodemon server.js",
     "start": "npx prisma migrate deploy && node server.js",
@@ -21,7 +23,9 @@
     "gridstack": "^12.3.3",
     "joi": "^18.0.0",
     "jsonwebtoken": "^9.0.2",
-    "multer": "^2.0.2"
+    "mime": "^4.0.7",
+    "multer": "^2.0.2",
+    "sharp": "^0.34.3"
   },
   "devDependencies": {
     "nodemon": "^3.1.10",

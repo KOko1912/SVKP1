@@ -1,5 +1,6 @@
 // frontend/src/AppRouter.jsx
 import { Routes, Route, Navigate } from 'react-router-dom';
+import { useEffect } from 'react';
 import App from './App';
 
 // ===============================
@@ -27,14 +28,13 @@ import ConfiguracionUsuario from './pages/Usuario/Configuracion';
 import DetalleProducto from './pages/Usuario/DetalleProducto';
 
 // ===============================
-// Admin / Vendedor (área protegida)
+// Admin / Vendedor
 // ===============================
 import AdminHome from './pages/Admin/Home';
 import VendedorPerfil from './pages/Vendedor/Perfil';
 import Pagina from './pages/Vendedor/Pagina';
 import ConfiguracionVista from './pages/Vendedor/ConfiguracionVista';
-import Productos from './pages/Vendedor/Productos'; // gestor de productos del vendedor
-// import ProductosNuevo from './pages/Vendedor/ProductosNuevo'; // opcional si lo habilitas
+import Productos from './pages/Vendedor/Productos';
 
 // ------------------------------------------------------------------
 // Helpers de protección de rutas
@@ -48,10 +48,7 @@ const getUsuario = () => {
   }
 };
 
-/**
- * Protege una ruta verificando que exista "usuario" en localStorage.
- * Si no hay sesión, redirige a /login.
- */
+/** Requiere sesión (usuario en localStorage) */
 const RequireAuth = ({ children }) => {
   const user = getUsuario();
   if (!user) return <Navigate to="/login" replace />;
@@ -59,153 +56,145 @@ const RequireAuth = ({ children }) => {
 };
 
 /**
- * (Opcional) Protege rutas SOLO para vendedores.
- * Si no es vendedor, redirige al home del usuario.
- * Úsalo cuando ya tengas el flag "vendedor" activo en el login.
+ * Arregla el caso típico de HashRouter:
+ * Si el usuario abre /admin (sin #/), redirigimos a /#/admin
+ * para que las rutas coincidan correctamente.
  */
-// const RequireSeller = ({ children }) => {
-//   const user = getUsuario();
-//   if (!user) return <Navigate to="/login" replace />;
-//   const esVendedor = user?.vendedor === true || user?.usuario?.vendedor === true;
-//   if (!esVendedor) return <Navigate to="/usuario/home" replace />;
-//   return children;
-// };
+function HashPathFix() {
+  useEffect(() => {
+    const hasHash = typeof window !== 'undefined' && window.location.hash.startsWith('#/');
+    const pathIsRoot = window.location.pathname === '/' || window.location.pathname === '';
+    const needsFix = !hasHash && !pathIsRoot; // p.ej. /admin, /usuario/perfil, etc.
+
+    if (needsFix) {
+      const rest = window.location.pathname + window.location.search + window.location.hash;
+      // redirige a la versión hash sin recargar el estado del dev server
+      window.location.replace('/#' + rest);
+    }
+  }, []);
+  return null;
+}
 
 export default function AppRouter() {
   return (
-    <Routes>
-      {/** =======================
-           Rutas públicas
-          ======================= */}
-      <Route path="/" element={<App />} />
+    <>
+      {/* Ejecuta la corrección de hash si aplica */}
+      <HashPathFix />
 
-      {/** Detalle público de producto por UUID (compatible con HashRouter: /#/producto/:uuid) */}
-      <Route path="/producto/:uuid" element={<PublicProducto />} />
+      <Routes>
+        {/* =======================
+            Rutas públicas
+           ======================= */}
+        <Route path="/" element={<App />} />
 
-      {/** Vista pública de tienda (compatible con HashRouter: /#/t/:slug) */}
-      <Route path="/t/:slug" element={<SVKT />} />
+        {/* Público: producto y tienda */}
+        <Route path="/producto/:uuid" element={<PublicProducto />} />
+        <Route path="/t/:slug" element={<SVKT />} />
 
-      <Route path="/login" element={<Login />} />
-      <Route path="/registro" element={<Registro />} />
-      <Route path="/olvide" element={<Olvide />} />
-      <Route path="/reset" element={<Reset />} />
+        {/* Auth público */}
+        <Route path="/login" element={<Login />} />
+        <Route path="/registro" element={<Registro />} />
+        <Route path="/olvide" element={<Olvide />} />
+        <Route path="/reset" element={<Reset />} />
 
-      {/** =======================
-           Rutas protegidas: Usuario
-          ======================= */}
-      <Route
-        path="/usuario/home"
-        element={
-          <RequireAuth>
-            <HomeUsuario />
-          </RequireAuth>
-        }
-      />
-      <Route
-        path="/usuario/compras"
-        element={
-          <RequireAuth>
-            <MisCompras />
-          </RequireAuth>
-        }
-      />
-      <Route
-        path="/usuario/tiendas"
-        element={
-          <RequireAuth>
-            <TiendasSeguidas />
-          </RequireAuth>
-        }
-      />
-      <Route
-        path="/usuario/configuracion"
-        element={
-          <RequireAuth>
-            <ConfiguracionUsuario />
-          </RequireAuth>
-        }
-      />
-      <Route
-        path="/usuario/perfil"
-        element={
-          <RequireAuth>
-            <Perfil />
-          </RequireAuth>
-        }
-      />
-      {/** Detalle protegido (por ID) que ya tenías para el área de usuario */}
-      <Route
-        path="/usuario/producto/:id"
-        element={
-          <RequireAuth>
-            <DetalleProducto />
-          </RequireAuth>
-        }
-      />
+        {/* =======================
+            Usuario (protegido)
+           ======================= */}
+        <Route
+          path="/usuario/home"
+          element={
+            <RequireAuth>
+              <HomeUsuario />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/usuario/compras"
+          element={
+            <RequireAuth>
+              <MisCompras />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/usuario/tiendas"
+          element={
+            <RequireAuth>
+              <TiendasSeguidas />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/usuario/configuracion"
+          element={
+            <RequireAuth>
+              <ConfiguracionUsuario />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/usuario/perfil"
+          element={
+            <RequireAuth>
+              <Perfil />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/usuario/producto/:id"
+          element={
+            <RequireAuth>
+              <DetalleProducto />
+            </RequireAuth>
+          }
+        />
 
-      {/** =======================
-           Rutas protegidas: Admin
-          ======================= */}
-      <Route
-        path="/admin"
-        element={
-          <RequireAuth>
-            <AdminHome />
-          </RequireAuth>
-        }
-      />
+        {/* =======================
+            Admin (público; se valida adentro con SDKADMIN)
+           ======================= */}
+        <Route path="/admin" element={<AdminHome />} />
 
-      {/** =======================
-           Rutas protegidas: Vendedor
-           (Si quieres forzar solo vendedores, envuelve con <RequireSeller>…</RequireSeller>)
-          ======================= */}
-      <Route
-        path="/vendedor/perfil"
-        element={
-          <RequireAuth>
-            <VendedorPerfil />
-          </RequireAuth>
-        }
-      />
-      <Route
-        path="/vendedor/pagina"
-        element={
-          <RequireAuth>
-            <Pagina />
-          </RequireAuth>
-        }
-      />
-      <Route
-        path="/vendedor/configuracion"
-        element={
-          <RequireAuth>
-            <ConfiguracionVista />
-          </RequireAuth>
-        }
-      />
-      <Route
-        path="/vendedor/productos"
-        element={
-          <RequireAuth>
-            <Productos />
-          </RequireAuth>
-        }
-      />
-      {/* 
-      <Route
-        path="/vendedor/productos/nuevo"
-        element={
-          <RequireAuth>
-            <ProductosNuevo />
-          </RequireAuth>
-        }
-      />
-      */}
+        {/* =======================
+            Vendedor (protegido)
+           ======================= */}
+        <Route
+          path="/vendedor/perfil"
+          element={
+            <RequireAuth>
+              <VendedorPerfil />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/vendedor/pagina"
+          element={
+            <RequireAuth>
+              <Pagina />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/vendedor/configuracion"
+          element={
+            <RequireAuth>
+              <ConfiguracionVista />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/vendedor/productos"
+          element={
+            <RequireAuth>
+              <Productos />
+            </RequireAuth>
+          }
+        />
 
-      {/** =======================
-           Fallback
-          ======================= */}
-      <Route path="*" element={<Navigate to="/usuario/home" replace />} />
-    </Routes>
+        {/* =======================
+            Fallback
+           ======================= */}
+        <Route path="*" element={<Navigate to="/usuario/home" replace />} />
+      </Routes>
+    </>
   );
 }

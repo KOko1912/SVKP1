@@ -1,5 +1,6 @@
+// E:\SVKP1\frontend\src\pages\Public\PublicProducto.jsx
 import { useEffect, useMemo, useState } from 'react';
-import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import {
   FiTag, FiBox, FiHash, FiInfo, FiShoppingCart, FiChevronLeft, FiPackage,
   FiAlertTriangle, FiClipboard, FiTruck, FiShield, FiImage, FiExternalLink, FiX
@@ -7,20 +8,43 @@ import {
 import './PublicProducto.css';
 
 /* ===================== Config & Utils ===================== */
-const API = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
+const API   = (import.meta.env.VITE_API_URL    || 'http://localhost:5000').replace(/\/$/, '');
+const FILES = (import.meta.env.VITE_FILES_BASE || API).replace(/\/$/, '');
 
 const grad = (from, to) => `linear-gradient(135deg, ${from}, ${to})`;
 const withT = (url, t) => (url ? `${url}${url.includes('?') ? '&' : '?'}t=${t || 0}` : '');
+
+/** Normaliza y devuelve pathname iniciando con "/" */
 const toWebPath = (u) => {
   if (!u) return '';
-  if (/^https?:\/\//i.test(u)) { try { return new URL(u).pathname; } catch { return ''; } }
-  const clean = String(u).replace(/\\/g, '/');
+  if (Array.isArray(u)) return toWebPath(u.find(Boolean));
+  if (typeof u === 'object')
+    return toWebPath(u.url || u.path || u.src || u.href || u.filepath || u.location || u.image || u.thumbnail || '');
+
+  const clean = String(u).trim().replace(/\\/g, '/');
+  if (!clean) return '';
+
+  if (/^https?:\/\//i.test(clean)) {
+    try { return new URL(clean).pathname || ''; } catch { /* noop */ }
+  }
+
   const lower = clean.toLowerCase();
-  const marks = ['/tiendauploads/', 'tiendauploads/', '/uploads/', 'uploads/'];
-  for (const m of marks) { const i = lower.indexOf(m); if (i !== -1) { const slice = clean.slice(i); return slice.startsWith('/') ? slice : `/${slice}`; } }
+  const marks = ['/tiendauploads/','tiendauploads/','/uploads/','uploads/','/files/','files/'];
+  for (const m of marks) {
+    const i = lower.indexOf(m);
+    if (i !== -1) {
+      const slice = clean.slice(i);
+      return slice.startsWith('/') ? slice : `/${slice}`;
+    }
+  }
   return clean.startsWith('/') ? clean : `/${clean}`;
 };
-const toPublicUrl = (u) => { const p = toWebPath(u); return p ? `${API}${encodeURI(p)}` : ''; };
+
+/** Une base + pathname y codifica (espacios, acentos) */
+const toPublicUrl = (u) => {
+  const p = toWebPath(u);
+  return p ? `${FILES}${encodeURI(p)}` : '';
+};
 
 const hexToRgb = (hex) => {
   const m = hex?.match(/^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i);
@@ -47,16 +71,27 @@ const composeHeaderBg = (portadaUrl, from, to, ver) => {
   if (portadaUrl) layers.push(`url("${withT(toPublicUrl(portadaUrl), ver)}")`);
   return layers.join(', ');
 };
-const money = (n, currency = 'MXN') => (n == null ? '' : Number(n).toLocaleString('es-MX', { style: 'currency', currency }));
+const money = (n, currency = 'MXN') =>
+  (n == null ? '' : Number(n).toLocaleString('es-MX', { style: 'currency', currency }));
+
+/* Fetch robusto (sin lanzar) */
+async function tryJson(url, init) {
+  try {
+    const r = await fetch(url, init);
+    const t = await r.text();
+    let d = null; try { d = JSON.parse(t); } catch { /* noop */ }
+    if (!r.ok || !d || d.error) return null;
+    return d;
+  } catch { return null; }
+}
 
 /* ===================== Page ===================== */
 export default function PublicProducto() {
   const { id, uuid } = useParams();
   const navigate = useNavigate();
-  const location = useLocation();
 
   const [theme, setTheme] = useState({ from: '#6d28d9', to: '#c026d3', contrast: '#ffffff' });
-  const [imgV, setImgV] = useState({ portada: 0, logo: 0 });
+  const [imgV] = useState({ portada: 0, logo: 0 });
 
   const [tienda, setTienda] = useState({
     nombre: '', descripcion: '',
@@ -74,49 +109,21 @@ export default function PublicProducto() {
 
   // variantes
   const [selectedOps, setSelectedOps] = useState({});
-  const [showConfirm, setShowConfirm] = useState(false); // <-- modal confirmar
+  const [showConfirm, setShowConfirm] = useState(false);
 
-  const user = useMemo(() => { try { return JSON.parse(localStorage.getItem('usuario') || '{}'); } catch { return {}; } }, []);
-  const headers = useMemo(() => (user?.id ? { 'x-user-id': user.id } : {}), [user?.id]);
-
-  // Sync theme tokens
+  // Tema tokens globales
   useEffect(() => {
     const root = document.documentElement.style;
     root.setProperty('--brand-from', theme.from);
     root.setProperty('--brand-to', theme.to);
     root.setProperty('--brand-contrast', theme.contrast);
-    root.setProperty('--brand-gradient', grad(theme.from, theme.to));
+    root.setProperty('--brand-gradient', `linear-gradient(135deg, ${theme.from}, ${theme.to})`);
     root.setProperty('--page-bg', `linear-gradient(135deg, ${theme.from}, ${theme.to})`);
     root.setProperty('--primary-color', theme.from);
     root.setProperty('--primary-hover', theme.from);
   }, [theme]);
 
-  // Try to load store config if there is a session
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        if (!headers['x-user-id']) return;
-        const r = await fetch(`${API}/api/tienda/me`, { headers });
-        if (!r.ok) return;
-        const d = await r.json();
-        if (cancelled) return;
-        const normal = {
-          ...d,
-          portadaUrl: toWebPath(d.portadaUrl),
-          logoUrl: toWebPath(d.logoUrl),
-          colorPrincipal: d.colorPrincipal || grad('#6d28d9', '#c026d3'),
-          redes: d.redes || { facebook: '', instagram: '', tiktok: '' },
-        };
-        setTienda(t => ({ ...t, ...normal }));
-        const { from, to } = extractColors(normal.colorPrincipal);
-        setTheme({ from, to, contrast: bestTextOn(from, to) });
-      } catch {}
-    })();
-    return () => { cancelled = true; };
-  }, [headers['x-user-id']]);
-
-  // Load product
+  /* ========== 1) Cargar el PRODUCTO (público) ========== */
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -125,18 +132,13 @@ export default function PublicProducto() {
         const url = uuid
           ? `${API}/api/v1/productos/public/uuid/${encodeURIComponent(uuid)}`
           : `${API}/api/v1/productos/${encodeURIComponent(id)}`;
-        const r = await fetch(url);
-        const d = await r.json().catch(() => null);
+        const d = await tryJson(url);
         if (cancelled) return;
-
-        if (!r.ok || !d || d.error) {
-          setErr(d?.error || 'No se pudo cargar el producto'); setProducto(null);
+        if (!d) {
+          setErr('No se pudo cargar el producto'); setProducto(null);
         } else {
           setProducto(d);
         }
-      } catch (e) {
-        setErr('Error de red al cargar el producto');
-        setProducto(null);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -144,7 +146,62 @@ export default function PublicProducto() {
     return () => { cancelled = true; };
   }, [id, uuid]);
 
-  // Derivados
+  /* ========== 2) Cargar la TIENDA DUEÑA del producto ========== */
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!producto) return;
+
+      // 2.1: si el backend ya embebe algo de tienda en el producto, úsalo
+      const embedded = producto.tienda && typeof producto.tienda === 'object' ? producto.tienda : null;
+      if (embedded && (embedded.nombre || embedded.slug || embedded.publicUuid || embedded.id)) {
+        const normalized = {
+          ...embedded,
+          portadaUrl: toWebPath(embedded.portadaUrl),
+          logoUrl: toWebPath(embedded.logoUrl),
+          redes: embedded.redes || { facebook: '', instagram: '', tiktok: '' },
+          colorPrincipal: embedded.colorPrincipal || grad('#6d28d9', '#c026d3'),
+        };
+        setTienda(t => ({ ...t, ...normalized }));
+        const { from, to } = extractColors(normalized.colorPrincipal);
+        setTheme({ from, to, contrast: bestTextOn(from, to) });
+        return;
+      }
+
+      // 2.2: intentar rutas públicas conocidas (orden: slug -> publicUuid -> by-id)
+      const slug     = producto?.tienda?.slug || producto?.tiendaSlug;
+      const pubUuid  = producto?.tienda?.publicUuid || producto?.tiendaPublicUuid;
+      const tiendaId = producto?.tiendaId || producto?.tienda?.id;
+
+      const candidates = [];
+      if (slug)     candidates.push(`${API}/api/tienda/public/${encodeURIComponent(slug)}`);
+      if (pubUuid)  candidates.push(`${API}/api/tienda/public/uuid/${encodeURIComponent(pubUuid)}`);
+      if (tiendaId != null) candidates.push(`${API}/api/tienda/public/by-id/${tiendaId}`);
+
+      let tiendaResp = null;
+      for (const u of candidates) {
+        tiendaResp = await tryJson(u);
+        if (tiendaResp) break;
+      }
+
+      // 2.3: si no hubo tienda, NO usar /me (evita mostrar la tienda del usuario logueado por error)
+      if (!cancelled && tiendaResp) {
+        const normalized = {
+          ...tiendaResp,
+          portadaUrl: toWebPath(tiendaResp.portadaUrl),
+          logoUrl: toWebPath(tiendaResp.logoUrl),
+          redes: tiendaResp.redes || { facebook: '', instagram: '', tiktok: '' },
+          colorPrincipal: tiendaResp.colorPrincipal || grad('#6d28d9', '#c026d3'),
+        };
+        setTienda(t => ({ ...t, ...normalized }));
+        const { from, to } = extractColors(normalized.colorPrincipal);
+        setTheme({ from, to, contrast: bestTextOn(from, to) });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [producto]);
+
+  /* ===================== Derivados del producto ===================== */
   const galeria = useMemo(() => {
     const base = producto?.imagenes || [];
     if (!base.length && producto?.variantes?.length) {
@@ -170,6 +227,7 @@ export default function PublicProducto() {
   );
 
   const tipoVariante = producto?.tipo === 'VARIANTE';
+
   const opciones = useMemo(() => {
     if (!tipoVariante || !Array.isArray(producto?.variantes)) return [];
     const map = new Map();
@@ -222,10 +280,9 @@ export default function PublicProducto() {
   const addQty = () => setQty(n => Math.max(1, (n || 1) + 1));
   const subQty = () => setQty(n => Math.max(1, (n || 1) - 1));
 
-  // Construye el texto que se envía a WhatsApp
   const buildWhatsAppText = () => {
     const titulo = producto?.nombre || 'Producto';
-    const url = window.location.href; // incluye uuid/id y query actuales
+    const url = window.location.href;
     const varianteTxt = activeVar
       ? (activeVar.nombre || Object.values(activeVar.opciones || {}).join(' / '))
       : '';
@@ -245,13 +302,10 @@ export default function PublicProducto() {
     return lines.join('\n');
   };
 
-  // Mostrar modal de confirmación
   const handleWhatsAppClick = () => {
     if (!tienda?.telefonoContacto) return;
     setShowConfirm(true);
   };
-
-  // Confirmar e ir a WhatsApp
   const confirmWhatsApp = () => {
     const phone = tienda?.telefonoContacto?.replace(/\D/g, '') || '';
     const msg = encodeURIComponent(buildWhatsAppText());
@@ -285,12 +339,10 @@ export default function PublicProducto() {
     producto?.politicaDevolucion ||
     tienda?.envioCobertura || tienda?.envioCosto || tienda?.envioTiempo || tienda?.devoluciones
   );
-  const showDims = Boolean(producto?.altoCm || producto?.anchoCm || producto?.largoCm || producto?.pesoGramos);
-  const showAttrs = (producto?.atributos || []).some(a => a?.clave && String(a.valor || '').trim() !== '');
 
   return (
     <div className="pp-wrap">
-      {/* Header tienda */}
+      {/* Header tienda (solo si logramos obtener info de esa tienda) */}
       {(tienda?.nombre || tienda?.logoUrl || tienda?.descripcion) && (
         <div className="pp-header" style={{ backgroundImage: headerBg, color: 'var(--brand-contrast)' }}>
           <div className="pp-header-inner">
@@ -318,7 +370,7 @@ export default function PublicProducto() {
       {/* Contenido */}
       <div className="pp-container">
         <div className="pp-grid">
-          {/* Galería con marco renacentista */}
+          {/* Galería */}
           <section className="pp-gallery card">
             <div className="pp-gallery-main">
               {principal ? (
@@ -370,7 +422,6 @@ export default function PublicProducto() {
               {producto?.marca && <div className="pp-meta-item"><FiTag /> Marca: <strong>{producto.marca}</strong></div>}
               {producto?.sku && <div className="pp-meta-item"><FiHash /> SKU: <strong>{producto.sku}</strong></div>}
               {producto?.gtin && <div className="pp-meta-item"><FiClipboard /> GTIN: <strong>{producto.gtin}</strong></div>}
-              {producto?.condicion && <div className="pp-meta-item"><FiBox /> Condición: <strong>{producto.condicion}</strong></div>}
               {!!categorias.length && <div className="pp-meta-item"><FiPackage /> Categorías: <strong>{categorias.join(' / ')}</strong></div>}
             </div>
 
@@ -481,7 +532,7 @@ export default function PublicProducto() {
               </div>
             )}
 
-            {showDims && (
+            {(producto?.altoCm || producto?.anchoCm || producto?.largoCm || producto?.pesoGramos) && (
               <div className="card pp-block">
                 <h4>Dimensiones & Peso</h4>
                 <ul className="pp-list">
@@ -501,11 +552,11 @@ export default function PublicProducto() {
               </div>
             )}
 
-            {showAttrs && (
+            {(producto?.atributos || []).some(a => a?.clave && String(a.valor || '').trim() !== '') && (
               <div className="card pp-block">
                 <h4><FiShield /> Atributos</h4>
                 <ul className="pp-attrs">
-                  {atributos.map((a, i) => (
+                  {(producto?.atributos || []).filter(a => a?.clave && String(a.valor || '').trim() !== '').map((a, i) => (
                     <li key={`${a.clave}-${i}`}>
                       <span className="k">{a.clave}</span>
                       <span className="v">{a.valor}</span>
@@ -518,7 +569,6 @@ export default function PublicProducto() {
         </div>
       </div>
 
-      {/* Redes tienda */}
       {(tienda?.redes?.facebook || tienda?.redes?.instagram || tienda?.redes?.tiktok) && (
         <footer className="pp-footer">
           <div className="pp-socials">

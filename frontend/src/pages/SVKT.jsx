@@ -1,58 +1,59 @@
+// E:\SVKP1\frontend\src\pages\SVKT.jsx
+// Página pública – respeta el layout del vendedor (mismos bloques/props que Pagina.jsx)
+
 import React, { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import "./Vendedor/Vendedor.css";
 import "./Vendedor/PaginaGrid.css";
 import {
   FiFacebook, FiInstagram, FiYoutube, FiPhone, FiMail, FiClock,
-  FiMapPin, FiExternalLink, FiMessageCircle, FiShoppingBag, FiStar, FiEye
+  FiMapPin, FiExternalLink, FiMessageCircle, FiShoppingBag, FiStar, FiEye, FiSearch
 } from "react-icons/fi";
 import { useParams, Link } from "react-router-dom";
 import NavBarUsuario from "./Usuario/NavBarUsuario";
 
-const API   = (import.meta.env.VITE_API_URL    || "http://localhost:5000").replace(/\/$/, "");
-const FILES = (import.meta.env.VITE_FILES_BASE || API).replace(/\/$/, "");
+/* ================= Bases ================= */
+const API_BASE  = (import.meta.env.VITE_API_URL || "http://localhost:5000").replace(/\/$/, "");
+const FILES_ENV = (import.meta.env.VITE_FILES_BASE || "").replace(/\/$/, "");
+const FILES_BASE = (
+  FILES_ENV
+    ? (/^https?:\/\//i.test(FILES_ENV) ? FILES_ENV : `${API_BASE}${FILES_ENV.startsWith("/") ? "" : "/"}${FILES_ENV}`)
+    : API_BASE
+).replace(/\/$/, "");
 
-/* =============== Helpers =============== */
+/* ================= Helpers ================= */
 const grad = (from, to) => `linear-gradient(135deg, ${from}, ${to})`;
 
-/** Normaliza una ruta (acepta string u objeto con {url,path,src,...}) y devuelve un pathname empezando con '/' */
+// pathname que inicia con "/"
 const toWebPath = (u) => {
   if (!u) return "";
   if (Array.isArray(u)) return toWebPath(u.find(Boolean));
   if (typeof u === "object")
     return toWebPath(u.url || u.path || u.src || u.href || u.filepath || u.location || u.image || u.thumbnail || "");
-
   const raw = String(u).trim();
   if (!raw) return "";
-
-  // normaliza backslashes de Windows
-  const s = raw.replace(/\\/g, "/");
-
-  // Si es URL absoluta, quédate con el pathname
-  if (/^https?:\/\//i.test(s)) {
-    try { return new URL(s).pathname || ""; } catch { /* noop */ }
+  const clean = raw.replace(/\\/g, "/");
+  if (/^https?:\/\//i.test(clean)) {
+    try { return new URL(clean).pathname || ""; } catch { /* noop */ }
   }
-
-  // Busca prefijos comunes y garantiza '/' inicial
-  const lower = s.toLowerCase();
+  const lower = clean.toLowerCase();
   const marks = ["/tiendauploads/","tiendauploads/","/uploads/","uploads/","/files/","files/"];
   for (const m of marks) {
-    const i = lower.indexOf(m);
+    const key = m.replace(/^\//,"");
+    const i = lower.indexOf(key);
     if (i !== -1) {
-      const slice = s.slice(i);
+      const slice = clean.slice(i);
       return slice.startsWith("/") ? slice : `/${slice}`;
     }
   }
-
-  return s.startsWith("/") ? s : `/${s}`;
+  return clean.startsWith("/") ? clean : `/${clean}`;
 };
 
-/** Une base + pathname y **codifica** (espacios, acentos, etc.) para evitar 404 */
 const toPublicUrl = (u) => {
   const p = toWebPath(u);
-  return p ? `${FILES}${encodeURI(p)}` : "";
+  return p ? `${FILES_BASE}${encodeURI(p)}` : "";
 };
 
-// Toma principal o primera imagen válida
+// Imagen principal del producto
 const primaryImageFrom = (imagenes = []) => {
   if (!Array.isArray(imagenes) || !imagenes.length) return "";
   const get = (o) => o?.url || o?.path || o?.src || o?.location || o?.image || o?.thumbnail || "";
@@ -79,7 +80,18 @@ async function getJsonOrThrow(url) {
   return data ?? {};
 }
 
-/* =============== Página =============== */
+/* Defaults de bloques (mismo mapa que editor/pagina) */
+const DEFAULT_PROPS = {
+  hero:     { showLogo: true, showDescripcion: true, align: 'center' },
+  featured: { title: 'Destacados', limit: 8 },
+  grid:     { title: 'Todos los productos', limit: 12, showFilter: true },
+  category: { title: '', categoriaId: null, limit: 12, showFilter: true },
+  product:  { productoId: null },
+  banner:   { title: 'Promoción', ctaText: 'Ver más', ctaUrl: '' },
+  logo:     { shape: 'rounded', frame: 'thin' },
+};
+
+/* ================= Página pública ================= */
 export default function SVKT() {
   const { slug } = useParams();
   const [tienda, setTienda] = useState(null);
@@ -88,18 +100,16 @@ export default function SVKT() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  // ¿hay sesión de usuario? (para mostrar NavBarUsuario)
   const usuario = useMemo(() => {
     try { return JSON.parse(localStorage.getItem("usuario") || "null"); } catch { return null; }
   }, []);
 
-  // Tema global
+  // Tema
   useEffect(() => {
     document.body.classList.add("vendor-theme");
     return () => document.body.classList.remove("vendor-theme");
   }, []);
 
-  // Variables CSS de marca
   useEffect(() => {
     if (!tienda?.colorPrincipal) return;
     const { from, to } = extractColors(tienda.colorPrincipal);
@@ -123,16 +133,16 @@ export default function SVKT() {
       setLoading(true);
       setError("");
       try {
-        const tiendaData = await getJsonOrThrow(`${API}/api/tienda/public/${encodeURIComponent(slug)}`);
+        const tiendaData = await getJsonOrThrow(`${API_BASE}/api/tienda/public/${encodeURIComponent(slug)}`);
         setTienda(tiendaData);
 
         try {
-          const dp = await getJsonOrThrow(`${API}/api/v1/productos?tiendaId=${tiendaData.id}`);
+          const dp = await getJsonOrThrow(`${API_BASE}/api/v1/productos?tiendaId=${tiendaData.id}`);
           setProductos(Array.isArray(dp?.items) ? dp.items : Array.isArray(dp) ? dp : []);
         } catch { setProductos([]); }
 
         try {
-          const dc = await getJsonOrThrow(`${API}/api/v1/categorias?tiendaId=${tiendaData.id}`);
+          const dc = await getJsonOrThrow(`${API_BASE}/api/v1/categorias?tiendaId=${tiendaData.id}`);
           setCategorias(Array.isArray(dc) ? dc : []);
         } catch { setCategorias([]); }
       } catch (e) {
@@ -142,6 +152,25 @@ export default function SVKT() {
       }
     })();
   }, [slug]);
+
+  // Normaliza y ordena los bloques igual que en Pagina.jsx
+  const orderedBlocks = useMemo(() => {
+    const raw = tienda?.homeLayout ?? null;
+    const blocks = Array.isArray(raw) ? raw : Array.isArray(raw?.blocks) ? raw.blocks : [];
+    const withDefaults = blocks.map(b => ({
+      ...b,
+      props: { ...(DEFAULT_PROPS[b.type] || {}), ...(b.props || {}) },
+      gs: { ...(b.gs || {}) },
+      z: Number.isFinite(+b.z) ? +b.z : 1,
+    }));
+    return withDefaults.sort((a, b) => {
+      const ay = a.gs?.y ?? 0, by = b.gs?.y ?? 0;
+      if (ay !== by) return ay - by;
+      const ax = a.gs?.x ?? 0, bx = b.gs?.x ?? 0;
+      if (ax !== bx) return ax - bx;
+      return (a.z||1) - (b.z||1);
+    });
+  }, [tienda?.homeLayout]);
 
   if (loading) {
     return (
@@ -164,20 +193,22 @@ export default function SVKT() {
     );
   }
 
-  const blocks = tienda?.homeLayout?.blocks;
-
   return (
     <div className="vendedor-container">
       {usuario ? <NavBarUsuario /> : null}
 
-      {Array.isArray(blocks) && blocks.some(b => b.type === "hero") ? null : (
-        <HeroPortada tienda={tienda} />
-      )}
+      {/* Si el layout no trae hero, muestra uno por defecto */}
+      {!(orderedBlocks || []).some(b => b.type === "hero") && <HeroPortada tienda={tienda} />}
 
       <VendorInfoSection tienda={tienda} />
 
-      {Array.isArray(blocks) && blocks.length > 0 ? (
-        <RenderBlocks layout={blocks} productos={productos} categorias={categorias} tienda={tienda} />
+      {(orderedBlocks || []).length > 0 ? (
+        <RenderBlocks
+          layout={orderedBlocks}
+          productos={productos}
+          categorias={categorias}
+          tienda={tienda}
+        />
       ) : (
         <>
           <RowSection title="Todos los productos" icon={<FiShoppingBag />} items={productos} />
@@ -201,7 +232,7 @@ export default function SVKT() {
   );
 }
 
-/* =============== Render de bloques =============== */
+/* =============== Render de bloques (con buscador y CTA en banner) =============== */
 function RenderBlocks({ layout = [], productos = [], categorias = [], tienda }) {
   if (!Array.isArray(layout) || !layout.length) return null;
   const catName = (id) => categorias.find(c => Number(c.id) === Number(id))?.nombre || "Categoría";
@@ -213,7 +244,15 @@ function RenderBlocks({ layout = [], productos = [], categorias = [], tienda }) 
         const p = b.props || {};
 
         if (type === "hero") {
-          return <HeroPortada key={b.id} tienda={tienda} align={p.align} showLogo={p.showLogo} showDescripcion={p.showDescripcion} />;
+          return (
+            <HeroPortada
+              key={b.id}
+              tienda={tienda}
+              align={p.align}
+              showLogo={p.showLogo}
+              showDescripcion={p.showDescripcion}
+            />
+          );
         }
 
         if (type === "featured") {
@@ -225,7 +264,15 @@ function RenderBlocks({ layout = [], productos = [], categorias = [], tienda }) 
         if (type === "grid") {
           const items = productos.slice(0, p.limit ?? 12);
           if (!items.length) return null;
-          return <RowSection key={b.id} title={p.title || "Todos los productos"} icon={<FiShoppingBag />} items={items} />;
+          return (
+            <RowSection
+              key={b.id}
+              title={p.title || "Todos los productos"}
+              icon={<FiShoppingBag />}
+              items={items}
+              enableSearch={!!p.showFilter}
+            />
+          );
         }
 
         if (type === "category") {
@@ -235,7 +282,15 @@ function RenderBlocks({ layout = [], productos = [], categorias = [], tienda }) 
             .filter(prod => Array.isArray(prod.categorias) && prod.categorias.some(pc => Number(pc.categoriaId) === id))
             .slice(0, p.limit ?? 12);
           if (!items.length) return null;
-          return <RowSection key={b.id} title={p.title || catName(id)} icon={<FiShoppingBag />} items={items} />;
+          return (
+            <RowSection
+              key={b.id}
+              title={p.title || catName(id)}
+              icon={<FiShoppingBag />}
+              items={items}
+              enableSearch={!!p.showFilter}
+            />
+          );
         }
 
         if (type === "product") {
@@ -253,7 +308,11 @@ function RenderBlocks({ layout = [], productos = [], categorias = [], tienda }) 
               <div className="pv-banner" style={{ backgroundImage: src ? `url(${src})` : undefined }}>
                 <div className="pv-banner-content">
                   <strong>{p.title || "Promoción"}</strong>
-                  {p.ctaText ? <em>{p.ctaText}</em> : null}
+                  {p.ctaText ? (
+                    p.ctaUrl
+                      ? <a href={p.ctaUrl} target="_blank" rel="noreferrer" style={{ color: "#fff", marginLeft: 8, textDecoration: "underline" }}>{p.ctaText}</a>
+                      : <em style={{ marginLeft: 8 }}>{p.ctaText}</em>
+                  ) : null}
                 </div>
               </div>
             </section>
@@ -274,13 +333,16 @@ function RenderBlocks({ layout = [], productos = [], categorias = [], tienda }) 
   );
 }
 
-/* =============== Componentes =============== */
+/* =============== Componentes UI =============== */
 function HeroPortada({ tienda, align = "center", showLogo = true, showDescripcion = true }) {
   const portada = toPublicUrl(tienda?.portadaUrl);
   const logo = toPublicUrl(tienda?.logoUrl);
   const colors = extractColors(tienda?.colorPrincipal || grad("#6d28d9", "#c026d3"));
 
-  const justify = align === "left" ? "flex-start" : align === "right" ? "flex-end" : "center";
+  const justify =
+    align === "left" ? "flex-start" :
+    align === "right" ? "flex-end" :
+    "center";
 
   return (
     <header
@@ -321,7 +383,6 @@ function VendorInfoSection({ tienda }) {
 
         <div className="store-info-body">
           <p>{tienda?.descripcion || "No hay descripción disponible"}</p>
-
           <div className="store-contact-buttons">
             {tienda?.telefonoContacto && (
               <a href={`tel:${tienda.telefonoContacto}`} className="btn primary"><FiPhone /> Llamar</a>
@@ -367,11 +428,21 @@ function StoreHours({ horario = {} }) {
   );
 }
 
-function RowSection({ title, icon, items = [] }) {
+function RowSection({ title, icon, items = [], enableSearch = false }) {
   const ref = useRef(null);
   const [showControls, setShowControls] = useState(false);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(true);
+  const [q, setQ] = useState("");
+
+  const filtered = useMemo(() => {
+    if (!enableSearch || !q.trim()) return items;
+    const needle = q.toLowerCase();
+    return items.filter(p => {
+      const t = `${p?.nombre||p?.title||""} ${p?.descripcion||p?.detalle||p?.resumen||""}`.toLowerCase();
+      return t.includes(needle);
+    });
+  }, [items, enableSearch, q]);
 
   const checkScroll = () => {
     if (ref.current) {
@@ -397,22 +468,41 @@ function RowSection({ title, icon, items = [] }) {
   };
 
   return (
-    <section className="store-section"
+    <section
+      className="store-section"
       onMouseEnter={() => setShowControls(true)}
       onMouseLeave={() => setShowControls(false)}
     >
       <div className="row-head">
-        <h2 className="section-title">{icon} {title} <span className="item-count">({items.length})</span></h2>
-        {items.length > 0 && (
-          <div className={`row-actions ${showControls ? "visible" : ""}`}>
-            <button type="button" className="btn-circle" onClick={() => scrollBy(-380)} disabled={!canScrollLeft} aria-label="Scroll left">◀</button>
-            <button type="button" className="btn-circle" onClick={() => scrollBy(380)} disabled={!canScrollRight} aria-label="Scroll right">▶</button>
-          </div>
-        )}
+        <h2 className="section-title">
+          {icon} {title} <span className="item-count">({filtered.length})</span>
+        </h2>
+
+        <div className="row-tools">
+          {enableSearch && (
+            <label className="grid-filter">
+              <FiSearch />
+              <input
+                type="search"
+                placeholder="Buscar en esta sección…"
+                value={q}
+                onChange={(e)=>setQ(e.target.value)}
+              />
+            </label>
+          )}
+          {filtered.length > 0 && (
+            <div className={`row-actions ${showControls ? "visible" : ""}`}>
+              <button type="button" className="btn-circle" onClick={() => scrollBy(-380)} disabled={!canScrollLeft} aria-label="Scroll left">◀</button>
+              <button type="button" className="btn-circle" onClick={() => scrollBy(380)} disabled={!canScrollRight} aria-label="Scroll right">▶</button>
+            </div>
+          )}
+        </div>
       </div>
 
       <div ref={ref} className="row-scroll">
-        {items.length > 0 ? items.map((p) => <PosterCard key={p.id || `p-${p._id}`} p={p} />) : (
+        {filtered.length > 0 ? (
+          filtered.map((p) => <PosterCard key={p.id || `p-${p._id}`} p={p} />)
+        ) : (
           <div className="empty-state">
             <FiShoppingBag size={48} />
             <p>No hay productos en esta sección</p>
@@ -435,12 +525,17 @@ function PosterCard({ p = {} }) {
 
   const desc = (p?.descripcion || p?.detalle || p?.resumen || "").toString().trim();
 
-  // ✅ Enlace PÚBLICO por UUID (no por slug)
+  // Enlace público por UUID
   const publicHref = p?.uuid ? `/producto/${p.uuid}` : null;
 
   const Media = ({ children }) =>
     publicHref ? (
-      <Link to={publicHref} className="poster-media" aria-label={`Ver ${p?.nombre || "producto"}`}>
+      <Link
+        to={publicHref}
+        className="poster-media"
+        aria-label={`Ver ${p?.nombre || "producto"}`}
+        style={{ display: "block", textDecoration: "none" }}
+      >
         {children}
       </Link>
     ) : (
@@ -478,7 +573,7 @@ function PosterCard({ p = {} }) {
 
       <div className="poster-body">
         {publicHref ? (
-          <Link to={publicHref} className="poster-title linklike" title={p?.nombre}>
+          <Link to={publicHref} className="poster-title" title={p?.nombre} style={{ textDecoration: "none" }}>
             {p?.nombre || p?.title || "Producto"}
           </Link>
         ) : (
@@ -533,7 +628,7 @@ function StorePolicies({ tienda }) {
 }
 
 function SocialLinks({ redes = {} }) {
-  if (!redes.facebook && !redes.instagram && !redes.tiktok) return null;
+  if (!redes?.facebook && !redes?.instagram && !redes?.tiktok) return null;
   return (
     <section className="store-section social-section">
       <h2 className="section-title">Síguenos</h2>

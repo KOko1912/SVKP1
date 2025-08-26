@@ -1,30 +1,54 @@
-// frontend/src/pages/Vendedor/Pagina.jsx
+// E:\SVKP1\frontend\src\pages\Vendedor\Pagina.jsx
 import React, { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import Nabvendedor from "./Nabvendedor";
 import "./Vendedor.css";
 import "./PaginaGrid.css";
 import {
   FiFacebook, FiInstagram, FiYoutube, FiPhone, FiMail, FiClock,
-  FiMapPin, FiExternalLink, FiMessageCircle, FiShoppingBag, FiStar
+  FiMapPin, FiExternalLink, FiMessageCircle, FiShoppingBag, FiStar, FiSearch
 } from "react-icons/fi";
 import Swal from "sweetalert2";
 
-const API = import.meta.env.VITE_API_URL || "http://localhost:5000";
-const FILES = import.meta.env.VITE_FILES_BASE || API;
+/* ===================== Bases ===================== */
+const API_BASE  = (import.meta.env.VITE_API_URL || "http://localhost:5000").replace(/\/$/, "");
+const FILES_ENV = (import.meta.env.VITE_FILES_BASE || "").replace(/\/$/, "");
+const FILES_BASE = (
+  FILES_ENV
+    ? (/^https?:\/\//i.test(FILES_ENV) ? FILES_ENV : `${API_BASE}${FILES_ENV.startsWith("/") ? "" : "/"}${FILES_ENV}`)
+    : API_BASE
+).replace(/\/$/, "");
 
 /* ===================== Helpers ===================== */
 const grad = (from, to) => `linear-gradient(135deg, ${from}, ${to})`;
-const toPublicUrl = (u) => {
+
+const toWebPath = (u) => {
   if (!u) return "";
-  if (Array.isArray(u)) return toPublicUrl(u.find(Boolean));
+  if (Array.isArray(u)) return toWebPath(u.find(Boolean));
   if (typeof u === "object")
-    return toPublicUrl(u.url || u.path || u.src || u.href || u.filepath || u.location || u.image || u.thumbnail || "");
-  const s = String(u).trim();
-  if (!s) return "";
-  if (/^https?:\/\//i.test(s)) return s;
-  if (s.startsWith("/uploads") || s.startsWith("/TiendaUploads") || s.startsWith("/files")) return `${FILES}${s}`;
-  return s;
+    return toWebPath(u.url || u.path || u.src || u.href || u.filepath || u.location || u.image || u.thumbnail || "");
+  const raw = String(u).trim();
+  if (!raw) return "";
+  const clean = raw.replace(/\\/g, "/");
+  if (/^https?:\/\//i.test(clean)) {
+    try { return new URL(clean).pathname || ""; } catch { /* noop */ }
+  }
+  const lower = clean.toLowerCase();
+  const marks = ["/tiendauploads/","tiendauploads/","/uploads/","uploads/","/files/","files/"];
+  for (const m of marks) {
+    const i = lower.indexOf(m.replace(/^\//,""));
+    if (i !== -1) {
+      const slice = clean.slice(i);
+      return slice.startsWith("/") ? slice : `/${slice}`;
+    }
+  }
+  return clean.startsWith("/") ? clean : `/${clean}`;
 };
+
+const toPublicUrl = (u) => {
+  const p = toWebPath(u);
+  return p ? `${FILES_BASE}${encodeURI(p)}` : "";
+};
+
 const slugify = (str = "") =>
   String(str)
     .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
@@ -33,8 +57,11 @@ const slugify = (str = "") =>
     .replace(/(^-|-$)+/g, "")
     .slice(0, 60);
 
+const safeJsonParse = (t, fb=null) => { try { return JSON.parse(t); } catch { return fb; } };
+
+/* ===================== Página ===================== */
 export default function Pagina() {
-  const usuario = useMemo(() => JSON.parse(localStorage.getItem("usuario") || "{}"), []);
+  const usuario = useMemo(() => safeJsonParse(localStorage.getItem("usuario") || "{}", {}), []);
   const headers = { "x-user-id": usuario?.id };
 
   const [tienda, setTienda] = useState(null);
@@ -74,16 +101,16 @@ export default function Pagina() {
   useEffect(() => {
     (async () => {
       try {
-        const rt = await fetch(`${API}/api/tienda/me`, { headers });
+        const rt = await fetch(`${API_BASE}/api/tienda/me`, { headers });
         const dt = await rt.json();
         if (!rt.ok) throw new Error(dt?.message || dt?.error || "No se pudo cargar la tienda");
         setTienda(dt);
 
-        const rp = await fetch(`${API}/api/v1/productos?tiendaId=${dt.id}`, { headers });
+        const rp = await fetch(`${API_BASE}/api/v1/productos?tiendaId=${dt.id}`, { headers });
         const dp = await rp.json();
         setProductos(Array.isArray(dp?.items) ? dp.items : Array.isArray(dp) ? dp : []);
 
-        const rc = await fetch(`${API}/api/v1/categorias?tiendaId=${dt.id}`, { headers });
+        const rc = await fetch(`${API_BASE}/api/v1/categorias?tiendaId=${dt.id}`, { headers });
         const dc = await rc.json();
         setCategorias(Array.isArray(dc) ? dc : []);
       } catch (e) {
@@ -119,7 +146,7 @@ export default function Pagina() {
       });
       if (desiredSlug === undefined) return; // cancelado
 
-      const resp = await fetch(`${API}/api/tienda/publicar`, {
+      const resp = await fetch(`${API_BASE}/api/tienda/publicar`, {
         method: "PUT",
         headers: { "Content-Type": "application/json", "x-user-id": t.usuarioId || usuario?.id },
         body: JSON.stringify({ publish: true, slug: desiredSlug || t.slug || t.nombre || "" })
@@ -167,6 +194,27 @@ export default function Pagina() {
     }
   }
 
+  /* ===================== Layout normalizado ===================== */
+  const orderedBlocks = useMemo(() => {
+    const raw = tienda?.homeLayout ?? null;
+    const blocks = Array.isArray(raw) ? raw : Array.isArray(raw?.blocks) ? raw.blocks : [];
+    // aplica defaults y orden por posición visual (y -> x -> z)
+    const withDefaults = blocks.map(b => ({
+      ...b,
+      props: { ...(DEFAULT_PROPS[b.type] || {}), ...(b.props || {}) },
+      gs: { ...(b.gs || {}) },
+      z: Number.isFinite(+b.z) ? +b.z : 1,
+    }));
+    return withDefaults
+      .sort((a, b) => {
+        const ay = a.gs?.y ?? 0, by = b.gs?.y ?? 0;
+        if (ay !== by) return ay - by;
+        const ax = a.gs?.x ?? 0, bx = b.gs?.x ?? 0;
+        if (ax !== bx) return ax - bx;
+        return (a.z||1) - (b.z||1);
+      });
+  }, [tienda?.homeLayout]);
+
   /* ===================== Render principal ===================== */
   if (loading) return (
     <div className="vendedor-container">
@@ -184,8 +232,6 @@ export default function Pagina() {
       <div className="error-message">Error: {error}</div>
     </div>
   );
-
-  const blocks = tienda?.homeLayout?.blocks;
 
   return (
     <div className="vendedor-container">
@@ -221,15 +267,20 @@ export default function Pagina() {
         </div>
       )}
 
-      {/* Hero default si el layout no trae hero */}
-      {Array.isArray(blocks) && blocks.some(b => b.type === "hero") ? null : <HeroPortada tienda={tienda} />}
+      {/* Si el layout no trae hero en la primera "fila", muestra uno por defecto arriba */}
+      {!(orderedBlocks || []).some(b => b.type === "hero") && <HeroPortada tienda={tienda} />}
 
       {/* Ficha + horario */}
       <VendorInfoSection tienda={tienda} />
 
-      {/* Render según layout configurado */}
-      {Array.isArray(blocks) && blocks.length > 0 ? (
-        <RenderBlocks layout={blocks} productos={productos} categorias={categorias} tienda={tienda} />
+      {/* Render según layout configurado (respetando orden) */}
+      {(orderedBlocks || []).length > 0 ? (
+        <RenderBlocks
+          layout={orderedBlocks}
+          productos={productos}
+          categorias={categorias}
+          tienda={tienda}
+        />
       ) : (
         <>
           <RowSection title="Todos los productos" icon={<FiShoppingBag />} items={productos} />
@@ -262,7 +313,17 @@ export default function Pagina() {
   );
 }
 
-/* =================== Render de bloques (homeLayout) =================== */
+/* =================== Render de bloques =================== */
+const DEFAULT_PROPS = {
+  hero:     { showLogo: true, showDescripcion: true, align: 'center' },
+  featured: { title: 'Destacados', limit: 8 },
+  grid:     { title: 'Todos los productos', limit: 12, showFilter: true },
+  category: { title: '', categoriaId: null, limit: 12, showFilter: true },
+  product:  { productoId: null },
+  banner:   { title: 'Promoción', ctaText: 'Ver más', ctaUrl: '' },
+  logo:     { shape: 'rounded', frame: 'thin' },
+};
+
 function RenderBlocks({ layout = [], productos = [], categorias = [], tienda }) {
   if (!Array.isArray(layout) || !layout.length) return null;
   const catName = (id) => categorias.find(c => Number(c.id) === Number(id))?.nombre || "Categoría";
@@ -294,7 +355,15 @@ function RenderBlocks({ layout = [], productos = [], categorias = [], tienda }) 
         if (type === "grid") {
           const items = productos.slice(0, p.limit ?? 12);
           if (!items.length) return null;
-          return <RowSection key={b.id} title={p.title || "Todos los productos"} icon={<FiShoppingBag />} items={items} />;
+          return (
+            <RowSection
+              key={b.id}
+              title={p.title || "Todos los productos"}
+              icon={<FiShoppingBag />}
+              items={items}
+              enableSearch={!!p.showFilter}
+            />
+          );
         }
 
         if (type === "category") {
@@ -304,7 +373,15 @@ function RenderBlocks({ layout = [], productos = [], categorias = [], tienda }) 
             .filter(prod => Array.isArray(prod.categorias) && prod.categorias.some(pc => Number(pc.categoriaId) === id))
             .slice(0, p.limit ?? 12);
           if (!items.length) return null;
-          return <RowSection key={b.id} title={p.title || catName(id)} icon={<FiShoppingBag />} items={items} />;
+          return (
+            <RowSection
+              key={b.id}
+              title={p.title || catName(id)}
+              icon={<FiShoppingBag />}
+              items={items}
+              enableSearch={!!p.showFilter}
+            />
+          );
         }
 
         if (type === "product") {
@@ -322,7 +399,11 @@ function RenderBlocks({ layout = [], productos = [], categorias = [], tienda }) 
               <div className="pv-banner" style={{ backgroundImage: src ? `url(${src})` : undefined }}>
                 <div className="pv-banner-content">
                   <strong>{p.title || "Promoción"}</strong>
-                  {p.ctaText ? <em>{p.ctaText}</em> : null}
+                  {p.ctaText ? (
+                    p.ctaUrl
+                      ? <a href={p.ctaUrl} target="_blank" rel="noreferrer" style={{ color: "#fff", marginLeft: 8, textDecoration: "underline" }}>{p.ctaText}</a>
+                      : <em style={{ marginLeft: 8 }}>{p.ctaText}</em>
+                  ) : null}
                 </div>
               </div>
             </section>
@@ -344,7 +425,6 @@ function RenderBlocks({ layout = [], productos = [], categorias = [], tienda }) 
 }
 
 /* =================== Componentes =================== */
-
 function HeroPortada({ tienda, align = "center", showLogo = true, showDescripcion = true }) {
   const portada = toPublicUrl(tienda?.portadaUrl);
   const logo = toPublicUrl(tienda?.logoUrl);
@@ -459,11 +539,21 @@ function StoreHours({ horario = {} }) {
   );
 }
 
-function RowSection({ title, icon, items = [] }) {
+function RowSection({ title, icon, items = [], enableSearch = false }) {
   const ref = useRef(null);
   const [showControls, setShowControls] = useState(false);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(true);
+  const [q, setQ] = useState("");
+
+  const filtered = useMemo(() => {
+    if (!enableSearch || !q.trim()) return items;
+    const needle = q.toLowerCase();
+    return items.filter(p => {
+      const t = `${p?.nombre||p?.title||""} ${p?.descripcion||p?.detalle||p?.resumen||""}`.toLowerCase();
+      return t.includes(needle);
+    });
+  }, [items, enableSearch, q]);
 
   const checkScroll = () => {
     if (ref.current) {
@@ -496,19 +586,33 @@ function RowSection({ title, icon, items = [] }) {
     >
       <div className="row-head">
         <h2 className="section-title">
-          {icon} {title} <span className="item-count">({items.length})</span>
+          {icon} {title} <span className="item-count">({filtered.length})</span>
         </h2>
-        {items.length > 0 && (
-          <div className={`row-actions ${showControls ? "visible" : ""}`}>
-            <button type="button" className="btn-circle" onClick={() => scrollBy(-380)} disabled={!canScrollLeft} aria-label="Scroll left">◀</button>
-            <button type="button" className="btn-circle" onClick={() => scrollBy(380)} disabled={!canScrollRight} aria-label="Scroll right">▶</button>
-          </div>
-        )}
+
+        <div className="row-tools">
+          {enableSearch && (
+            <label className="grid-filter">
+              <FiSearch />
+              <input
+                type="search"
+                placeholder="Buscar en esta sección…"
+                value={q}
+                onChange={(e)=>setQ(e.target.value)}
+              />
+            </label>
+          )}
+          {filtered.length > 0 && (
+            <div className={`row-actions ${showControls ? "visible" : ""}`}>
+              <button type="button" className="btn-circle" onClick={() => scrollBy(-380)} disabled={!canScrollLeft} aria-label="Scroll left">◀</button>
+              <button type="button" className="btn-circle" onClick={() => scrollBy(380)} disabled={!canScrollRight} aria-label="Scroll right">▶</button>
+            </div>
+          )}
+        </div>
       </div>
 
       <div ref={ref} className="row-scroll">
-        {items.length > 0 ? (
-          items.map((p) => <PosterCard key={p.id || `p-${p._id}`} p={p} />)
+        {filtered.length > 0 ? (
+          filtered.map((p) => <PosterCard key={p.id || `p-${p._id}`} p={p} />)
         ) : (
           <div className="empty-state">
             <FiShoppingBag size={48} />
@@ -538,7 +642,19 @@ function PosterCard({ p = {} }) {
   return (
     <article className="poster-card">
       <div className="poster-media">
-        {img ? <img src={img} alt={p?.nombre || "producto"} loading="lazy" /> : (
+        {img ? <img src={img} alt={p?.nombre || "producto"} loading="lazy"
+          onError={(e) => {
+            e.currentTarget.onerror = null;
+            e.currentTarget.src =
+              "data:image/svg+xml;utf8," +
+              encodeURIComponent(
+                `<svg xmlns='http://www.w3.org/2000/svg' width='480' height='360'>
+                   <rect width='100%' height='100%' fill='#f3f4f6'/>
+                   <text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' fill='#9ca3af' font-family='sans-serif' font-size='16'>Sin imagen</text>
+                 </svg>`
+              );
+          }}
+        /> : (
           <div className="image-placeholder"><FiShoppingBag size={24} color="#9ca3af" /></div>
         )}
         {p.destacado && <div className="featured-badge"><FiStar size={14} /></div>}

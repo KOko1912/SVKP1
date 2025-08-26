@@ -297,8 +297,7 @@ router.put('/me', async (req, res) => {
     if (current && data.nombre && data.nombre !== current.nombre) {
       if (!current.isPublished && (!current.slug || current.slug.trim() === '')) {
         const base = slugify(data.nombre);
-        let slug = base,
-          i = 1;
+        let slug = base, i = 1;
         while (
           await prisma.tienda.findFirst({
             where: { slug, NOT: { id: updated.id } },
@@ -368,6 +367,81 @@ router.get('/public/:slug', async (req, res) => {
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'No se pudo cargar la tienda pública' });
+  }
+});
+
+/* =========================
+   NUEVOS ENDPOINTS PÚBLICOS
+   ========================= */
+const PUBLIC_TIENDA_SELECT = {
+  id: true,
+  nombre: true,
+  slug: true,
+  isPublished: true,
+  publishedAt: true,
+  descripcion: true,
+  colorPrincipal: true,
+  portadaUrl: true,
+  logoUrl: true,
+  bannerPromoUrl: true,
+  categoria: true,
+  subcategorias: true,
+  telefonoContacto: true,
+  email: true,
+  horario: true,
+  metodosPago: true,
+  redes: true,
+  envioCobertura: true,
+  envioCosto: true,
+  envioTiempo: true,
+  devoluciones: true,
+  moneda: true,
+  ciudad: true,
+  pais: true,
+  whatsapp: true,
+  homeLayout: true,
+  seoKeywords: true,
+  skuRef: true,
+  aliases: true,
+  publicUuid: true,
+};
+
+async function findPublicTienda(where) {
+  return prisma.tienda.findFirst({
+    where: { isPublished: true, ...where },
+    select: PUBLIC_TIENDA_SELECT,
+  });
+}
+
+// /api/tienda/public/by-id/:id  (sin regex en el path para evitar errores de path-to-regexp)
+router.get('/public/by-id/:id', async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: 'id inválido' });
+
+    const tienda = await findPublicTienda({ id });
+    if (!tienda) return res.status(404).json({ error: 'Tienda no publicada o no existe' });
+
+    res.json(tienda);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'No se pudo cargar la tienda pública (id)' });
+  }
+});
+
+// /api/tienda/public/uuid/:uuid  (opcional)
+router.get('/public/uuid/:uuid', async (req, res) => {
+  try {
+    const uuid = String(req.params.uuid || '').trim();
+    if (!uuid) return res.status(400).json({ error: 'UUID inválido' });
+
+    const tienda = await findPublicTienda({ publicUuid: uuid });
+    if (!tienda) return res.status(404).json({ error: 'Tienda no publicada o no existe' });
+
+    res.json(tienda);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'No se pudo cargar la tienda pública (uuid)' });
   }
 });
 

@@ -1,17 +1,19 @@
+// E:\SVKP1\frontend\src\pages\Auth\Login.jsx
 import { useState } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
+import { motion } from 'framer-motion';
+import { FiEye, FiEyeOff, FiArrowLeft, FiUser, FiLock, FiPhone } from 'react-icons/fi';
 import * as API from '../../lib/api.js';
-import './Auth.css';
 
 export default function Login() {
-  const [telefono, setTelefono]   = useState('');
+  const [telefono, setTelefono] = useState('');
   const [contrasena, setContrasena] = useState('');
-  const [loading, setLoading]     = useState(false);
-  const [error, setError]         = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
 
-  const navigate   = useNavigate();
-  const location   = useLocation();
+  const navigate = useNavigate();
+  const location = useLocation();
   const redirectTo = location.state?.from || '/usuario/perfil';
 
   const handleLogin = async (e) => {
@@ -30,7 +32,7 @@ export default function Login() {
       await API.apiLogin({ telefono: telefono.trim(), password: contrasena });
       navigate(redirectTo, { replace: true });
     } catch (err) {
-      const msg = err?.message || 'Error al iniciar sesión';
+      const msg = err?.message || 'Error al iniciar sesión. Verifica tus credenciales.';
       setError(msg);
     } finally {
       setLoading(false);
@@ -38,79 +40,135 @@ export default function Login() {
   };
 
   return (
-    <div className="auth-container">
-      <div className="auth-header">
-        <h2>Bienvenido de nuevo</h2>
-        <p>Ingresa tus credenciales para acceder a tu cuenta</p>
-      </div>
+    <div className="auth-page">
+      <div className="auth-background"></div>
+      
+      <div className="auth-container">
+        <button 
+          onClick={() => navigate('/')} 
+          className="auth-back-button"
+        >
+          <FiArrowLeft /> Volver al inicio
+        </button>
 
-      {error && <div className="auth-error-message">⚠️ {error}</div>}
-
-      <form onSubmit={handleLogin} className="auth-form">
-        <div className="form-group">
-          <label htmlFor="telefono">Teléfono</label>
-          <input
-            id="telefono"
-            type="tel"
-            inputMode="numeric"
-            pattern="[0-9]*"
-            value={telefono}
-            onChange={(e) => setTelefono(e.target.value)}
-            autoComplete="username"
-            placeholder="8440000000"
-            required
-          />
-        </div>
-
-        <div className="form-group">
-          <label htmlFor="password">Contraseña</label>
-          <div className="password-input">
-            <input
-              id="password"
-              type={showPassword ? 'text' : 'password'}
-              value={contrasena}
-              onChange={(e) => setContrasena(e.target.value)}
-              autoComplete="current-password"
-              placeholder="•••••••••"
-              required
-            />
-            <button
-              type="button"
-              className="toggle-password"
-              onClick={() => setShowPassword((s) => !s)}
-              aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
-            >
-              👁️
-            </button>
+        <motion.div 
+          className="auth-card"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5 }}
+        >
+          <div className="auth-header">
+            <div className="auth-logo">
+              <img src="/SVKP.png" alt="SystemVkode" />
+            </div>
+            <h2>Bienvenido de nuevo</h2>
+            <p>Ingresa tus credenciales para acceder a tu cuenta</p>
           </div>
-        </div>
 
-        <div className="forgot-password">
-          <button
-            type="button"
-            onClick={() => navigate('/olvide')}
-            className="text-button"
-          >
-            ¿Olvidaste tu contraseña?
-          </button>
-        </div>
-
-        <button type="submit" className="primary-button" disabled={loading}>
-          {loading ? (
-            <>
-              <span className="spinner" /> Ingresando…
-            </>
-          ) : (
-            'Iniciar sesión'
+          {error && (
+            <motion.div 
+              className="auth-error-message"
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              transition={{ duration: 0.3 }}
+            >
+              <span>⚠️</span> {error}
+            </motion.div>
           )}
-        </button>
-      </form>
 
-      <div className="auth-footer">
-        <p>¿No tienes una cuenta?</p>
-        <button onClick={() => navigate('/registro')} className="secondary-button">
-          Crear cuenta
-        </button>
+          <form onSubmit={handleLogin} className="auth-form">
+            <div className="form-group">
+              <label htmlFor="telefono" className="form-label">
+                <FiPhone /> Número de teléfono
+              </label>
+              <div className="input-container">
+                <input
+                  id="telefono"
+                  type="tel"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  value={telefono}
+                  onChange={(e) => setTelefono(e.target.value.replace(/\D/g, ''))}
+                  autoComplete="username"
+                  placeholder="8440000000"
+                  required
+                  disabled={loading}
+                  className="form-input"
+                />
+              </div>
+            </div>
+
+            <div className="form-group">
+              <label htmlFor="password" className="form-label">
+                <FiLock /> Contraseña
+              </label>
+              <div className="input-container password-container">
+                <input
+                  id="password"
+                  type={showPassword ? 'text' : 'password'}
+                  value={contrasena}
+                  onChange={(e) => setContrasena(e.target.value)}
+                  autoComplete="current-password"
+                  placeholder="•••••••••"
+                  required
+                  disabled={loading}
+                  className="form-input"
+                />
+                <button
+                  type="button"
+                  className="password-toggle"
+                  onClick={() => setShowPassword((s) => !s)}
+                  aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+                  disabled={loading}
+                >
+                  {showPassword ? <FiEyeOff /> : <FiEye />}
+                </button>
+              </div>
+            </div>
+
+            <div className="form-options">
+              <button
+                type="button"
+                onClick={() => navigate('/olvide')}
+                className="text-link"
+                disabled={loading}
+              >
+                ¿Olvidaste tu contraseña?
+              </button>
+            </div>
+
+            <button 
+              type="submit" 
+              className="auth-submit-button primary-button" 
+              disabled={loading}
+            >
+              {loading ? (
+                <>
+                  <span className="button-spinner"></span> Ingresando…
+                </>
+              ) : (
+                <>
+                  <FiUser /> Iniciar sesión
+                </>
+              )}
+            </button>
+          </form>
+
+          <div className="auth-footer">
+            <p>¿No tienes una cuenta?</p>
+            <Link 
+              to="/registro" 
+              className="auth-link-button secondary-button"
+              state={{ from: location.state?.from }}
+            >
+              Crear cuenta
+            </Link>
+          </div>
+        </motion.div>
+
+        <div className="auth-copyright">
+          <p>© {new Date().getFullYear()} SystemVkode. Todos los derechos reservados.</p>
+        </div>
       </div>
     </div>
   );

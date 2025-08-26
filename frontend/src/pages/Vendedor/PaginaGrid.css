@@ -844,3 +844,32 @@
   .row-scroll { grid-auto-columns: minmax(180px, 75vw); }
   .policies-section { grid-template-columns: 1fr; }
 }
+/* E:\SVKP1\frontend\src\pages\Vendedor\PaginaGrid.css */
+/* …tu CSS actual… */
+
+/* Herramientas de fila (buscador + flechas) */
+.row-tools{
+  display:flex;
+  align-items:flex-end;
+  gap:1rem;
+  margin-left:auto;
+}
+
+.grid-filter{
+  display:inline-flex;
+  align-items:center;
+  gap:.5rem;
+  padding:.5rem .75rem;
+  border:1px solid var(--gray-light);
+  border-radius:12px;
+  background:#fff;
+  box-shadow: var(--shadow-sm);
+}
+.grid-filter input{
+  border:none;
+  outline:none;
+  background:transparent;
+  min-width:220px;
+  font-size:1rem;
+}
+.grid-filter svg{ opacity:.65; }

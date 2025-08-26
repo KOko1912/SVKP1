@@ -1,5 +1,5 @@
 // frontend/src/pages/Vendedor/ConfiguracionVista.jsx
-// Versión modificada para usar solo plantilla 6x20
+// Plantilla 6x20 – versión pulida (historial mejorado, atajos, reset, copiar JSON)
 
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import Nabvendedor from './Nabvendedor';
@@ -26,12 +26,12 @@ const FILES = import.meta.env.VITE_FILES_BASE || API;
 /* ========================= */
 const BLOCKS = [
   { type: 'hero',     icon: <FiImage/>,   name: 'Portada (Hero)',        w: 6, h: 4, minW: 4,  minH: 3 },
-  { type: 'featured', icon: <FiStar/>,    name: 'Productos destacados',  w: 4,  h: 3, minW: 4,  minH: 2 },
+  { type: 'featured', icon: <FiStar/>,    name: 'Productos destacados',  w: 4, h: 3, minW: 4,  minH: 2 },
   { type: 'grid',     icon: <FiGrid/>,    name: 'Todos los productos',   w: 6, h: 4, minW: 6,  minH: 3 },
-  { type: 'category', icon: <FiList/>,    name: 'Categoría + productos', w: 4,  h: 3, minW: 4,  minH: 2 },
-  { type: 'product',  icon: <FiPackage/>, name: 'Producto individual',   w: 2,  h: 3, minW: 2,  minH: 2 },
+  { type: 'category', icon: <FiList/>,    name: 'Categoría + productos', w: 4, h: 3, minW: 4,  minH: 2 },
+  { type: 'product',  icon: <FiPackage/>, name: 'Producto individual',   w: 2, h: 3, minW: 2,  minH: 2 },
   { type: 'banner',   icon: <FiLayers/>,  name: 'Banner promocional',    w: 6, h: 3, minW: 4,  minH: 2 },
-  { type: 'logo',     icon: <FiImage/>,   name: 'Logo',                  w: 2,  h: 4, minW: 2,  minH: 2 },
+  { type: 'logo',     icon: <FiImage/>,   name: 'Logo',                  w: 2, h: 4, minW: 2,  minH: 2 },
 ];
 
 const DEFAULT_PROPS = {
@@ -69,6 +69,8 @@ const labelBlock = (type) => ({
   logo: 'Logo',
 }[type] || 'Bloque');
 
+const safeParse = (txt, fallback = null) => { try { return JSON.parse(txt); } catch { return fallback; } };
+
 /* ========================= */
 /* Componente principal      */
 /* ========================= */
@@ -86,15 +88,16 @@ export default function ConfiguracionVista(){
   const [productos, setProductos] = useState([]);
 
   // Editor
-  const [items, setItems] = useState([]); // [{i,id,type,props,z}]
+  const [items, setItems] = useState([]); // [{i,id,type,props,z,x,y,w,h,minW,minH}]
   const [selectedId, setSelectedId] = useState(null);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState('');
   const [drawerOpen, setDrawerOpen] = useState(true);
 
-  const undoStack = useRef([]);
-  const redoStack = useRef([]);
-  const layoutRef = useRef([]); // última versión del layout RGL por breakpoint md
+  const undoStack = useRef([]);   // array de snapshots (string)
+  const redoStack = useRef([]);   // array de snapshots (string)
+  const layoutRef = useRef([]);   // último layout de RGL
+  const toastTimer = useRef(null);
 
   /* ---------------- Carga inicial ---------------- */
   useEffect(() => {
@@ -103,66 +106,102 @@ export default function ConfiguracionVista(){
   }, []);
 
   useEffect(() => {
+    const ac = new AbortController();
     (async () => {
       try {
-        const rt = await fetch(`${API}/api/tienda/me`, { headers });
-        const dt = await rt.json();
+        const rt = await fetch(`${API}/api/tienda/me`, { headers, signal: ac.signal });
+        const dt = await rt.json().catch(()=> ({}));
         setTienda(dt || {});
 
         const qs = dt?.id ? `?tiendaId=${dt.id}` : '';
-        const rc = await fetch(`${API}/api/v1/categorias${qs}`, { headers });
+        const rc = await fetch(`${API}/api/v1/categorias${qs}`, { headers, signal: ac.signal });
         setCategorias(await rc.json().catch(()=>[]));
 
-        const rp = await fetch(`${API}/api/v1/productos${qs}`, { headers });
-        const dp = await rp.json();
+        const rp = await fetch(`${API}/api/v1/productos${qs}`, { headers, signal: ac.signal });
+        const dp = await rp.json().catch(()=>[]);
         setProductos(Array.isArray(dp?.items)? dp.items : Array.isArray(dp)? dp : []);
 
         // Layout desde BD o local
-        let stored = dt?.homeLayout || JSON.parse(localStorage.getItem(localKey) || 'null');
+        let rawStored = dt?.homeLayout ?? localStorage.getItem(localKey);
+        let stored = typeof rawStored === 'string' ? safeParse(rawStored, null) : rawStored;
         let blocks = [];
-        if (Array.isArray(stored)) blocks = stored; 
-        else if (stored?.blocks) blocks = stored.blocks;
-        
+        if (Array.isArray(stored)) blocks = stored;                   // forma antigua: array directo
+        else if (stored?.blocks) blocks = stored.blocks;              // forma nueva: {blocks:[...]}
         if (!blocks.length) blocks = [ mk('grid', DEFAULT_PROPS.grid, { x:0,y:0,w:6,h:4 }) ];
-        setItems(assignIds(blocks).map(b => toRGLItem(b)));
+        const prepared = assignIds(blocks).map(b => toRGLItem(b));
+        setItems(prepared);
+        // primer snapshot para undo
+        undoStack.current = [JSON.stringify(prepared)];
+        redoStack.current = [];
       } catch {
         const fallback = [ mk('grid', DEFAULT_PROPS.grid, { x:0,y:0,w:6,h:4 }) ];
-        setItems(assignIds(fallback).map(b => toRGLItem(b)));
+        const prepared = assignIds(fallback).map(b => toRGLItem(b));
+        setItems(prepared);
+        undoStack.current = [JSON.stringify(prepared)];
+        redoStack.current = [];
       }
     })();
+    return () => ac.abort();
   }, []);
 
   /* ---------------- Undo/Redo ---------------- */
-  const pushHistory = useCallback((next) => {
-    undoStack.current.push(JSON.stringify(next));
-    if (undoStack.current.length > 50) undoStack.current.shift();
+  const snapshot = useCallback((arr) => JSON.stringify(arr), []);
+  const pushHistory = useCallback((nextArr) => {
+    const snap = snapshot(nextArr);
+    const last = undoStack.current[undoStack.current.length - 1];
+    if (snap !== last) {
+      undoStack.current.push(snap);
+      if (undoStack.current.length > 80) undoStack.current.shift();
+    }
     redoStack.current = [];
-  }, []);
-  const undo = () => { if (!undoStack.current.length) return; const curr = JSON.stringify(items); redoStack.current.push(curr); const prev = JSON.parse(undoStack.current.pop()); setItems(prev); };
-  const redo = () => { if (!redoStack.current.length) return; const next = JSON.parse(redoStack.current.pop()); pushHistory(items); setItems(next); };
+  }, [snapshot]);
+
+  const undo = () => {
+    if (undoStack.current.length < 2) return;
+    const curr = undoStack.current.pop(); // quita actual
+    redoStack.current.push(curr);
+    const prev = undoStack.current[undoStack.current.length - 1];
+    setItems(JSON.parse(prev));
+  };
+
+  const redo = () => {
+    if (!redoStack.current.length) return;
+    const next = redoStack.current.pop();
+    undoStack.current.push(next);
+    setItems(JSON.parse(next));
+  };
 
   useEffect(() => {
     const onKey = (e) => {
-      const targetEditable = ['INPUT','TEXTAREA','SELECT'].includes(e.target.tagName);
-      if (!targetEditable && selectedId && (e.key === 'Delete' || e.key === 'Backspace')) { e.preventDefault(); handleRemove(selectedId); }
+      const targetIsInput = ['INPUT','TEXTAREA','SELECT'].includes(e.target.tagName);
+      // Borrar bloque seleccionado
+      if (!targetIsInput && selectedId && (e.key === 'Delete' || e.key === 'Backspace')) {
+        e.preventDefault();
+        handleRemove(selectedId);
+      }
+      // Undo / Redo
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); }
+      // Save
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); save(); }
+      // Duplicar
+      if (!targetIsInput && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') {
+        e.preventDefault();
+        if (selectedId) handleDuplicate(selectedId);
+      }
+      // Escape: deseleccionar
       if (e.key === 'Escape') setSelectedId(null);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [selectedId, items]);
+  }, [selectedId]);
 
   /* ---------------- Layout helpers ---------------- */
-  const colByMode = () => 6; // Siempre 6 columnas para la plantilla 6x20
-
   const toRGLItem = (b) => ({
     i: b.id,
     id: b.id,
     type: b.type,
     props: b.props ?? DEFAULT_PROPS[b.type] ?? {},
-    z: Number(b.z || 1),
-    // layout por defecto para todas las resoluciones
+    z: Number.isFinite(+b.z) ? +b.z : 1,
     x: b.gs?.x ?? 0,
     y: b.gs?.y ?? 0,
     w: clampSize(b.type, b.gs?.w ?? (BLOCKS.find(x=>x.type===b.type)?.w||4)).w,
@@ -173,10 +212,10 @@ export default function ConfiguracionVista(){
   });
 
   const clampSize = (type, size) => {
-    const def = BLOCKS.find(b=>b.type===type) || {}; 
-    return { 
-      w: Math.max(def.minW||1, Math.min(def.w||6, size||def.w||3)), 
-      h: Math.max(def.minH||1, Math.min(def.h||4, size||def.h||3)) 
+    const def = BLOCKS.find(b=>b.type===type) || {};
+    return {
+      w: Math.max(def.minW||1, Math.min(def.w||6, size||def.w||3)),
+      h: Math.max(def.minH||1, Math.min(def.h||4, size||def.h||3))
     };
   };
 
@@ -196,32 +235,70 @@ export default function ConfiguracionVista(){
   const paletteAdd = (type) => {
     const def = BLOCKS.find(b=>b.type===type) || { w:4, h:3, minW:2, minH:2 };
     const base = toRGLItem(mk(type, DEFAULT_PROPS[type], { w:def.w, h:def.h }));
-    pushHistory(items);
-    setItems(prev => ([ ...prev, { ...base, y: Infinity } ]));
+    setItems(prev => {
+      const next = [ ...prev, { ...base, y: Infinity } ];
+      pushHistory(next);
+      return next;
+    });
     setSelectedId(base.i);
+    toast('Bloque agregado');
   };
 
-  const handleRemove = (id) => { pushHistory(items); setItems(prev => prev.filter(it => it.i !== id)); if (selectedId === id) setSelectedId(null); toast('Bloque eliminado'); };
+  const handleRemove = (id) => {
+    setItems(prev => {
+      const next = prev.filter(it => it.i !== id);
+      pushHistory(next);
+      return next;
+    });
+    if (selectedId === id) setSelectedId(null);
+    toast('Bloque eliminado');
+  };
+
   const handleDuplicate = (id) => {
-    const it = items.find(x=>x.i===id); if (!it) return;
-    const copy = { ...it, i: `${it.type}-${uid()}`, id: `${it.type}-${uid()}`, x: (it.x+1)%6, y: it.y, z: it.z+1 };
-    pushHistory(items); setItems(prev => [...prev, copy]); setSelectedId(copy.i); toast('Bloque duplicado');
+    setItems(prev => {
+      const it = prev.find(x=>x.i===id); if (!it) return prev;
+      const newId = `${it.type}-${uid()}`;
+      const copy = { ...it, i: newId, id: newId, x: (it.x+1)%6, y: it.y, z: (it.z||1)+1 };
+      const next = [...prev, copy];
+      pushHistory(next);
+      return next;
+    });
+    setSelectedId(`${items.find(x=>x.i===id)?.type || 'blk'}-`); // se corrige al setItems siguiente
+    toast('Bloque duplicado');
   };
 
-  const onLayoutChange = (layout /* array de items con x,y,w,h,i */, allLayouts) => {
+  const mapLayoutToItems = useCallback((layout, prev) => {
+    return prev.map(it => {
+      const l = layout.find(x => x.i === it.i);
+      return l ? { ...it, x: l.x, y: l.y, w: l.w, h: l.h } : it;
+    });
+  }, []);
+
+  const onLayoutChange = (layout /* array de {x,y,w,h,i} */) => {
     layoutRef.current = layout;
-    // Sincronizar tamaños/posiciones al estado items
-    setItems(prev => prev.map(it => {
-      const l = layout.find(x=>x.i===it.i); if (!l) return it; return { ...it, x:l.x, y:l.y, w:l.w, h:l.h };
-    }));
+    setItems(prev => mapLayoutToItems(layout, prev));
   };
+
+  // Guardar una entrada de historial al terminar drag/resize (no en cada pixel)
+  const onDragStop   = (layout) => { setItems(prev => { const next = mapLayoutToItems(layout, prev); pushHistory(next); return next; }); };
+  const onResizeStop = (layout) => { setItems(prev => { const next = mapLayoutToItems(layout, prev); pushHistory(next); return next; }); };
 
   /* ---------------- Guardado ---------------- */
-  const toast = (m) => { setMsg(m); clearTimeout(toast._t); toast._t = setTimeout(()=>setMsg(''), 1800); };
+  const toast = (m) => {
+    setMsg(m);
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(()=> setMsg(''), 1600);
+  };
 
   const buildPayload = () => ({
     meta: { mode: 'TEMPLATE_6x20' },
-    blocks: items.map(it => ({ id: it.i, type: it.type, z: it.z, props: it.props, gs: { x: it.x, y: it.y, w: it.w, h: it.h, minW: it.minW, minH: it.minH } }))
+    blocks: items.map(it => ({
+      id: it.i,
+      type: it.type,
+      z: it.z,
+      props: it.props,
+      gs: { x: it.x, y: it.y, w: it.w, h: it.h, minW: it.minW, minH: it.minH }
+    }))
   });
 
   const save = async () => {
@@ -232,30 +309,56 @@ export default function ConfiguracionVista(){
       if (!r.ok) {
         localStorage.setItem(localKey, JSON.stringify(payload));
         toast('Guardado local.');
-      } else toast('¡Diseño guardado!');
+      } else {
+        toast('¡Diseño guardado!');
+      }
     } catch {
       localStorage.setItem(localKey, JSON.stringify(payload));
       toast('Guardado local (offline).');
     } finally { setSaving(false); }
   };
 
-  // Autosave suave cada 1.5s después de mover/redimensionar
+  const resetLayout = () => {
+    const base = assignIds([ mk('grid', DEFAULT_PROPS.grid, { x:0, y:0, w:6, h:4 }) ]).map(b => toRGLItem(b));
+    setItems(base);
+    pushHistory(base);
+    toast('Layout reiniciado');
+  };
+
+  const copyJSON = async () => {
+    try {
+      const data = JSON.stringify(buildPayload(), null, 2);
+      await navigator.clipboard?.writeText(data);
+      toast('Diseño copiado al portapapeles');
+    } catch {
+      toast('No se pudo copiar');
+    }
+  };
+
+  // Autosave suave cada 1.5s después de mover/redimensionar/cambiar props
   useEffect(() => {
-    const t = setTimeout(() => { localStorage.setItem(localKey, JSON.stringify(buildPayload())); }, 1500);
+    const t = setTimeout(() => {
+      localStorage.setItem(localKey, JSON.stringify(buildPayload()));
+    }, 1500);
     return () => clearTimeout(t);
   }, [items]);
 
   /* ---------------- Render previews ---------------- */
-  const extractColors = (gradientString) => { const m = String(gradientString||'').match(/#([0-9a-f]{6})/gi); return { from: m?.[0] || '#6d28d9', to: m?.[1] || '#c026d3' }; };
+  const extractColors = (gradientString) => {
+    const m = String(gradientString||'').match(/#([0-9a-f]{6})/gi);
+    return { from: m?.[0] || '#6d28d9', to: m?.[1] || '#c026d3' };
+  };
 
   const Card = ({p}) => {
     const src = toPublicUrl((p?.imagenes?.find(x=>x.isPrincipal)||p?.imagenes?.[0])?.url);
     return (
-      <article className="pv-card">
+      <article className="pv-card" aria-label={p?.nombre || 'Producto'}>
         <figure className="pv-card-cover" style={{ backgroundImage: src?`url(${src})`: undefined }} />
         <div className="pv-card-info">
           <h4 className="pv-card-title">{p?.nombre||'Producto'}</h4>
-          <div className="pv-card-price">{typeof p?.precio==='number' ? `$${Number(p.precio).toFixed(2)}` : <span className="pv-muted">Con variantes</span>}</div>
+          <div className="pv-card-price">
+            {typeof p?.precio==='number' ? `$${Number(p.precio).toFixed(2)}` : <span className="pv-muted">Con variantes</span>}
+          </div>
         </div>
       </article>
     );
@@ -283,22 +386,22 @@ export default function ConfiguracionVista(){
       return <div className="pv-grid">{list.length? list.map(p=> <Card key={p.id} p={p}/>) : <div className="pv-empty">Sin destacados</div>}</div>;
     }
     if (it.type==='grid'){
-      const items = (productos||[]).slice(0, it.props.limit ?? 12);
+      const itemsG = (productos||[]).slice(0, it.props.limit ?? 12);
       return (
         <div className="pv-stack">
           {it.props.title ? <h4 className="pv-section-title">{it.props.title}</h4> : null}
-          <div className="pv-grid">{items.length? items.map(p=> <Card key={p.id} p={p}/>) : <div className="pv-empty">Sin productos</div>}</div>
+          <div className="pv-grid">{itemsG.length? itemsG.map(p=> <Card key={p.id} p={p}/>) : <div className="pv-empty">Sin productos</div>}</div>
         </div>
       );
     }
     if (it.type==='category'){
       const catId = it.props.categoriaId ? Number(it.props.categoriaId) : null;
-      const items = catId ? (productos||[]).filter(p => Array.isArray(p.categorias) && p.categorias.some(pc => pc.categoriaId === catId)).slice(0, it.props.limit ?? 12) : [];
+      const itemsC = catId ? (productos||[]).filter(p => Array.isArray(p.categorias) && p.categorias.some(pc => pc.categoriaId === catId)).slice(0, it.props.limit ?? 12) : [];
       const title = it.props.title || (categorias.find(c=>c.id===catId)?.nombre || 'Categoría');
       return (
         <div className="pv-stack">
           <h4 className="pv-section-title">{title}</h4>
-          <div className="pv-grid">{items.length? items.map(p=> <Card key={p.id} p={p}/>) : <div className="pv-empty">Selecciona la categoría</div>}</div>
+          <div className="pv-grid">{itemsC.length? itemsC.map(p=> <Card key={p.id} p={p}/>) : <div className="pv-empty">Selecciona la categoría</div>}</div>
         </div>
       );
     }
@@ -331,7 +434,14 @@ export default function ConfiguracionVista(){
 
   /* ---------------- Prop panel ---------------- */
   const sel = items.find(x=>x.i===selectedId);
-  const updateProps = (patch) => setItems(prev => prev.map(x => x.i===selectedId ? ({ ...x, props: { ...x.props, ...patch } }) : x));
+  const updateProps = (patch) => {
+    setItems(prev => {
+      const next = prev.map(x => x.i===selectedId ? ({ ...x, props: { ...x.props, ...patch } }) : x);
+      // registrar al cambiar props también (de forma suave lo guardará local)
+      pushHistory(next);
+      return next;
+    });
+  };
   const setLayer = (fn) => setItems(prev => prev.map(x => x.i===selectedId ? ({ ...x, z: fn({ curr: Number(x.z)||1, max: Math.max(1,...prev.map(y=>Number(y.z)||1)) }) }) : x));
 
   return (
@@ -364,21 +474,30 @@ export default function ConfiguracionVista(){
               <button className="btn" onClick={undo} title="Deshacer (Ctrl/Cmd+Z)"><FiChevronLeft/> Deshacer</button>
               <button className="btn" onClick={redo} title="Rehacer (Ctrl/Cmd+Shift+Z)"><FiChevronRight/> Rehacer</button>
             </div>
+            <div className="form-row">
+              <button className="btn" onClick={resetLayout} title="Volver al layout base"><FiTrash2/> Reset</button>
+              <button className="btn" onClick={copyJSON} title="Copiar JSON del diseño"><FiCopy/> Copiar JSON</button>
+            </div>
           </div>
 
           <div className="form-section">
             <h3><FiPlus/> Bloques</h3>
             {BLOCKS.map(b => (
-              <div key={b.type} className="sidebar-item" onClick={()=>paletteAdd(b.type)}>
+              <button
+                key={b.type}
+                className="sidebar-item"
+                onClick={()=>paletteAdd(b.type)}
+                aria-label={`Agregar bloque ${b.name}`}
+              >
                 <span className="sidebar-icon">{b.icon}</span>
                 <span>{b.name}</span>
                 <span className="pv-grow"/>
                 <FiPlus/>
-              </div>
+              </button>
             ))}
             <div className="sidebar-tip">
               <h4>Tips</h4>
-              <p>Arrastra con el mango <FiMove/>. Usa eliminar <kbd>Del</kbd> y duplicar <kbd>Ctrl+D</kbd> (click en ⋮ del bloque).</p>
+              <p>Arrastra con el mango <FiMove/>. Elimina con <kbd>Del</kbd>, duplica con <kbd>Ctrl/Cmd + D</kbd>.</p>
             </div>
           </div>
         </aside>
@@ -386,10 +505,12 @@ export default function ConfiguracionVista(){
         <section className="content-area">
           <div className="pv-toolbar">
             <div className="pv-left">
-              <button className="btn" onClick={()=>setDrawerOpen(v=>!v)}>{drawerOpen? <><FiMinimize2/> Ocultar props</> : <><FiMaximize2/> Mostrar props</>}</button>
+              <button className="btn" onClick={()=>setDrawerOpen(v=>!v)}>
+                {drawerOpen? <><FiMinimize2/> Ocultar props</> : <><FiMaximize2/> Mostrar props</>}
+              </button>
             </div>
             <div className="pv-right">
-              {msg ? <div className="notification show">{msg}</div> : null}
+              {msg ? <div className="notification show" role="status" aria-live="polite">{msg}</div> : null}
             </div>
           </div>
 
@@ -403,15 +524,21 @@ export default function ConfiguracionVista(){
               margin={[12,12]}
               containerPadding={[0,0]}
               onLayoutChange={onLayoutChange}
+              onDragStop={onDragStop}
+              onResizeStop={onResizeStop}
               draggableHandle=".pv-handle"
               breakpoints={{ xl: 1400, lg: 996, md: 768, sm: 480, xs: 0 }}
-              cols={{ xl: 6, lg: 6, md: 6, sm: 6, xs: 4 }} // Siempre 6 columnas (4 en móvil)
+              cols={{ xl: 6, lg: 6, md: 6, sm: 6, xs: 4 }}   // Siempre 6 columnas (4 en XS)
+              maxRows={20}                                   // Límite vertical 6×20
               compactType="vertical"
             >
               {items.map(it => (
-                <div key={it.i} data-grid={{ x:it.x, y:it.y, w:it.w, h:it.h, minW:it.minW, minH:it.minH }}
-                     className={`pv-item ${selectedId===it.i?'is-selected':''}`}
-                     onMouseDown={()=>setSelectedId(it.i)}
+                <div
+                  key={it.i}
+                  data-grid={{ x:it.x, y:it.y, w:it.w, h:it.h, minW:it.minW, minH:it.minH }}
+                  className={`pv-item ${selectedId===it.i?'is-selected':''}`}
+                  onMouseDown={()=>setSelectedId(it.i)}
+                  aria-label={`Bloque ${labelBlock(it.type)}`}
                 >
                   <div className="pv-item-content" style={{ zIndex: it.z }}>
                     <div className="pv-head">
@@ -442,16 +569,27 @@ export default function ConfiguracionVista(){
               <div className="form-group">
                 <label className="form-label">Orden (capa)</label>
                 <div className="form-row">
-                  <button className="btn" onClick={()=>setLayer(({max,curr})=>max+1)}>Traer al frente</button>
+                  <button className="btn" onClick={()=>setLayer(({max})=>max+1)}>Traer al frente</button>
                   <button className="btn" onClick={()=>setItems(prev => prev.map(x=> x.i===sel.i?({...x, z:1}):x))}>Enviar al fondo</button>
-                  <input className="form-input" type="number" value={Number(sel.z||1)} onChange={e=>setItems(prev=> prev.map(x=> x.i===sel.i? ({...x, z:Number(e.target.value||1)}):x))} />
+                  <input
+                    className="form-input"
+                    type="number"
+                    value={Number(sel.z||1)}
+                    onChange={e=>setItems(prev=> prev.map(x=> x.i===sel.i? ({...x, z:Number(e.target.value||1)}):x))}
+                  />
                 </div>
               </div>
 
               {sel.type==='hero' && (
                 <div className="form-group">
-                  <label className="checkbox-item"><input type="checkbox" checked={!!sel.props.showLogo} onChange={e=>updateProps({showLogo:e.target.checked})}/><span className="checkbox-label">Mostrar logo</span></label>
-                  <label className="checkbox-item"><input type="checkbox" checked={!!sel.props.showDescripcion} onChange={e=>updateProps({showDescripcion:e.target.checked})}/><span className="checkbox-label">Mostrar descripción</span></label>
+                  <label className="checkbox-item">
+                    <input type="checkbox" checked={!!sel.props.showLogo} onChange={e=>updateProps({showLogo:e.target.checked})}/>
+                    <span className="checkbox-label">Mostrar logo</span>
+                  </label>
+                  <label className="checkbox-item">
+                    <input type="checkbox" checked={!!sel.props.showDescripcion} onChange={e=>updateProps({showDescripcion:e.target.checked})}/>
+                    <span className="checkbox-label">Mostrar descripción</span>
+                  </label>
                   <div className="form-group">
                     <label className="form-label">Alineación</label>
                     <select className="form-select" value={sel.props.align||'center'} onChange={e=>updateProps({align:e.target.value})}>
@@ -478,7 +616,10 @@ export default function ConfiguracionVista(){
                   <input className="form-input" value={sel.props.title||''} onChange={e=>updateProps({title:e.target.value})}/>
                   <label className="form-label">Límite</label>
                   <input className="form-input" type="number" min="1" max="60" value={sel.props.limit??12} onChange={e=>updateProps({limit:Number(e.target.value||12)})}/>
-                  <label className="checkbox-item"><input type="checkbox" checked={!!sel.props.showFilter} onChange={e=>updateProps({showFilter:e.target.checked})}/><span className="checkbox-label">Mostrar buscador/filtros</span></label>
+                  <label className="checkbox-item">
+                    <input type="checkbox" checked={!!sel.props.showFilter} onChange={e=>updateProps({showFilter:e.target.checked})}/>
+                    <span className="checkbox-label">Mostrar buscador/filtros</span>
+                  </label>
                 </div>
               )}
 
@@ -493,7 +634,10 @@ export default function ConfiguracionVista(){
                   <input className="form-input" value={sel.props.title||''} onChange={e=>updateProps({title:e.target.value})}/>
                   <label className="form-label">Límite</label>
                   <input className="form-input" type="number" min="1" max="60" value={sel.props.limit??12} onChange={e=>updateProps({limit:Number(e.target.value||12)})}/>
-                  <label className="checkbox-item"><input type="checkbox" checked={!!sel.props.showFilter} onChange={e=>updateProps({showFilter:e.target.checked})}/><span className="checkbox-label">Mostrar buscador</span></label>
+                  <label className="checkbox-item">
+                    <input type="checkbox" checked={!!sel.props.showFilter} onChange={e=>updateProps({showFilter:e.target.checked})}/>
+                    <span className="checkbox-label">Mostrar buscador</span>
+                  </label>
                 </div>
               )}
 
@@ -545,7 +689,7 @@ export default function ConfiguracionVista(){
       </div>
 
       {/* Notificación flotante (fallback) */}
-      {msg ? <div className="notification show">{msg}</div> : null}
+      {msg ? <div className="notification show" role="status" aria-live="polite">{msg}</div> : null}
     </div>
   );
 }

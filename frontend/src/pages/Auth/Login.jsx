@@ -61,7 +61,7 @@ export default function Login() {
             <div className="auth-logo">
               <img src="/SVKP.png" alt="SystemVkode" />
             </div>
-            <h2>Bienvenido de nuevo</h2>
+            <h2>Bienvenido</h2>
             <p>Ingresa tus credenciales para acceder a tu cuenta</p>
           </div>
 

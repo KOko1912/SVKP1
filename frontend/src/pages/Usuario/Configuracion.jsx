@@ -1,31 +1,49 @@
 // frontend/src/pages/Usuario/Configuracion.jsx
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import NavBarUsuario from './NavBarUsuario';
-import { FiLock, FiChevronDown, FiChevronUp, FiEye, FiEyeOff } from 'react-icons/fi';
+import {
+  FiLock, FiChevronDown, FiChevronUp, FiEye, FiEyeOff,
+  FiUpload, FiUser
+} from 'react-icons/fi';
 import './usuario.css';
 
-const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+
+// helpers para mostrar la foto igual que en Perfil.jsx
+const toPublicUrl = (u) => {
+  if (!u) return '';
+  if (/^https?:\/\//i.test(u)) return u;
+  if (u.startsWith('/')) return `${API_BASE.replace(/\/$/, '')}${u}`;
+  return `${API_BASE.replace(/\/$/, '')}/${u}`;
+};
+const withCacheBuster = (url, stamp = Date.now()) =>
+  url ? `${url}${url.includes('?') ? '&' : '?'}t=${stamp}` : '';
 
 export default function ConfiguracionUsuario() {
   const navigate = useNavigate();
 
   const [usuario, setUsuario] = useState(null);
 
+  // contraseña
   const [actual, setActual] = useState('');
   const [nueva, setNueva] = useState('');
   const [confirmar, setConfirmar] = useState('');
-
-  const [msg, setMsg] = useState('');
-  const [loading, setLoading] = useState(false);
-
-  // visibilidad del formulario y de los inputs
   const [mostrarForm, setMostrarForm] = useState(false);
   const [verActual, setVerActual] = useState(false);
   const [verNueva, setVerNueva] = useState(false);
   const [verConfirmar, setVerConfirmar] = useState(false);
 
-  // Cargar usuario desde localStorage (protegemos el acceso)
+  // mensajes/estado
+  const [msg, setMsg] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  // foto de perfil
+  const [subiendo, setSubiendo] = useState(false);
+  const [fotoMsg, setFotoMsg] = useState('');
+  const fileRef = useRef(null);
+
+  // cargar usuario
   useEffect(() => {
     const raw = localStorage.getItem('usuario');
     if (!raw) return navigate('/login');
@@ -36,6 +54,14 @@ export default function ConfiguracionUsuario() {
       navigate('/login');
     }
   }, [navigate]);
+
+  const fotoSrc = useMemo(() => {
+    if (!usuario?.fotoUrl) return '';
+    return withCacheBuster(
+      toPublicUrl(usuario.fotoUrl),
+      usuario.updatedAt || Date.now()
+    );
+  }, [usuario?.fotoUrl, usuario?.updatedAt]);
 
   const resetForm = () => {
     setActual('');
@@ -49,7 +75,6 @@ export default function ConfiguracionUsuario() {
   const cambiarPassword = async (e) => {
     e.preventDefault();
     setMsg('');
-
     if (!actual.trim() || !nueva.trim() || !confirmar.trim()) {
       setMsg('Completa todos los campos.');
       return;
@@ -65,7 +90,7 @@ export default function ConfiguracionUsuario() {
 
     setLoading(true);
     try {
-      const res = await fetch(`${API}/api/usuarios/cambiar-contraseña`, {
+      const res = await fetch(`${API_BASE}/api/usuarios/cambiar-contraseña`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: usuario.id, actual, nueva })
@@ -83,6 +108,49 @@ export default function ConfiguracionUsuario() {
     }
   };
 
+  // === Cambio de foto (subida) ===
+  const abrirSelector = () => fileRef.current?.click();
+
+  const onChangeFoto = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file || !usuario?.id) return;
+
+    setFotoMsg('');
+    const formData = new FormData();
+    formData.append('foto', file);
+
+    setSubiendo(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/usuarios/${usuario.id}/foto`, {
+        method: 'POST',
+        body: formData
+      });
+
+      const ct = res.headers.get('content-type') || '';
+      const data = ct.includes('application/json') ? await res.json() : await res.text();
+
+      if (!res.ok) {
+        const serverMsg =
+          typeof data === 'string' ? data : (data?.error || 'Error al subir imagen');
+        if (res.status === 413) setFotoMsg('La imagen es demasiado grande. Prueba con una menor.');
+        else if (res.status === 415) setFotoMsg('Tipo no permitido. Usa JPG, PNG, WEBP o GIF.');
+        else setFotoMsg(serverMsg);
+        return;
+      }
+
+      // refrescar usuario local
+      const updated = data?.usuario ? { ...usuario, ...data.usuario } : usuario;
+      setUsuario(updated);
+      localStorage.setItem('usuario', JSON.stringify(updated));
+      setFotoMsg('Foto actualizada ✅');
+    } catch (err) {
+      setFotoMsg(err.message || 'No se pudo subir la imagen');
+    } finally {
+      setSubiendo(false);
+      if (e.target) e.target.value = '';
+    }
+  };
+
   if (!usuario) return null;
 
   return (
@@ -92,7 +160,56 @@ export default function ConfiguracionUsuario() {
       <main className="container-svk" style={{ maxWidth: 720 }}>
         <h2 className="title-svk" style={{ marginBottom: 12 }}>Configuración</h2>
 
-        {/* Seguridad / Contraseña */}
+        {/* ===== Foto de perfil ===== */}
+        <section className="card-svk" style={{ marginTop: 12 }}>
+          <div className="block-title" style={{ marginBottom: 8 }}>
+            <span className="icon"><FiUser /></span>
+            <h2>Foto de perfil</h2>
+          </div>
+
+          <div style={{
+            display:'flex', alignItems:'center', gap:16, flexWrap:'wrap'
+          }}>
+            <div className="avatar-svk" title="Foto de perfil">
+              {fotoSrc ? (
+                <img src={fotoSrc} alt="Foto de perfil" />
+              ) : (
+                <div className="avatar__placeholder" aria-label="Sin foto">
+                  <FiUser size={36} />
+                </div>
+              )}
+            </div>
+
+            <div style={{ display:'grid', gap:8 }}>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={abrirSelector}
+                disabled={subiendo}
+              >
+                <FiUpload /> {subiendo ? 'Subiendo…' : 'Cambiar foto'}
+              </button>
+
+              <input
+                ref={fileRef}
+                type="file"
+                accept="image/png,image/jpeg,image/jpg,image/webp,image/gif"
+                onChange={onChangeFoto}
+                className="hidden"
+                disabled={subiendo}
+              />
+              {fotoSrc && (
+                <span className="subtitle-svk" style={{marginTop: -2}}>
+                  Tip: usa una imagen cuadrada para mejor resultado.
+                </span>
+              )}
+            </div>
+          </div>
+
+          {fotoMsg && <div className="note" style={{ marginTop: 12 }}>{fotoMsg}</div>}
+        </section>
+
+        {/* ===== Seguridad / Contraseña ===== */}
         <section className="card-svk" style={{ marginTop: 12 }}>
           <div className="block-title" style={{ marginBottom: 0 }}>
             <span className="icon"><FiLock /></span>
@@ -103,7 +220,6 @@ export default function ConfiguracionUsuario() {
             Mantén tu cuenta protegida. Te recomendamos cambiar tu contraseña periódicamente.
           </p>
 
-          {/* Trigger para mostrar/ocultar formulario */}
           <button
             className="btn btn-primary"
             onClick={() => setMostrarForm(v => !v)}
@@ -112,7 +228,6 @@ export default function ConfiguracionUsuario() {
             {mostrarForm ? <>Ocultar formulario <FiChevronUp /></> : <>Cambiar contraseña <FiChevronDown /></>}
           </button>
 
-          {/* Formulario oculto por defecto */}
           {mostrarForm && (
             <form onSubmit={cambiarPassword} className="form-svk" style={{ marginTop: 14 }}>
               <div className="input-wrap-svk">

@@ -1,16 +1,15 @@
 // frontend/src/pages/Usuario/Perfil.jsx
-import { useEffect, useRef, useState, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import NavBarUsuario from './NavBarUsuario';
 import {
-  FiUpload, FiUser, FiPhone, FiShoppingBag, FiLogOut, FiMessageSquare,
-  FiHeart, FiMapPin, FiSettings, FiChevronRight, FiBookmark
+  FiUser, FiPhone, FiShoppingBag, FiLogOut, FiHeart,
+  FiMapPin, FiSettings, FiChevronRight, FiBookmark
 } from 'react-icons/fi';
 import './usuario.css';
 
 const RAW_API = import.meta.env.VITE_API_URL || '';
 const API_URL = RAW_API.replace(/\/$/, '');
-const WA_SOPORTE = '528441786280';
 
 const toPublicUrl = (u) => {
   if (!u) return '';
@@ -24,9 +23,7 @@ const withCacheBuster = (url, stamp = Date.now()) =>
 
 export default function Perfil() {
   const [usuario, setUsuario] = useState(null);
-  const [subiendo, setSubiendo] = useState(false);
   const [msg, setMsg] = useState('');
-  const fileInputRef = useRef(null);
   const navigate = useNavigate();
 
   const fotoSrc = useMemo(() => {
@@ -59,53 +56,6 @@ export default function Perfil() {
     }
   }, [navigate]);
 
-  const abrirFilePicker = () => fileInputRef.current?.click();
-
-  const onChangeFoto = async (e) => {
-    if (!usuario) return;
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setMsg('');
-    const formData = new FormData();
-    formData.append('foto', file);
-
-    setSubiendo(true);
-    try {
-      const res = await fetch(`${API_URL}/api/usuarios/${usuario.id}/foto`, {
-        method: 'POST',
-        body: formData,
-      });
-
-      const ct = res.headers.get('content-type') || '';
-      const data = ct.includes('application/json') ? await res.json() : await res.text();
-
-      if (!res.ok) {
-        const serverMsg =
-          typeof data === 'string' ? data : (data?.error || 'Error al subir imagen');
-        if (res.status === 413) setMsg('La imagen es demasiado grande. Prueba con una menor.');
-        else if (res.status === 415) setMsg('Tipo no permitido. Usa JPG, PNG, WEBP o GIF.');
-        else setMsg(serverMsg);
-        return;
-      }
-
-      const updated = data?.usuario ? { ...usuario, ...data.usuario } : usuario;
-      setUsuario(updated);
-      localStorage.setItem('usuario', JSON.stringify(updated));
-      setMsg('Foto actualizada ✅');
-    } catch (err) {
-      setMsg(err.message);
-    } finally {
-      setSubiendo(false);
-      e.target.value = '';
-    }
-  };
-
-  const abrirWhatsApp = (texto) => {
-    const url = `https://wa.me/${WA_SOPORTE}?text=${encodeURIComponent(texto)}`;
-    window.open(url, '_blank', 'noopener,noreferrer');
-  };
-
   const solicitarVendedor = async () => {
     if (!usuario?.id) return;
     try {
@@ -120,9 +70,7 @@ export default function Perfil() {
       const next = { ...usuario, vendedorSolicitado: true };
       setUsuario(next);
       localStorage.setItem('usuario', JSON.stringify(next));
-
-      const texto = `Hola, soy ${usuario.nombre} (ID ${usuario.id}). Quiero solicitar el modo VENDEDOR en SystemVKode.`;
-      abrirWhatsApp(texto);
+      setMsg('Solicitud enviada. Nuestro soporte te contactará.');
     } catch (e) {
       setMsg(e.message);
     }
@@ -136,6 +84,9 @@ export default function Perfil() {
   const logout = () => { localStorage.removeItem('usuario'); navigate('/login'); };
 
   if (!usuario) return null;
+
+  const roleLabel = usuario.vendedor ? 'Vendedor' : 'Comprador';
+  const roleBadgeClass = usuario.vendedor ? 'badge badge--role' : 'badge badge--buyer';
 
   const BotonVendedor = () => {
     if (usuario.vendedor) {
@@ -151,13 +102,8 @@ export default function Perfil() {
           <div className="note success">
             <p>Solicitud enviada. Nuestro soporte te contactará.</p>
           </div>
-          <button
-            className="btn btn-outline w-full"
-            onClick={() =>
-              abrirWhatsApp(`Hola, soy ${usuario.nombre} (ID ${usuario.id}). Di seguimiento a mi solicitud de vendedor.`)
-            }
-          >
-            <FiMessageSquare /> Contactar soporte
+          <button className="btn btn-outline w-full" disabled>
+            En revisión…
           </button>
         </div>
       );
@@ -185,29 +131,18 @@ export default function Perfil() {
                   <FiUser size={36} />
                 </div>
               )}
-              <button
-                className={`btn btn-secondary avatar__action ${subiendo ? 'is-loading' : ''}`}
-                onClick={abrirFilePicker}
-                disabled={subiendo}
-                aria-label="Cambiar foto"
-                title="Cambiar foto"
-              >
-                <FiUpload /> {subiendo ? 'Subiendo…' : 'Cambiar'}
-              </button>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/png,image/jpeg,image/jpg,image/webp,image/gif"
-                onChange={onChangeFoto}
-                disabled={subiendo}
-                className="hidden"
-              />
             </div>
 
             <div className="user-head">
               <h1 className="title-svk">{usuario.nombre || 'Usuario'}</h1>
               <p className="subtitle-svk">Administra tu cuenta, tus compras y tu tienda.</p>
-              {msg && <div className="note">{msg}</div>}
+
+              <div style={{ marginTop: '.5rem', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                <span className={roleBadgeClass}>{roleLabel}</span>
+                <span className="badge"><FiPhone /> {usuario.telefono || '—'}</span>
+              </div>
+
+              {msg && <div className="note" style={{ marginTop: '.6rem' }}>{msg}</div>}
             </div>
           </div>
 
@@ -221,22 +156,42 @@ export default function Perfil() {
           </div>
         </header>
 
+        {/* Quick stats (ahora 2 items, auto-fit) */}
+        <section className="card-svk" style={{ marginTop: '16px' }}>
+          <div className="stat-grid" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(220px,1fr))' }}>
+            <div className="stat-card">
+              <div className="stat-icon"><FiPhone /></div>
+              <div>
+                <div className="stat-label">Teléfono</div>
+                <div className="stat-value">{usuario.telefono || '—'}</div>
+              </div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-icon"><FiUser /></div>
+              <div>
+                <div className="stat-label">Rol</div>
+                <div className="stat-value">{roleLabel}</div>
+              </div>
+            </div>
+          </div>
+        </section>
+
         {/* Grid principal */}
-        <section className="grid-svk">
+        <section className="grid-svk" style={{ marginTop: '16px' }}>
           {/* Información personal */}
           <div className="card-svk">
             <div className="block-title">
               <span className="icon"><FiUser /></span>
               <h2>Información personal</h2>
             </div>
-            <div className="info-list">
-              <div className="info-row">
-                <span className="info-label">Nombre</span>
-                <span className="info-value">{usuario.nombre || '—'}</span>
+            <div className="kv-grid">
+              <div className="kv-item">
+                <div className="kv-label">Nombre</div>
+                <div className="kv-value">{usuario.nombre || '—'}</div>
               </div>
-              <div className="info-row">
-                <span className="info-label">Teléfono</span>
-                <span className="info-value">{usuario.telefono || '—'}</span>
+              <div className="kv-item">
+                <div className="kv-label">Teléfono</div>
+                <div className="kv-value">{usuario.telefono || '—'}</div>
               </div>
             </div>
           </div>
@@ -247,7 +202,9 @@ export default function Perfil() {
               <span className="icon"><FiShoppingBag /></span>
               <h2>Modo vendedor</h2>
             </div>
-            <p className="muted-svk">Administra una tienda y comienza a vender.</p>
+            <p className="subtitle-svk" style={{ marginTop: 0 }}>
+              Administra una tienda y comienza a vender.
+            </p>
             <BotonVendedor />
           </div>
 
@@ -275,28 +232,6 @@ export default function Perfil() {
             <div className="row-actions">
               <button className="chip" onClick={irDirecciones}><FiMapPin /> Gestionar direcciones</button>
               <button className="chip" onClick={irTiendas}><FiHeart /> Tiendas guardadas</button>
-            </div>
-          </div>
-
-          {/* Soporte */}
-          <div className="card-svk span-2">
-            <div className="block-title">
-              <span className="icon"><FiMessageSquare /></span>
-              <h2>Soporte</h2>
-            </div>
-            <p className="muted-svk">¿Dudas o ayuda? Estamos para ti.</p>
-            <div className="row-actions">
-              <button
-                className="btn btn-outline"
-                onClick={() =>
-                  abrirWhatsApp(`Hola, soy ${usuario.nombre || ''} (ID ${usuario.id}). Necesito ayuda con mi cuenta.`)
-                }
-              >
-                WhatsApp Soporte
-              </button>
-              <a className="btn btn-ghost" href="https://systemvkode.com/ayuda" target="_blank" rel="noreferrer">
-                Centro de ayuda
-              </a>
             </div>
           </div>
         </section>

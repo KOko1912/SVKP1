@@ -32,18 +32,28 @@
   color:var(--light); border-color: var(--border);
   background: rgba(255,255,255,.06);
 }
+
+/* Botón de tienda (mismo look que los enlaces) */
+.nav-links .icon-btn{
+  width:48px;height:48px; display:flex; align-items:center; justify-content:center;
+  border-radius:12px; color:var(--text); border:1px solid transparent;
+  background: transparent; cursor:pointer; position:relative;
+}
+.nav-links .icon-btn:hover,
+.nav-links .icon-btn.active{
+  color:var(--light); border-color: var(--border);
+  background: rgba(255,255,255,.06);
+}
+.nav-links .icon-btn .icon-img{
+  width:22px; height:22px; border-radius:6px; object-fit:cover;
+}
+
 .nav-tooltip{
   position:absolute; top:100%; left:50%; transform:translateX(-50%);
   background: linear-gradient(135deg,var(--primary),var(--secondary));
   color:#fff; padding:6px 10px; border-radius:8px; font-size:.8rem; white-space:nowrap;
 }
 .nav-actions{ display:flex; align-items:center; gap:12px; }
-.logout-btn{
-  background: rgba(239,68,68,.15);
-  color:#fecaca; border:1px solid rgba(239,68,68,.3);
-  padding:.55rem .85rem; border-radius:12px; cursor:pointer;
-}
-.logout-btn:hover{ background: rgba(239,68,68,.25); }
 
 /* Mobile bottom */
 .mobile-glass-nav{
@@ -62,5 +72,18 @@
 }
 .mobile-links a.active{ color:#fff; background: rgba(255,255,255,.06); }
 .mobile-links a span{ font-size:.7rem; }
+
+/* Botón de tienda en móvil */
+.mobile-store-btn{
+  width:40px; height:40px; border-radius:12px; border:1px solid transparent;
+  background:transparent; color:var(--text); display:flex; align-items:center; justify-content:center;
+}
+.mobile-store-btn.active,
+.mobile-store-btn:hover{
+  background: rgba(255,255,255,.06);
+  border-color: var(--border);
+}
+.mobile-store-btn img{ width:22px; height:22px; border-radius:6px; object-fit:cover; }
+
 @media(min-width:768px){ .mobile-glass-nav{ display:none; } }
 @media(max-width:767px){ .desk-glass-nav{ display:none; } }

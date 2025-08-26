@@ -1,6 +1,7 @@
+// E:\SVKP1\frontend\src\pages\Auth\Reset.jsx
 import { useState, useEffect } from 'react';
 import { useSearchParams, Link, useNavigate } from 'react-router-dom';
-import { FiArrowLeft } from 'react-icons/fi';
+import { FiArrowLeft, FiKey, FiLock } from 'react-icons/fi';
 import './Auth.css';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
@@ -43,37 +44,73 @@ export default function Reset() {
   };
 
   return (
-    <div className="auth-container">
-      <button 
-        onClick={() => navigate(-1)} 
-        className="back-button"
-      >
-        <FiArrowLeft /> Volver
-      </button>
-      
-      <h1>Restablecer contraseña</h1>
-      <form className="auth-form" onSubmit={resetear}>
-        <input
-          placeholder="Token"
-          value={token}
-          onChange={(e) => setToken(e.target.value)}
-        />
-        <input
-          type="password"
-          placeholder="Nueva contraseña"
-          value={nueva}
-          onChange={(e) => setNueva(e.target.value)}
-        />
-        <button className="primary-button" disabled={loading}>
-          {loading ? 'Enviando…' : 'Cambiar contraseña'}
+    <div className="auth-page">
+      <div className="auth-background"></div>
+
+      <div className="auth-container">
+        <button onClick={() => navigate(-1)} className="auth-back-button">
+          <FiArrowLeft /> Volver
         </button>
-      </form>
 
-      {msg && <p className="auth-info" style={{ marginTop: 12 }}>{msg}</p>}
+        <div className="auth-card">
+          <div className="auth-header">
+            <div className="auth-logo">
+              <img src="/SVKP.png" alt="SystemVkode" />
+            </div>
+            <h2>Restablecer contraseña</h2>
+            <p>Usa el token enviado y define tu nueva contraseña</p>
+          </div>
 
-      <p className="auth-link" style={{ marginTop: 24 }}>
-        <Link className="link-button" to="/login">Volver a Login</Link>
-      </p>
+          <form className="auth-form" onSubmit={resetear}>
+            <div className="form-group">
+              <label htmlFor="token" className="form-label">
+                <FiKey /> Token
+              </label>
+              <div className="input-container">
+                <input
+                  id="token"
+                  placeholder="Pega aquí tu token"
+                  value={token}
+                  onChange={(e) => setToken(e.target.value)}
+                  className="form-input"
+                  disabled={loading}
+                />
+              </div>
+            </div>
+
+            <div className="form-group">
+              <label htmlFor="nueva" className="form-label">
+                <FiLock /> Nueva contraseña
+              </label>
+              <div className="input-container">
+                <input
+                  id="nueva"
+                  type="password"
+                  placeholder="Mínimo 6 caracteres"
+                  value={nueva}
+                  onChange={(e) => setNueva(e.target.value)}
+                  className="form-input"
+                  disabled={loading}
+                />
+              </div>
+            </div>
+
+            <button className="auth-submit-button primary-button" disabled={loading}>
+              {loading ? 'Enviando…' : 'Cambiar contraseña'}
+            </button>
+          </form>
+
+          {msg && <div className="auth-info" style={{ marginTop: '.75rem' }}>{msg}</div>}
+
+          <div className="auth-footer">
+            <Link className="link-button" to="/login">Volver a Login</Link>
+          </div>
+        </div>
+
+        <div className="auth-copyright">
+          <p>© {new Date().getFullYear()} SystemVkode. Todos los derechos reservados.</p>
+        </div>
+      </div>
     </div>
   );
 }

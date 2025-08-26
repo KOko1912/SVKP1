@@ -99,10 +99,9 @@ function inferTipo(payload) {
 }
 
 /* ========== LISTADO (público o protegido) ========== */
-// GET /api/v1/productos?tiendaId=123 | ?slug=mi-tienda | (protegido por x-user-id)
+// GET /api/v1/productos?tiendaId=123 | ?slug=mi-tienda | (protegido por x-user-id)// GET /api/v1/productos?tiendaId=123 | ?slug=mi-tienda
 router.get('/', async (req, res) => {
   try {
-    // Preferir tiendaId o slug (público)
     let tiendaId = toInt(req.query.tiendaId);
     const slug = (req.query.slug || '').toString().trim().toLowerCase();
 
@@ -111,23 +110,29 @@ router.get('/', async (req, res) => {
       if (t) tiendaId = t.id;
     }
 
-    // Si no vino ninguno, usar userId (protegido)
-    if (!tiendaId) {
-      const userId = getUserId(req);
-      if (userId) {
-        const t = await prisma.tienda.findUnique({ where: { usuarioId: userId }, select: { id: true } });
-        if (t) tiendaId = t.id;
-      }
+    // Si no vino tiendaId, usar la del dueño (área protegida)
+    const userId = getUserId(req);
+    if (!tiendaId && userId) {
+      const t = await prisma.tienda.findUnique({ where: { usuarioId: userId }, select: { id: true } });
+      if (t) tiendaId = t.id;
     }
 
-    if (!tiendaId) return res.json([]); // sin tienda => listado vacío (no romper)
+    if (!tiendaId) return res.json([]);
 
+    const isPublic = !userId; // <-- si no viene x-user-id, es público
     const { q = '', estado = '', categoria = '' } = req.query;
 
-    // por defecto ocultamos soft-deleted
     const where = { tiendaId, deletedAt: null };
-    if (estado) where.estado = String(estado);
-    if (estado === 'ARCHIVED') delete where.deletedAt;
+
+    // 🔒 Solo en público, mostrar productos visibles y activos
+    if (isPublic) {
+      where.visible = true;
+      where.estado = 'ACTIVE';
+    } else if (estado) {
+      // en modo protegido puedes filtrar libremente por estado
+      where.estado = String(estado);
+      if (estado === 'ARCHIVED') delete where.deletedAt;
+    }
 
     if (q) {
       const term = String(q).trim();
@@ -137,6 +142,7 @@ router.get('/', async (req, res) => {
         { sku:    { contains: term, mode: 'insensitive' } },
       ];
     }
+
     if (categoria) {
       where.categorias = { some: { categoria: { slug: String(categoria), tiendaId } } };
     }
@@ -153,6 +159,7 @@ router.get('/', async (req, res) => {
     res.status(500).json({ error: 'No se pudieron cargar los productos' });
   }
 });
+
 
 /* ========== PÚBLICO POR UUID ========== */
 // GET /api/v1/productos/public/uuid/:uuid

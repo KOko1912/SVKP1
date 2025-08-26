@@ -1,4 +1,4 @@
-import React, { Fragment, useEffect, useRef, useState } from "react";
+import React, { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import "./Vendedor/Vendedor.css";
 import "./Vendedor/PaginaGrid.css";
 import {
@@ -6,27 +6,53 @@ import {
   FiMapPin, FiExternalLink, FiMessageCircle, FiShoppingBag, FiStar, FiEye
 } from "react-icons/fi";
 import { useParams, Link } from "react-router-dom";
+import NavBarUsuario from "./Usuario/NavBarUsuario";
 
-const API   = import.meta.env.VITE_API_URL    || "http://localhost:5000";
-const FILES = import.meta.env.VITE_FILES_BASE || API;
+const API   = (import.meta.env.VITE_API_URL    || "http://localhost:5000").replace(/\/$/, "");
+const FILES = (import.meta.env.VITE_FILES_BASE || API).replace(/\/$/, "");
 
 /* =============== Helpers =============== */
 const grad = (from, to) => `linear-gradient(135deg, ${from}, ${to})`;
 
-const toPublicUrl = (u) => {
+/** Normaliza una ruta (acepta string u objeto con {url,path,src,...}) y devuelve un pathname empezando con '/' */
+const toWebPath = (u) => {
   if (!u) return "";
-  if (Array.isArray(u)) return toPublicUrl(u.find(Boolean));
+  if (Array.isArray(u)) return toWebPath(u.find(Boolean));
   if (typeof u === "object")
-    return toPublicUrl(u.url || u.path || u.src || u.href || u.filepath || u.location || u.image || u.thumbnail || "");
+    return toWebPath(u.url || u.path || u.src || u.href || u.filepath || u.location || u.image || u.thumbnail || "");
+
   const raw = String(u).trim();
   if (!raw) return "";
-  const s = raw.replace(/\\/g, "/"); // normaliza backslashes
-  if (/^https?:\/\//i.test(s)) return s;
-  if (s.startsWith("/uploads") || s.startsWith("/TiendaUploads") || s.startsWith("/files")) return `${FILES}${s}`;
-  return s.startsWith("/") ? `${FILES}${s}` : `${FILES}/${s}`;
+
+  // normaliza backslashes de Windows
+  const s = raw.replace(/\\/g, "/");
+
+  // Si es URL absoluta, quédate con el pathname
+  if (/^https?:\/\//i.test(s)) {
+    try { return new URL(s).pathname || ""; } catch { /* noop */ }
+  }
+
+  // Busca prefijos comunes y garantiza '/' inicial
+  const lower = s.toLowerCase();
+  const marks = ["/tiendauploads/","tiendauploads/","/uploads/","uploads/","/files/","files/"];
+  for (const m of marks) {
+    const i = lower.indexOf(m);
+    if (i !== -1) {
+      const slice = s.slice(i);
+      return slice.startsWith("/") ? slice : `/${slice}`;
+    }
+  }
+
+  return s.startsWith("/") ? s : `/${s}`;
 };
 
-// Toma principal o primera imagen válida (soporta objetos/strings)
+/** Une base + pathname y **codifica** (espacios, acentos, etc.) para evitar 404 */
+const toPublicUrl = (u) => {
+  const p = toWebPath(u);
+  return p ? `${FILES}${encodeURI(p)}` : "";
+};
+
+// Toma principal o primera imagen válida
 const primaryImageFrom = (imagenes = []) => {
   if (!Array.isArray(imagenes) || !imagenes.length) return "";
   const get = (o) => o?.url || o?.path || o?.src || o?.location || o?.image || o?.thumbnail || "";
@@ -40,7 +66,7 @@ const primaryImageFrom = (imagenes = []) => {
   return "";
 };
 
-// Fetch robusto (si el backend devuelve HTML en error)
+// Fetch robusto
 async function getJsonOrThrow(url) {
   const r = await fetch(url);
   const text = await r.text();
@@ -61,6 +87,11 @@ export default function SVKT() {
   const [categorias, setCategorias] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+
+  // ¿hay sesión de usuario? (para mostrar NavBarUsuario)
+  const usuario = useMemo(() => {
+    try { return JSON.parse(localStorage.getItem("usuario") || "null"); } catch { return null; }
+  }, []);
 
   // Tema global
   useEffect(() => {
@@ -86,7 +117,7 @@ export default function SVKT() {
     root.setProperty("--page-bg", `${softHalos}, linear-gradient(135deg, ${from}, ${to})`);
   }, [tienda?.colorPrincipal]);
 
-  // Carga pública por slug (endpoint correcto SINGULAR)
+  // Carga pública por slug
   useEffect(() => {
     (async () => {
       setLoading(true);
@@ -115,6 +146,7 @@ export default function SVKT() {
   if (loading) {
     return (
       <div className="vendedor-container">
+        {usuario ? <NavBarUsuario /> : null}
         <div className="loading-screen">
           <div className="loading-spinner" />
           <div>Cargando tienda...</div>
@@ -126,6 +158,7 @@ export default function SVKT() {
   if (error) {
     return (
       <div className="vendedor-container">
+        {usuario ? <NavBarUsuario /> : null}
         <div className="error-message">Error: {error}</div>
       </div>
     );
@@ -135,6 +168,8 @@ export default function SVKT() {
 
   return (
     <div className="vendedor-container">
+      {usuario ? <NavBarUsuario /> : null}
+
       {Array.isArray(blocks) && blocks.some(b => b.type === "hero") ? null : (
         <HeroPortada tienda={tienda} />
       )}
@@ -400,9 +435,8 @@ function PosterCard({ p = {} }) {
 
   const desc = (p?.descripcion || p?.detalle || p?.resumen || "").toString().trim();
 
-  const publicHref = p?.slug
-    ? `/producto/${p.slug}`
-    : (p?.uuid ? `/producto/${p.uuid}` : (p?.id ? `/producto/${p.id}` : null));
+  // ✅ Enlace PÚBLICO por UUID (no por slug)
+  const publicHref = p?.uuid ? `/producto/${p.uuid}` : null;
 
   const Media = ({ children }) =>
     publicHref ? (
@@ -420,7 +454,7 @@ function PosterCard({ p = {} }) {
           <img
             src={img}
             alt={p?.nombre || "producto"}
-            loading="eager"          // fuerza carga inmediata
+            loading="eager"
             decoding="async"
             width={480}
             height={360}

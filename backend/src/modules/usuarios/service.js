@@ -5,58 +5,44 @@ try { bcrypt = require('bcryptjs'); } catch { bcrypt = null; }
 
 const prisma = require('../../config/db');
 
-/* ============ helpers ============ */
-const PASS_FIELDS = ['contrasena', 'contrasenia', 'password', 'contraseña'];
-const PASS_SELECT = {
-  id: true,
-  nombre: true,
-  telefono: true,
-  fotoUrl: true,
-  fechaCreacion: true,
-  vendedor: true,
-  vendedorSolicitado: true,
-};
+/* ================= helpers ================= */
 
-const isHashed = (s) => typeof s === 'string' && s.startsWith('$2');
+const getPlainPassword = (src = {}) =>
+  src?.password ?? src?.contrasena ?? src?.contrasenia ?? src?.['contraseña'] ?? null;
+
 async function hashPassword(plain) {
   if (!bcrypt) throw new Error('bcryptjs no disponible');
-  const salt = await bcrypt.genSalt(10);
-  return bcrypt.hash(String(plain), salt);
-}
-function getStoredPasswordFromUser(u) {
-  for (const k of PASS_FIELDS) {
-    if (u && u[k] != null) return u[k];
-  }
-  return null;
-}
-async function tryCreateWithField(baseData, field, hash) {
-  try {
-    const usuario = await prisma.usuario.create({
-      data: { ...baseData, [field]: hash },
-      select: PASS_SELECT,
-    });
-    return usuario;
-  } catch (_) { return null; }
-}
-async function tryUpdatePassword(id, hash) {
-  for (const f of PASS_FIELDS) {
-    try {
-      await prisma.usuario.update({ where: { id }, data: { [f]: hash } });
-      return true;
-    } catch (_) { /* probar siguiente */ }
-  }
-  return false;
+  return bcrypt.hash(String(plain), 10);
 }
 
-/* ============ servicios ============ */
+async function mediaIdFromUrlMaybe(url) {
+  if (!url) return null;
+  // ¿Existe ya un Media con esa URL?
+  const existing = await prisma.media.findFirst({ where: { url } });
+  if (existing) return existing.id;
 
-// Crear usuario
+  // En caso de necesitar crearlo (compatibilidad)
+  const provider = /supabase\.co\/storage/i.test(url) ? 'SUPABASE' : 'LOCAL';
+  const key = crypto.createHash('md5').update(url).digest('hex');
+  const m = await prisma.media.create({
+    data: { provider, key, url, createdAt: new Date(), updatedAt: new Date() },
+  });
+  return m.id;
+}
+
+async function attachFotoUrl(user) {
+  if (!user?.fotoId) return { ...user, fotoUrl: null };
+  const m = await prisma.media.findUnique({ where: { id: user.fotoId }, select: { url: true } });
+  return { ...user, fotoUrl: m?.url || null };
+}
+
+/* ================= servicios ================= */
+
+// Crear usuario (guarda SIEMPRE en passwordHash)
 exports.crearUsuario = async (payload = {}) => {
-  const { nombre, telefono } = payload;
-  const plain =
-    payload.contrasena ??
-    payload['contraseña'] ??
-    payload.password;
+  const nombre   = String(payload.nombre || '').trim();
+  const telefono = String(payload.telefono || '').trim();
+  const plain    = getPlainPassword(payload);
 
   if (!nombre || !telefono || !plain) {
     const e = new Error('nombre, telefono y contraseña son obligatorios');
@@ -64,59 +50,51 @@ exports.crearUsuario = async (payload = {}) => {
     throw e;
   }
 
-  const yaExiste = await prisma.usuario.findUnique({ where: { telefono } });
-  if (yaExiste) {
+  const dup = await prisma.usuario.findUnique({ where: { telefono } });
+  if (dup) {
     const e = new Error('El teléfono ya está registrado');
     e.status = 409;
     throw e;
   }
 
-  const hash = await hashPassword(plain);
+  const passwordHash = await hashPassword(plain);
 
-  const baseData = { nombre, telefono, fotoUrl: null, suscripciones: null };
+  const usuario = await prisma.usuario.create({
+    data: { nombre, telefono, passwordHash },
+    select: {
+      id: true, nombre: true, telefono: true, fotoId: true,
+      vendedor: true, vendedorSolicitado: true,
+      fechaCreacion: true, updatedAt: true,
+    },
+  });
 
-  // intentamos con varios nombres de columna para ser compatibles
-  let usuario = null;
-  let lastErr = null;
-  for (const f of PASS_FIELDS) {
-    try {
-      usuario = await tryCreateWithField(baseData, f, hash);
-      if (usuario) break;
-    } catch (e) { lastErr = e; }
-  }
-  if (!usuario) {
-    const e = new Error('No se pudo crear el usuario (campo de contraseña no válido)');
-    e.status = 500;
-    e.cause = lastErr;
-    throw e;
-  }
-
-  return { usuario };
+  const withFoto = await attachFotoUrl(usuario);
+  return { usuario: withFoto };
 };
 
-// Login
+// Login (compara contra passwordHash)
 exports.loginUsuario = async (payload = {}) => {
-  const { telefono } = payload;
-  const plain =
-    payload.contrasena ??
-    payload['contraseña'] ??
-    payload.password;
+  const telefono = String(payload.telefono || '').trim();
+  const plain    = getPlainPassword(payload) ?? '';
 
-  const usuario = await prisma.usuario.findUnique({ where: { telefono } });
-  if (!usuario) {
+  const user = await prisma.usuario.findUnique({
+    where: { telefono },
+    select: {
+      id: true, nombre: true, telefono: true, fotoId: true,
+      vendedor: true, vendedorSolicitado: true,
+      fechaCreacion: true, updatedAt: true, passwordHash: true,
+    },
+  });
+
+  if (!user) {
     const e = new Error('Usuario no encontrado');
     e.status = 404;
     throw e;
   }
 
-  const stored = getStoredPasswordFromUser(usuario);
-  let ok = false;
-
-  if (stored && isHashed(stored) && bcrypt) {
-    ok = await bcrypt.compare(String(plain), String(stored));
-  } else {
-    ok = String(plain) === String(stored ?? '');
-  }
+  const ok = !!user.passwordHash && bcrypt
+    ? await bcrypt.compare(String(plain), String(user.passwordHash))
+    : false;
 
   if (!ok) {
     const e = new Error('Contraseña incorrecta');
@@ -124,107 +102,110 @@ exports.loginUsuario = async (payload = {}) => {
     throw e;
   }
 
-  return { usuario: {
-    id: usuario.id,
-    nombre: usuario.nombre,
-    telefono: usuario.telefono,
-    fotoUrl: usuario.fotoUrl || null,
-    fechaCreacion: usuario.fechaCreacion,
-    vendedor: usuario.vendedor,
-    vendedorSolicitado: usuario.vendedorSolicitado,
-  }}; 
+  const { passwordHash, ...safe } = user;
+  const withFoto = await attachFotoUrl(safe);
+  return { usuario: withFoto };
 };
 
-// Actualizar fotoUrl
-exports.actualizarFotoUsuario = async (id, fotoUrl) => {
-  return prisma.usuario.update({
-    where: { id },
-    data: { fotoUrl },
-    select: PASS_SELECT,
+// Actualizar foto (acepta mediaId o url)
+exports.actualizarFotoUsuario = async (id, foto) => {
+  let fotoId = null;
+  if (typeof foto === 'number' || /^\d+$/.test(String(foto))) {
+    fotoId = Number(foto);
+  } else if (typeof foto === 'string') {
+    fotoId = await mediaIdFromUrlMaybe(foto);
+  }
+
+  const u = await prisma.usuario.update({
+    where: { id: Number(id) },
+    data: { fotoId, updatedAt: new Date() },
+    select: {
+      id: true, nombre: true, telefono: true, fotoId: true,
+      vendedor: true, vendedorSolicitado: true,
+      fechaCreacion: true, updatedAt: true,
+    },
   });
+
+  return attachFotoUrl(u);
 };
 
 // Obtener usuario por id
 exports.obtenerUsuarioPorId = async (id) => {
-  return prisma.usuario.findUnique({
-    where: { id },
-    select: PASS_SELECT,
+  const u = await prisma.usuario.findUnique({
+    where: { id: Number(id) },
+    select: {
+      id: true, nombre: true, telefono: true, fotoId: true,
+      vendedor: true, vendedorSolicitado: true,
+      fechaCreacion: true, updatedAt: true,
+    },
   });
+  if (!u) return null;
+  return attachFotoUrl(u);
 };
 
-/* =============================
-   🔐 Recuperación de contraseña
-   ============================= */
+/* ============ 🔐 Recuperación de contraseña ============ */
 
-// Crear token de reseteo (válido 15 min)
+// Crear token de reseteo (válido 15m)
 exports.crearTokenReseteo = async ({ telefono }) => {
-  const usuario = await prisma.usuario.findUnique({ where: { telefono } });
+  const usuario = await prisma.usuario.findUnique({ where: { telefono: String(telefono || '').trim() } });
   if (!usuario) return null;
 
   const token = crypto.randomBytes(32).toString('hex');
   const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
 
   await prisma.passwordResetToken.create({
-    data: { token, usuarioId: usuario.id, expiresAt }
+    data: { token, usuarioId: usuario.id, expiresAt },
   });
 
   return { token, usuarioId: usuario.id, expiresAt };
 };
 
-// Resetear contraseña usando el token
+// Resetear contraseña usando token
 exports.resetearConToken = async ({ token, nueva }) => {
   const prt = await prisma.passwordResetToken.findUnique({
     where: { token },
-    include: { usuario: true }
+    include: { usuario: { select: { id: true } } },
   });
   if (!prt || prt.used || prt.expiresAt < new Date()) return false;
 
   const hash = await hashPassword(nueva);
-
-  // actualizamos la contraseña probando posibles campos
-  const ok = await tryUpdatePassword(prt.usuarioId, hash);
-  if (!ok) return false;
-
-  await prisma.passwordResetToken.update({
-    where: { token },
-    data: { used: true }
+  await prisma.usuario.update({
+    where: { id: prt.usuario.id },
+    data: { passwordHash: hash, updatedAt: new Date() },
   });
-
+  await prisma.passwordResetToken.update({ where: { token }, data: { used: true } });
   return true;
 };
 
-// Cambiar contraseña con la contraseña actual
+// Cambiar contraseña con la actual
 exports.cambiarConActual = async ({ id, actual, nueva }) => {
-  const usuario = await prisma.usuario.findUnique({ where: { id } });
-  if (!usuario) return false;
+  const u = await prisma.usuario.findUnique({
+    where: { id: Number(id) },
+    select: { id: true, passwordHash: true },
+  });
+  if (!u?.passwordHash || !bcrypt) return false;
 
-  const stored = getStoredPasswordFromUser(usuario);
-  let ok = false;
-
-  if (stored && isHashed(stored) && bcrypt) {
-    ok = await bcrypt.compare(String(actual), String(stored));
-  } else {
-    ok = String(actual) === String(stored ?? '');
-  }
+  const ok = await bcrypt.compare(String(actual), String(u.passwordHash));
   if (!ok) return null;
 
   const hash = await hashPassword(nueva);
-  return tryUpdatePassword(id, hash);
+  await prisma.usuario.update({
+    where: { id: Number(id) },
+    data: { passwordHash: hash, updatedAt: new Date() },
+  });
+  return true;
 };
 
-/* =============================
-   🛍️ Vendedores
-   ============================= */
+/* ============ 🛍️ Vendedores ============ */
 exports.solicitarVendedor = async ({ id }) => {
-  const u = await prisma.usuario.findUnique({ where: { id } });
+  const u = await prisma.usuario.findUnique({ where: { id: Number(id) } });
   if (!u) return { ok: false, code: 'NOT_FOUND' };
   if (u.vendedor) return { ok: false, code: 'ALREADY_VENDOR' };
   if (u.vendedorSolicitado) return { ok: true, already: true };
 
   await prisma.usuario.update({
-    where: { id },
-    data: { vendedorSolicitado: true },
+    where: { id: Number(id) },
+    data: { vendedorSolicitado: true, updatedAt: new Date() },
   });
-
   return { ok: true };
 };

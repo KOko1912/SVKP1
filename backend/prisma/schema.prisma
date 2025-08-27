@@ -8,46 +8,11 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-/* ===========================
-   USUARIOS + TOKENS
-   =========================== */
-
-model Usuario {
-  id             Int      @id @default(autoincrement())
-  nombre         String
-  telefono       String   @unique
-  contraseña     String
-  fotoUrl        String?
-  suscripciones  Json?
-  fechaCreacion  DateTime @default(now())
-
-  vendedorSolicitado Boolean @default(false)
-  vendedor           Boolean @default(false)
-
-  resetTokens PasswordResetToken[]
-  solicitudes SolicitudVendedor[]
-  tienda      Tienda?
-  resenas     Resena[]
-
-  @@index([telefono])
-}
-
-model PasswordResetToken {
-  id        String   @id @default(cuid())
-  token     String   @unique
-  usuarioId Int
-  usuario   Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
-  expiresAt DateTime
-  used      Boolean  @default(false)
-  createdAt DateTime @default(now())
-
-  @@index([usuarioId])
-  @@index([expiresAt])
-}
-
-/* ===========================
-   SOLICITUDES DE VENDEDOR
-   =========================== */
+/**
+ * ===========================
+ * ENUMS
+ * ===========================
+ */
 
 enum EstadoSolicitud {
   PENDIENTE
@@ -55,118 +20,6 @@ enum EstadoSolicitud {
   APROBADO
   RECHAZADO
 }
-
-model SolicitudVendedor {
-  id        Int     @id @default(autoincrement())
-  uuid      String  @unique
-  usuarioId Int
-  usuario   Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
-
-  estado EstadoSolicitud @default(PENDIENTE)
-
-  soporteNumero String @default("528441786280")
-  pagoSlug      String @unique
-
-  comprobanteUrl String?
-  comentario     String?
-
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  aprobadoAt  DateTime?
-  rechazadoAt DateTime?
-
-  @@index([usuarioId])
-  @@index([estado])
-}
-
-/* ===========================
-   SDK ADMIN
-   =========================== */
-
-model SDKADMIN {
-  id           Int      @id @default(1)
-  passwordHash String
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-
-  @@map("SDKADMIN")
-}
-
-/* ===========================
-   TIENDA
-   =========================== */
-
-model Tienda {
-  id         Int     @id @default(autoincrement())
-  usuarioId  Int     @unique
-  usuario    Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
-
-  homeLayout Json?
-
-  // Básicos
-  nombre        String
-  descripcion   String?
-  portadaUrl    String?
-  logoUrl       String?
-  categoria     String?
-  subcategorias String[]
-
-  // Contacto
-  telefonoContacto String?
-  email            String?
-  horario          Json?
-
-  // Pagos y redes
-  metodosPago String[]
-  redes       Json?
-
-  // Envíos
-  envioCobertura String?
-  envioCosto     String?
-  envioTiempo    String?
-  devoluciones   String?
-
-  // Personalización
-  colorPrincipal String?
-  bannerPromoUrl String?
-
-  // SEO
-  seoKeywords    String[]
-  seoDescripcion String?
-
-  // Pública / branding
-  slug        String?
-  publicUuid  String?   @unique
-  isPublished Boolean   @default(false)
-  publishedAt DateTime?
-
-  // Rutas tienda
-  moneda   String?  @default("MXN")
-  ciudad   String?
-  pais     String?
-  whatsapp String?
-
-  // 🔎 NUEVOS para búsqueda/refs
-  skuRef   String?   @db.VarChar(64)
-  aliases  String[]  @default([])
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // Backrefs
-  productos  Producto[]
-  categorias Categoria[]
-
-  @@index([usuarioId])
-  @@index([slug])
-  @@index([isPublished])
-  @@index([nombre])
-  @@index([skuRef])
-}
-
-/* ===========================
-   ENUMS PRODUCTOS / RESEÑAS
-   =========================== */
 
 enum EstadoProducto {
   DRAFT
@@ -189,9 +42,220 @@ enum EstadoResena {
   RECHAZADA
 }
 
-/* ===========================
-   PRODUCTOS
-   =========================== */
+enum StorageProvider {
+  LOCAL
+  S3
+  SUPABASE
+  CLOUDINARY
+}
+
+/**
+ * ===========================
+ * MEDIA (ALMACENAJE EXTERNO)
+ * ===========================
+ */
+
+model Media {
+  id        Int             @id @default(autoincrement())
+  provider  StorageProvider
+  key       String
+  url       String
+  mime      String?
+  width     Int?
+  height    Int?
+  sizeBytes Int?
+  checksum  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // ===== Campos inversos (NO DUPLICAR) =====
+  usuariosFoto           Usuario[]           @relation("UsuarioFoto")
+  solicitudesComprobante SolicitudVendedor[] @relation("SolicitudComprobante")
+
+  tiendasPortada Tienda[] @relation("TiendaPortada")
+  tiendasLogo    Tienda[] @relation("TiendaLogo")
+  tiendasBanner  Tienda[] @relation("TiendaBanner")
+
+  productosDigital Producto[]       @relation("ProductoDigital")
+  productoImagenes ProductoImagen[] @relation("ProductoImagenMedia")
+  varianteImagenes VarianteImagen[] @relation("VarianteImagenMedia")
+
+  @@unique([provider, key], name: "uq_media_provider_key")
+  @@index([url])
+}
+
+/**
+ * ===========================
+ * USUARIOS + TOKENS
+ * ===========================
+ */
+
+model Usuario {
+  id            Int      @id @default(autoincrement())
+  nombre        String
+  telefono      String   @unique
+  passwordHash  String   @map("contraseña") // mantiene la columna existente "contraseña"
+  suscripciones Json?
+  fechaCreacion DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Foto (via Media)
+  fotoId Int?
+  foto   Media? @relation("UsuarioFoto", fields: [fotoId], references: [id], onDelete: SetNull)
+
+  vendedorSolicitado Boolean @default(false)
+  vendedor           Boolean @default(false)
+
+  resetTokens PasswordResetToken[]
+  solicitudes SolicitudVendedor[]
+  tienda      Tienda?
+  resenas     Resena[]
+}
+
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  usuarioId Int
+  usuario   Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([usuarioId])
+  @@index([expiresAt])
+}
+
+/**
+ * ===========================
+ * SOLICITUDES DE VENDEDOR
+ * ===========================
+ */
+
+model SolicitudVendedor {
+  id        Int     @id @default(autoincrement())
+  uuid      String  @unique
+  usuarioId Int
+  usuario   Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  estado EstadoSolicitud @default(PENDIENTE)
+
+  soporteNumero String @default("528441786280")
+  pagoSlug      String @unique
+
+  // Comprobante (via Media)
+  comprobanteId Int?
+  comprobante   Media?  @relation("SolicitudComprobante", fields: [comprobanteId], references: [id], onDelete: SetNull)
+  comentario    String?
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  aprobadoAt  DateTime?
+  rechazadoAt DateTime?
+
+  @@index([usuarioId])
+  @@index([estado])
+}
+
+/**
+ * ===========================
+ * SDK ADMIN
+ * ===========================
+ */
+
+model SDKADMIN {
+  id           Int      @id @default(1)
+  passwordHash String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("SDKADMIN")
+}
+
+/**
+ * ===========================
+ * TIENDA
+ * ===========================
+ */
+
+model Tienda {
+  id        Int     @id @default(autoincrement())
+  usuarioId Int     @unique
+  usuario   Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  homeLayout Json?
+
+  // Básicos
+  nombre      String
+  descripcion String?
+
+  // Branding (via Media) — relaciones nombradas
+  portadaId Int?
+  portada   Media? @relation("TiendaPortada", fields: [portadaId], references: [id], onDelete: SetNull)
+  logoId    Int?
+  logo      Media? @relation("TiendaLogo", fields: [logoId], references: [id], onDelete: SetNull)
+  bannerId  Int?
+  banner    Media? @relation("TiendaBanner", fields: [bannerId], references: [id], onDelete: SetNull)
+
+  categoria     String?
+  subcategorias String[] @default([])
+
+  // Contacto
+  telefonoContacto String?
+  email            String?
+  horario          Json?
+
+  // Pagos y redes
+  metodosPago String[] @default([])
+  redes       Json?
+
+  // Envíos
+  envioCobertura String?
+  envioCosto     String?
+  envioTiempo    String?
+  devoluciones   String?
+
+  // Personalización
+  colorPrincipal String?
+
+  // SEO
+  seoKeywords    String[] @default([])
+  seoDescripcion String?
+
+  // Pública / branding
+  slug        String?   @unique
+  publicUuid  String?   @unique
+  isPublished Boolean   @default(false)
+  publishedAt DateTime?
+
+  // Rutas tienda
+  moneda   String? @default("MXN")
+  ciudad   String?
+  pais     String?
+  whatsapp String?
+
+  // 🔎 NUEVOS para búsqueda/refs
+  skuRef  String?  @db.VarChar(64)
+  aliases String[] @default([])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Backrefs
+  productos  Producto[]
+  categorias Categoria[]
+
+  @@index([usuarioId])
+  @@index([isPublished])
+  @@index([nombre])
+  @@index([skuRef])
+}
+
+/**
+ * ===========================
+ * PRODUCTOS
+ * ===========================
+ */
 
 model Producto {
   id       Int    @id @default(autoincrement())
@@ -230,8 +294,11 @@ model Producto {
   diasPreparacion Int?
 
   politicaDevolucion String?
-  digitalUrl         String?
-  licenciamiento     Json?
+
+  // Archivos digitales (via Media)
+  digitalId      Int?
+  digital        Media? @relation("ProductoDigital", fields: [digitalId], references: [id], onDelete: SetNull)
+  licenciamiento Json?
 
   publishedAt DateTime?
   deletedAt   DateTime?
@@ -252,29 +319,30 @@ model Producto {
   @@index([estado, visible])
 }
 
-/* ===========================
-   MEDIOS
-   =========================== */
+/**
+ * ===========================
+ * MEDIOS DE PRODUCTO/VARIANTE
+ * ===========================
+ */
 
 model ProductoImagen {
-  id          Int      @id @default(autoincrement())
-  productoId  Int
-  producto    Producto @relation(fields: [productoId], references: [id], onDelete: Cascade)
-  url         String
+  id         Int      @id @default(autoincrement())
+  productoId Int
+  producto   Producto @relation(fields: [productoId], references: [id], onDelete: Cascade)
+
+  mediaId Int
+  media   Media @relation("ProductoImagenMedia", fields: [mediaId], references: [id], onDelete: Cascade)
+
   alt         String?
   isPrincipal Boolean  @default(false)
   orden       Int      @default(0)
   createdAt   DateTime @default(now())
 
-  @@unique([productoId, url])
+  @@unique([productoId, mediaId], name: "uq_producto_media")
   @@index([productoId])
   @@index([productoId, isPrincipal])
   @@index([productoId, orden])
 }
-
-/* ===========================
-   VARIANTES + IMÁGENES
-   =========================== */
 
 model Variante {
   id         Int      @id @default(autoincrement())
@@ -282,7 +350,7 @@ model Variante {
   producto   Producto @relation(fields: [productoId], references: [id], onDelete: Cascade)
 
   nombre String?
-  sku    String? @unique
+  sku    String? // unicidad dentro del producto
   gtin   String?
   activo Boolean @default(true)
 
@@ -298,6 +366,7 @@ model Variante {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@unique([productoId, sku], name: "uq_variante_producto_sku")
   @@index([productoId])
   @@index([sku])
 }
@@ -306,18 +375,24 @@ model VarianteImagen {
   id         Int      @id @default(autoincrement())
   varianteId Int
   variante   Variante @relation(fields: [varianteId], references: [id], onDelete: Cascade)
-  url        String
-  alt        String?
-  orden      Int      @default(0)
-  createdAt  DateTime @default(now())
 
+  mediaId Int
+  media   Media @relation("VarianteImagenMedia", fields: [mediaId], references: [id], onDelete: Cascade)
+
+  alt       String?
+  orden     Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@unique([varianteId, mediaId], name: "uq_variante_media")
   @@index([varianteId])
   @@index([varianteId, orden])
 }
 
-/* ===========================
-   INVENTARIO (1–1)
-   =========================== */
+/**
+ * ===========================
+ * INVENTARIO (1–1)
+ * ===========================
+ */
 
 model Inventario {
   id Int @id @default(autoincrement())
@@ -345,9 +420,11 @@ model Inventario {
   @@index([varianteId])
 }
 
-/* ===========================
-   ATRIBUTOS FLEXIBLES
-   =========================== */
+/**
+ * ===========================
+ * ATRIBUTOS FLEXIBLES
+ * ===========================
+ */
 
 model ProductoAtributo {
   id         Int      @id @default(autoincrement())
@@ -361,9 +438,11 @@ model ProductoAtributo {
   @@index([clave])
 }
 
-/* ===========================
-   TAXONOMÍA (CATEGORÍAS)
-   =========================== */
+/**
+ * ===========================
+ * TAXONOMÍA (CATEGORÍAS)
+ * ===========================
+ */
 
 model Categoria {
   id          Int         @id @default(autoincrement())
@@ -375,7 +454,7 @@ model Categoria {
   parentId    Int?
   parent      Categoria?  @relation("CategoriaToCategoria", fields: [parentId], references: [id])
   children    Categoria[] @relation("CategoriaToCategoria")
-  orden       Int?
+  orden       Int         @default(0)
 
   productos ProductoCategoria[]
 
@@ -397,9 +476,11 @@ model ProductoCategoria {
   @@index([categoriaId])
 }
 
-/* ===========================
-   RESEÑAS
-   =========================== */
+/**
+ * ===========================
+ * RESEÑAS
+ * ===========================
+ */
 
 model Resena {
   id            Int          @id @default(autoincrement())

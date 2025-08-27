@@ -79,6 +79,11 @@ const setStaticHeaders = (res) => {
 app.use('/TiendaUploads', express.static(tiendaUploadsDir, { maxAge: '7d', setHeaders: setStaticHeaders }));
 app.use('/uploads',       express.static(userUploadsDir,   { maxAge: '7d', setHeaders: setStaticHeaders }));
 
+
+
+/*imagenes superbase*/
+const mediaRouter = require('./routes/media');
+app.use('/api/media', mediaRouter);
 /* =========================
    Rutas (Routers)
    ========================= */
@@ -112,6 +117,7 @@ app.get('/health', (_req, res) => res.json({
   tiendaUploadsDir,
   userUploadsDir,
 }));
+
 
 /* =========================
    Manejo de errores

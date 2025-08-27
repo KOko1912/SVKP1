@@ -4,9 +4,10 @@ const bcrypt = require('bcryptjs');
 const prisma = require('../../config/db');
 
 /* ============ helpers ============ */
-// Prioriza el campo moderno:
+// Prioriza el campo moderno mapeado a la columna "contraseña"
 const PASS_FIELDS = ['passwordHash', 'contrasena', 'contrasenia', 'password', 'contraseña'];
 
+// Siempre seleccionar la relación foto para poder exponer fotoUrl al frontend
 const PASS_SELECT = {
   id: true,
   nombre: true,
@@ -15,14 +16,12 @@ const PASS_SELECT = {
   updatedAt: true,
   vendedor: true,
   vendedorSolicitado: true,
-  fotoId: true, // en el esquema nuevo ya no hay fotoUrl
+  fotoId: true,
+  foto: { select: { id: true, url: true, provider: true, key: true } },
 };
 
 const isHashed = (s) => typeof s === 'string' && /^\$2[aby]\$/.test(s);
-
-async function hashPassword(plain) {
-  return bcrypt.hash(String(plain), 10);
-}
+async function hashPassword(plain) { return bcrypt.hash(String(plain), 10); }
 
 function getStoredPasswordFromUser(u) {
   if (!u) return null;
@@ -31,6 +30,21 @@ function getStoredPasswordFromUser(u) {
     if (u[k] != null) return u[k];
   }
   return null;
+}
+
+function mapUsuario(u) {
+  if (!u) return null;
+  return {
+    id: u.id,
+    nombre: u.nombre,
+    telefono: u.telefono,
+    fechaCreacion: u.fechaCreacion,
+    updatedAt: u.updatedAt,
+    vendedor: u.vendedor,
+    vendedorSolicitado: u.vendedorSolicitado,
+    // compat con frontend: exponemos fotoUrl derivado de la relación
+    fotoUrl: u.foto?.url || null,
+  };
 }
 
 async function tryCreateWithField(baseData, field, hash) {
@@ -78,7 +92,6 @@ exports.crearUsuario = async (payload = {}) => {
   }
 
   const hash = await hashPassword(plain);
-
   const baseData = { nombre, telefono, fotoId: null, suscripciones: null };
 
   let usuario = null;
@@ -96,7 +109,7 @@ exports.crearUsuario = async (payload = {}) => {
     throw e;
   }
 
-  return { usuario };
+  return { usuario: mapUsuario(usuario) };
 };
 
 exports.loginUsuario = async (payload = {}) => {
@@ -126,34 +139,27 @@ exports.loginUsuario = async (payload = {}) => {
     : String(plain) === String(stored ?? '');
 
   if (!ok) {
-    const e = new Error('Contraseña incorrecta');
+    const e = new Error('Credenciales inválidas');
     e.status = 401;
     throw e;
   }
 
-  return {
-    usuario: {
-      id: usuario.id,
-      nombre: usuario.nombre,
-      telefono: usuario.telefono,
-      fechaCreacion: usuario.fechaCreacion,
-      updatedAt: usuario.updatedAt,
-      vendedor: usuario.vendedor,
-      vendedorSolicitado: usuario.vendedorSolicitado,
-      fotoUrl: null, // compat con frontend actual (usa placeholder)
-    },
-  };
+  // Traemos con SELECT consistente para exponer fotoUrl
+  const u = await prisma.usuario.findUnique({ where: { id: usuario.id }, select: PASS_SELECT });
+  return { usuario: mapUsuario(u) };
 };
 
-// Ahora fotoId (en vez de fotoUrl)
-exports.actualizarFotoUsuario = async (id, fotoId) => {
+// Actualizar foto de perfil (recibe mediaId)
+exports.actualizarFotoUsuario = async (id, mediaId) => {
   const data = {};
-  if (typeof fotoId === 'number') data.fotoId = fotoId;
-  return prisma.usuario.update({
+  if (typeof mediaId === 'number') data.fotoId = mediaId;
+
+  const u = await prisma.usuario.update({
     where: { id },
     data,
     select: PASS_SELECT,
   });
+  return mapUsuario(u);
 };
 
 exports.obtenerUsuarioPorId = async (id) => {
@@ -161,8 +167,7 @@ exports.obtenerUsuarioPorId = async (id) => {
     where: { id },
     select: PASS_SELECT,
   });
-  if (!u) return null;
-  return { ...u, fotoUrl: null };
+  return mapUsuario(u);
 };
 
 /* ==== Reset de contraseña ==== */

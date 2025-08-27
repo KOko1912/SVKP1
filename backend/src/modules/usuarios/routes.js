@@ -13,7 +13,7 @@ const {
   solicitarReset,
   resetear,
   cambiarContraseña,
-    solicitarVendedor, 
+  solicitarVendedor,
 } = require('./controller');
 
 const { actualizarFotoUsuario } = require('./service');
@@ -23,34 +23,34 @@ const router = express.Router();
 const UPLOADS_DIR = process.env.UPLOADS_DIR || path.join(process.cwd(), 'uploads');
 if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 
-
-
-// ----------- Solicitar ser vendedor -----------
-router.post('/solicitar-vendedor', express.json(), solicitarVendedor);
-
-
-// ---------- Rutas JSON ----------
+/* ---------- JSON endpoints ---------- */
 router.post('/registro', express.json(), registrar);
-router.post('/login', express.json(), login);
+router.post('/login',    express.json(), login);
 
 // 🔐 Recuperación y cambio de contraseña
-router.post('/solicitar-reset', express.json(), solicitarReset);
-router.post('/reset', express.json(), resetear);
-router.post('/cambiar-contraseña', express.json(), cambiarContraseña);
+router.post('/solicitar-reset',     express.json(), solicitarReset);
+router.post('/reset',               express.json(), resetear);
+router.post('/cambiar-contraseña',  express.json(), cambiarContraseña);
+
+// 🛍️ Solicitar ser vendedor
+router.post('/solicitar-vendedor',  express.json(), solicitarVendedor);
 
 // GET usuario por id
 router.get('/:id', getUsuario);
 
-// ---------- Subida de foto con Busboy ----------
+/* ---------- Subida de foto de perfil (LOCAL -> Media -> fotoId) ---------- */
 router.post('/:id/foto', async (req, res) => {
   try {
     const userId = Number(req.params.id);
     if (!userId) return res.status(400).json({ error: 'ID inválido' });
 
-    // Traer usuario (nombre para el archivo y fotoUrl anterior para borrar)
+    // Traer usuario con su foto actual
     const user = await prisma.usuario.findUnique({
       where: { id: userId },
-      select: { nombre: true, fotoUrl: true },
+      select: {
+        nombre: true,
+        foto: { select: { id: true, url: true, provider: true, key: true } },
+      },
     });
     if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
 
@@ -68,7 +68,6 @@ router.post('/:id/foto', async (req, res) => {
     let savedFile = null;
     let gotFile = false;
     let parseError = null;
-    const writeTasks = [];
 
     bb.on('file', (_fieldname, file, info) => {
       gotFile = true;
@@ -83,40 +82,54 @@ router.post('/:id/foto', async (req, res) => {
       const ext = (path.extname(filename || '') || '').toLowerCase();
       const name = `${nombreLimpio}_${Date.now()}_${crypto.randomBytes(5).toString('hex')}${ext}`;
       const dest = path.join(UPLOADS_DIR, name);
-
       const ws = fs.createWriteStream(dest);
       file.pipe(ws);
 
-      const p = new Promise((resolve, reject) => {
-        ws.on('finish', () => { savedFile = { filename: name, path: dest, mimeType, originalname: filename }; resolve(); });
-        ws.on('error', reject);
+      ws.on('finish', () => {
+        try {
+          const size = fs.statSync(dest).size;
+          savedFile = { filename: name, path: dest, mimeType, originalname: filename, size };
+        } catch {
+          parseError = { status: 500, message: 'No se pudo guardar la imagen' };
+        }
       });
-      writeTasks.push(p);
+      ws.on('error', () => {
+        parseError = { status: 500, message: 'No se pudo guardar la imagen' };
+      });
     });
 
     bb.on('close', async () => {
-      try { await Promise.all(writeTasks); } catch { return res.status(500).json({ error: 'No se pudo guardar la imagen' }); }
-
-      if (parseError) return res.status(parseError.status).json({ error: parseError.message });
-      if (!gotFile || !savedFile) return res.status(400).json({ error: 'No se envió archivo "foto"' });
-
-      // borrar imagen anterior (opcional)
       try {
-        if (user.fotoUrl && user.fotoUrl.startsWith('/uploads/')) {
-          const prev = path.join(UPLOADS_DIR, path.basename(user.fotoUrl));
-          if (fs.existsSync(prev)) fs.unlinkSync(prev);
-        }
-      } catch {}
+        if (parseError) return res.status(parseError.status).json({ error: parseError.message });
+        if (!gotFile || !savedFile) return res.status(400).json({ error: 'No se envió archivo "foto"' });
 
-      const fotoUrl = `/uploads/${savedFile.filename}`;
-      let usuarioActualizado;
-      try {
-        usuarioActualizado = await actualizarFotoUsuario(userId, fotoUrl);
-      } catch {
-        return res.status(500).json({ error: 'No se pudo actualizar la foto en la base de datos' });
+        // 1) Crear registro en Media (provider LOCAL)
+        const publicUrl = `/uploads/${savedFile.filename}`;
+        const media = await prisma.media.create({
+          data: {
+            provider: 'LOCAL',
+            key: savedFile.filename,
+            url: publicUrl,
+            mime: savedFile.mimeType,
+            sizeBytes: savedFile.size ?? null,
+          },
+          select: { id: true, url: true, provider: true, key: true },
+        });
+
+        // 2) Si había una foto LOCAL previa, puedes borrar el archivo físico (opcional)
+        try {
+          if (user.foto?.provider === 'LOCAL' && user.foto?.key) {
+            const prev = path.join(UPLOADS_DIR, path.basename(user.foto.key));
+            if (fs.existsSync(prev)) fs.unlinkSync(prev);
+          }
+        } catch (_) {}
+
+        // 3) Guardar fotoId en usuario y devolver usuario mapeado (con fotoUrl)
+        const usuarioActualizado = await actualizarFotoUsuario(userId, media.id);
+        return res.json({ ok: true, usuario: usuarioActualizado });
+      } catch (e) {
+        return res.status(500).json({ error: 'Error al procesar la imagen' });
       }
-
-      return res.json({ ok: true, usuario: usuarioActualizado });
     });
 
     req.pipe(bb);

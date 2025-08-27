@@ -9,6 +9,16 @@ const app = express();
 /* =========================
    Configuración base
    ========================= */
+function normalizeOrigin(u = '') {
+  try {
+    const url = new URL(u);
+    // normaliza quitando slash final
+    return `${url.origin}`;
+  } catch {
+    return String(u || '').replace(/\/+$/, '');
+  }
+}
+
 const FRONTEND_URLS = (
   process.env.FRONTEND_URLS ||
   process.env.FRONTEND_URL ||
@@ -16,10 +26,26 @@ const FRONTEND_URLS = (
 )
   .split(',')
   .map(s => s.trim())
-  .filter(Boolean);
+  .filter(Boolean)
+  .map(normalizeOrigin);
 
-const allowOrigin = (origin) =>
-  !origin || FRONTEND_URLS.includes(origin);
+// Permite patrones con * (ej. https://*.onrender.com)
+function originMatches(origin) {
+  if (!origin) return true; // Postman / SSR
+  const o = normalizeOrigin(origin);
+
+  return FRONTEND_URLS.some(entry => {
+    const e = String(entry);
+    if (e === '*') return true;
+    if (!e.includes('*')) return e === o;
+    // wildcard simple: https://*.dominio.com
+    const esc = e.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace('\\*', '.*');
+    const re = new RegExp(`^${esc}$`, 'i');
+    return re.test(o);
+  });
+}
+
+const allowOrigin = (origin) => originMatches(origin);
 
 /* =========================
    CORS
@@ -58,13 +84,15 @@ app.use((req, res, next) => {
   next();
 });
 
-if (process.env.TRUST_PROXY === '1') app.set('trust proxy', 1);
+// Proxy (Render) configurable
+const TRUST_PROXY = Number(process.env.TRUST_PROXY || 0);
+if (TRUST_PROXY) app.set('trust proxy', TRUST_PROXY);
 
 app.use(express.json({ limit: '15mb' }));
 app.use(express.urlencoded({ extended: true, limit: '15mb' }));
 
 /* =========================
-   Archivos estáticos
+   Archivos estáticos locales (solo lectura)
    ========================= */
 const tiendaUploadsDir = process.env.TIENDA_UPLOADS_DIR || path.join(process.cwd(), 'TiendaUploads');
 const userUploadsDir   = process.env.USER_UPLOADS_DIR   || path.join(process.cwd(), 'uploads');
@@ -73,14 +101,12 @@ for (const d of [tiendaUploadsDir, userUploadsDir]) {
   if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true });
 }
 
-// Nota: express.static no tiene acceso a req en setHeaders.
-// Para evitar problemas de carga de imágenes desde distintos orígenes
-// habilitamos origen * y políticas cross-origin seguras.
+// Cabeceras para servir imágenes de forma segura desde cualquier origen
 const setStaticHeaders = (res) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Admin-Secret, x-admin-secret');
+  res.setHeader('Access-Control-Allow-Origin', '*'); // público (solo GET)
   res.setHeader('Access-Control-Allow-Methods', 'GET,HEAD,OPTIONS');
-  res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Admin-Secret, x-admin-secret');
+  res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin'); // permitir <img> desde otros origins
   res.setHeader('Cache-Control', 'public, max-age=604800, immutable'); // ~7d
 };
 
@@ -112,7 +138,7 @@ const authCtrl = require('./modules/auth/controller');
 app.post('/api/auth/login', authCtrl.login);
 
 // Resto de routers
-app.use('/api/auth',          authRoutes);       // otras rutas de auth (si existen)
+app.use('/api/auth',          authRoutes);
 app.use('/api/usuarios',      usuariosRoutes);
 app.use('/api/admin',         adminRoutes);
 app.use('/api/sdkadmin',      sdkadminRoutes);
@@ -120,7 +146,19 @@ app.use('/api/tienda',        tiendaRoutes);
 app.use('/api/tiendas',       tiendasRoutes);    // 🔎 /api/tiendas/search
 app.use('/api/v1/productos',  productosRoutes);
 app.use('/api/v1/categorias', categoriasRoutes);
-app.use('/api/v1/upload',     uploadProductoRoutes);
+
+// Fallback de SUBIDA LOCAL (disco):
+// - En producción queda DESACTIVADO por defecto para no usar el disco efímero de Render.
+// - Actívalo explícitamente con ENABLE_LOCAL_UPLOADS=1 si lo necesitas.
+const enableLocalUploads = process.env.ENABLE_LOCAL_UPLOADS === '1' || process.env.NODE_ENV !== 'production';
+if (enableLocalUploads) {
+  app.use('/api/v1/upload', uploadProductoRoutes);
+} else {
+  // en prod sin fallback: evitar que front use este endpoint por accidente
+  app.use('/api/v1/upload', (_req, res) => {
+    res.status(410).json({ error: 'Local uploads deshabilitado en producción. Usa /api/media (Supabase).' });
+  });
+}
 
 /* =========================
    Utilidades
@@ -130,6 +168,10 @@ app.get('/health', (_req, res) => res.json({
   origins: FRONTEND_URLS,
   tiendaUploadsDir,
   userUploadsDir,
+  nodeEnv: process.env.NODE_ENV || 'development',
+  trustProxy: TRUST_PROXY,
+  localUploadsEnabled: enableLocalUploads,
+  version: process.env.APP_VERSION || null,
 }));
 
 /* =========================
@@ -145,11 +187,11 @@ app.use((req, res, next) => {
    ========================= */
 app.use((err, _req, res, _next) => {
   const status = err.status || 500;
-  const isDev = process.env.NODE_ENV !== 'production';
+  const isProd = process.env.NODE_ENV === 'production';
   console.error('❌ Error:', err);
   res.status(status).json({
     error: err.message || 'Error interno',
-    ...(isDev ? { stack: err.stack } : {}),
+    ...(isProd ? {} : { stack: err.stack }),
   });
 });
 

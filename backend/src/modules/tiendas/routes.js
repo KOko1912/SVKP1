@@ -9,6 +9,7 @@ const router = Router();
  * Devuelve tiendas PUBLICADAS que coincidan por:
  *  - nombre, descripcion, slug, publicUuid, skuRef (contains, insensitive)
  *  - seoKeywords, aliases (hasSome con tokens)
+ * Mapea relaciones Media -> logoUrl/portadaUrl para el frontend.
  */
 router.get('/search', async (req, res) => {
   try {
@@ -21,7 +22,7 @@ router.get('/search', async (req, res) => {
 
     let where = baseWhere;
     if (qRaw) {
-      const txt    = qRaw.replace(/^@/, '');                  // soporta @slug
+      const txt    = qRaw.replace(/^@/, '');
       const tokens = txt.split(/\s+/).filter(Boolean).slice(0, 6);
 
       where = {
@@ -31,37 +32,56 @@ router.get('/search', async (req, res) => {
           { descripcion: { contains: txt, mode: 'insensitive' } },
           { slug:        { contains: txt, mode: 'insensitive' } },
           { publicUuid:  { contains: txt, mode: 'insensitive' } },
-          { skuRef:      { contains: txt, mode: 'insensitive' } }, // requiere campo en Prisma
+          { skuRef:      { contains: txt, mode: 'insensitive' } },
           ...(tokens.length ? [{ seoKeywords: { hasSome: tokens } }] : []),
           ...(tokens.length ? [{ aliases:     { hasSome: tokens } }] : []),
         ],
       };
     }
 
-    const [total, items] = await Promise.all([
+    const [total, rows] = await Promise.all([
       prisma.tienda.count({ where }),
       prisma.tienda.findMany({
         where,
         skip,
         take: limit,
         orderBy: [{ createdAt: 'desc' }],
+        include: { logo: true, portada: true },
         select: {
           id: true,
           publicUuid: true,
           slug: true,
           nombre: true,
           descripcion: true,
-          logoUrl: true,
-          portadaUrl: true,
           categoria: true,
           seoKeywords: true,
           skuRef: true,
           aliases: true,
           ciudad: true,
           pais: true,
+          // relaciones
+          logo: true,
+          portada: true,
         },
       }),
     ]);
+
+    const items = rows.map((t) => ({
+      id: t.id,
+      publicUuid: t.publicUuid,
+      slug: t.slug,
+      nombre: t.nombre,
+      descripcion: t.descripcion,
+      categoria: t.categoria,
+      seoKeywords: t.seoKeywords,
+      skuRef: t.skuRef,
+      aliases: t.aliases,
+      ciudad: t.ciudad,
+      pais: t.pais,
+      // compat para frontend:
+      logoUrl: t.logo?.url || null,
+      portadaUrl: t.portada?.url || null,
+    }));
 
     res.json({
       page,

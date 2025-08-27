@@ -12,7 +12,7 @@ const router = express.Router();
    Helpers
    ========================= */
 function getUserId(req) {
-  const raw = req.headers['x-user-id'] || '';
+  const raw = req.headers['x-user-id'] || req.headers['X-User-Id'] || '';
   if (raw) return Number(raw);
   const auth = req.headers.authorization || '';
   const m = auth.match(/^Bearer\s+(\d+)$/i);
@@ -39,17 +39,17 @@ function removeFileIfExists(absPath) {
   } catch (_) {}
 }
 
-const tiendaUploadsDir = process.env.TIENDA_UPLOADS_DIR || path.join(process.cwd(), 'TiendaUploads');
+const TIENDA_UPLOADS_DIR = process.env.TIENDA_UPLOADS_DIR || path.join(process.cwd(), 'TiendaUploads');
 const PUBLIC_BASE = '/TiendaUploads';
 
 function brandingDir(tiendaId) {
-  return path.join(tiendaUploadsDir, `tienda-${tiendaId}`, 'branding');
+  return path.join(TIENDA_UPLOADS_DIR, `tienda-${tiendaId}`, 'branding');
 }
 function publicBrandingUrl(tiendaId, filename) {
   return `${PUBLIC_BASE}/tienda-${tiendaId}/branding/${filename}`.replace(/\\/g, '/');
 }
 
-// Normaliza una referencia tipo SKU de tienda: alfanumérico + guiones, mayúsculas, máx 64
+// Normaliza una referencia tipo SKU de tienda
 function normalizeSkuRef(v) {
   if (!v) return null;
   const s = String(v).toUpperCase().replace(/[^A-Z0-9-]+/g, '-').replace(/-+/g, '-').replace(/(^-|-$)/g, '');
@@ -61,10 +61,8 @@ function normalizeSkuRef(v) {
 function normalizeTokenArray(value, { maxItems = 20, maxLen = 40 } = {}) {
   let arr = [];
   if (Array.isArray(value)) arr = value;
-  else if (typeof value === 'string') {
-    // admite CSV o separado por espacios / comas
-    arr = value.split(/[,\s]+/);
-  }
+  else if (typeof value === 'string') arr = value.split(/[,\s]+/);
+
   const out = [];
   const seen = new Set();
   for (const raw of arr) {
@@ -121,16 +119,9 @@ function normalizeGs(gs, type, cols) {
 }
 function clampByMode(gs, type, mode, cols) {
   const g = { ...(gs || {}) };
-  if (mode !== LAYOUT_MODES.TEMPLATE_6x20) return g;
-  if (type === 'grid') {
-    g.w = cols;
-    g.h = Math.max(2, g.h || 2);
-    g.x = 0;
-  }
-  if (type === 'hero') {
-    g.w = cols;
-    g.h = Math.max(2, g.h || 2);
-    g.x = 0;
+  if (mode !== LAYOUT_MODES.Template_6x20 && mode !== LAYOUT_MODES.TEMPLATE_6x20) return g;
+  if (type === 'grid' || type === 'hero') {
+    g.w = cols; g.h = Math.max(2, g.h || 2); g.x = 0;
   }
   if (type === 'featured') {
     g.w = clamp(2, cols, g.w || 4);
@@ -184,7 +175,10 @@ router.get('/me', async (req, res) => {
     const userId = getUserId(req);
     if (!userId) return res.status(401).json({ error: 'No autorizado' });
 
-    let tienda = await prisma.tienda.findFirst({ where: { usuarioId: userId } });
+    let tienda = await prisma.tienda.findFirst({
+      where: { usuarioId: userId },
+      include: { portada: true, logo: true, banner: true },
+    });
 
     if (!tienda) {
       tienda = await prisma.tienda.create({
@@ -197,10 +191,18 @@ router.get('/me', async (req, res) => {
           seoKeywords: [],
           aliases: [],
         },
+        include: { portada: true, logo: true, banner: true },
       });
     }
 
-    res.json(tienda);
+    const resp = {
+      ...tienda,
+      portadaUrl: tienda.portada?.url || null,
+      logoUrl: tienda.logo?.url || null,
+      bannerPromoUrl: tienda.banner?.url || null,
+    };
+
+    res.json(resp);
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'No se pudo obtener la tienda' });
@@ -209,9 +211,7 @@ router.get('/me', async (req, res) => {
 
 /* =========================
    PUT /api/tienda/me
-   - Actualiza datos permitidos
-   - Normaliza homeLayout
-   - NO cambia slug si ya está publicada
+   (actualiza datos; las imágenes van por /upload/:tipo)
    ========================= */
 router.put('/me', async (req, res) => {
   try {
@@ -221,8 +221,6 @@ router.put('/me', async (req, res) => {
     const ALLOWED = new Set([
       'nombre',
       'descripcion',
-      'portadaUrl',
-      'logoUrl',
       'categoria',
       'subcategorias',
       'telefonoContacto',
@@ -235,7 +233,6 @@ router.put('/me', async (req, res) => {
       'envioTiempo',
       'devoluciones',
       'colorPrincipal',
-      'bannerPromoUrl',
       'seoKeywords',
       'seoDescripcion',
       'homeLayout',
@@ -243,37 +240,20 @@ router.put('/me', async (req, res) => {
       'ciudad',
       'pais',
       'whatsapp',
-      // NUEVOS
       'skuRef',
       'aliases',
     ]);
 
     const raw = Object.assign({}, req.body || {});
     const data = {};
-    for (const k of Object.keys(raw)) {
-      if (ALLOWED.has(k)) data[k] = raw[k];
-    }
+    for (const k of Object.keys(raw)) if (ALLOWED.has(k)) data[k] = raw[k];
 
-    // Normalizaciones
     if (data.homeLayout !== undefined) data.homeLayout = normalizeHomeLayout(data.homeLayout);
-
-    if (data.seoKeywords !== undefined)
-      data.seoKeywords = normalizeTokenArray(data.seoKeywords, { maxItems: 30, maxLen: 40 });
-
-    if (data.aliases !== undefined)
-      data.aliases = normalizeTokenArray(data.aliases, { maxItems: 30, maxLen: 40 });
-
-    if (data.subcategorias !== undefined)
-      data.subcategorias = normalizeTokenArray(data.subcategorias, { maxItems: 20, maxLen: 40 });
-
-    if (data.metodosPago !== undefined)
-      data.metodosPago = normalizeTokenArray(data.metodosPago, { maxItems: 15, maxLen: 20 });
-
-    if (data.email !== undefined) {
-      const e = String(data.email || '').trim();
-      data.email = e || null;
-    }
-
+    if (data.seoKeywords !== undefined) data.seoKeywords = normalizeTokenArray(data.seoKeywords, { maxItems: 30, maxLen: 40 });
+    if (data.aliases !== undefined) data.aliases = normalizeTokenArray(data.aliases, { maxItems: 30, maxLen: 40 });
+    if (data.subcategorias !== undefined) data.subcategorias = normalizeTokenArray(data.subcategorias, { maxItems: 20, maxLen: 40 });
+    if (data.metodosPago !== undefined) data.metodosPago = normalizeTokenArray(data.metodosPago, { maxItems: 15, maxLen: 20 });
+    if (data.email !== undefined) data.email = String(data.email || '').trim() || null;
     if (data.skuRef !== undefined) data.skuRef = normalizeSkuRef(data.skuRef);
 
     const current = await prisma.tienda.findFirst({ where: { usuarioId: userId } });
@@ -291,26 +271,32 @@ router.put('/me', async (req, res) => {
         ...data,
       },
       update: data,
+      include: { portada: true, logo: true, banner: true },
     });
 
-    // Si NO está publicada y cambió nombre, intenta generar slug
     if (current && data.nombre && data.nombre !== current.nombre) {
       if (!current.isPublished && (!current.slug || current.slug.trim() === '')) {
         const base = slugify(data.nombre);
         let slug = base, i = 1;
-        while (
-          await prisma.tienda.findFirst({
-            where: { slug, NOT: { id: updated.id } },
-            select: { id: true },
-          })
-        ) {
+        while (await prisma.tienda.findFirst({ where: { slug, NOT: { id: updated.id } }, select: { id: true } })) {
           slug = `${base}-${++i}`;
         }
-        updated = await prisma.tienda.update({ where: { id: updated.id }, data: { slug } });
+        updated = await prisma.tienda.update({
+          where: { id: updated.id },
+          data: { slug },
+          include: { portada: true, logo: true, banner: true },
+        });
       }
     }
 
-    res.json(updated);
+    const resp = {
+      ...updated,
+      portadaUrl: updated.portada?.url || null,
+      logoUrl: updated.logo?.url || null,
+      bannerPromoUrl: updated.banner?.url || null,
+    };
+
+    res.json(resp);
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'No se pudo actualizar la tienda' });
@@ -319,7 +305,6 @@ router.put('/me', async (req, res) => {
 
 /* =========================
    GET /api/tienda/public/:slug
-   - Solo devuelve si está publicada
    ========================= */
 router.get('/public/:slug', async (req, res) => {
   try {
@@ -328,42 +313,18 @@ router.get('/public/:slug', async (req, res) => {
 
     const tienda = await prisma.tienda.findFirst({
       where: { slug, isPublished: true },
-      select: {
-        id: true,
-        nombre: true,
-        slug: true,
-        isPublished: true,
-        publishedAt: true,
-        descripcion: true,
-        colorPrincipal: true,
-        portadaUrl: true,
-        logoUrl: true,
-        bannerPromoUrl: true,
-        categoria: true,
-        subcategorias: true,
-        telefonoContacto: true,
-        email: true,
-        horario: true,
-        metodosPago: true,
-        redes: true,
-        envioCobertura: true,
-        envioCosto: true,
-        envioTiempo: true,
-        devoluciones: true,
-        moneda: true,
-        ciudad: true,
-        pais: true,
-        whatsapp: true,
-        homeLayout: true,
-        seoKeywords: true,
-        skuRef: true,
-        aliases: true,
-        publicUuid: true,
-      },
+      include: { portada: true, logo: true, banner: true },
     });
     if (!tienda) return res.status(404).json({ error: 'Tienda no publicada o no existe' });
 
-    res.json(tienda);
+    const resp = {
+      ...tienda,
+      portadaUrl: tienda.portada?.url || null,
+      logoUrl: tienda.logo?.url || null,
+      bannerPromoUrl: tienda.banner?.url || null,
+    };
+
+    res.json(resp);
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'No se pudo cargar la tienda pública' });
@@ -373,47 +334,13 @@ router.get('/public/:slug', async (req, res) => {
 /* =========================
    NUEVOS ENDPOINTS PÚBLICOS
    ========================= */
-const PUBLIC_TIENDA_SELECT = {
-  id: true,
-  nombre: true,
-  slug: true,
-  isPublished: true,
-  publishedAt: true,
-  descripcion: true,
-  colorPrincipal: true,
-  portadaUrl: true,
-  logoUrl: true,
-  bannerPromoUrl: true,
-  categoria: true,
-  subcategorias: true,
-  telefonoContacto: true,
-  email: true,
-  horario: true,
-  metodosPago: true,
-  redes: true,
-  envioCobertura: true,
-  envioCosto: true,
-  envioTiempo: true,
-  devoluciones: true,
-  moneda: true,
-  ciudad: true,
-  pais: true,
-  whatsapp: true,
-  homeLayout: true,
-  seoKeywords: true,
-  skuRef: true,
-  aliases: true,
-  publicUuid: true,
-};
-
 async function findPublicTienda(where) {
   return prisma.tienda.findFirst({
     where: { isPublished: true, ...where },
-    select: PUBLIC_TIENDA_SELECT,
+    include: { portada: true, logo: true, banner: true },
   });
 }
 
-// /api/tienda/public/by-id/:id  (sin regex en el path para evitar errores de path-to-regexp)
 router.get('/public/by-id/:id', async (req, res) => {
   try {
     const id = Number(req.params.id);
@@ -422,14 +349,20 @@ router.get('/public/by-id/:id', async (req, res) => {
     const tienda = await findPublicTienda({ id });
     if (!tienda) return res.status(404).json({ error: 'Tienda no publicada o no existe' });
 
-    res.json(tienda);
+    const resp = {
+      ...tienda,
+      portadaUrl: tienda.portada?.url || null,
+      logoUrl: tienda.logo?.url || null,
+      bannerPromoUrl: tienda.banner?.url || null,
+    };
+
+    res.json(resp);
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'No se pudo cargar la tienda pública (id)' });
   }
 });
 
-// /api/tienda/public/uuid/:uuid  (opcional)
 router.get('/public/uuid/:uuid', async (req, res) => {
   try {
     const uuid = String(req.params.uuid || '').trim();
@@ -438,7 +371,14 @@ router.get('/public/uuid/:uuid', async (req, res) => {
     const tienda = await findPublicTienda({ publicUuid: uuid });
     if (!tienda) return res.status(404).json({ error: 'Tienda no publicada o no existe' });
 
-    res.json(tienda);
+    const resp = {
+      ...tienda,
+      portadaUrl: tienda.portada?.url || null,
+      logoUrl: tienda.logo?.url || null,
+      bannerPromoUrl: tienda.banner?.url || null,
+    };
+
+    res.json(resp);
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'No se pudo cargar la tienda pública (uuid)' });
@@ -447,7 +387,6 @@ router.get('/public/uuid/:uuid', async (req, res) => {
 
 /* =========================
    PUT /api/tienda/publicar
-   - Publica UNA SOLA VEZ y fija el slug
    ========================= */
 router.put('/publicar', async (req, res) => {
   try {
@@ -457,7 +396,6 @@ router.put('/publicar', async (req, res) => {
     const tienda = await prisma.tienda.findFirst({ where: { usuarioId: userId } });
     if (!tienda) return res.status(404).json({ error: 'No tienes tienda' });
 
-    // Si ya fue publicada y tiene slug, no permitimos cambios
     if (tienda.isPublished && tienda.slug) {
       return res.status(409).json({ error: 'La tienda ya fue publicada y el slug no se puede cambiar.' });
     }
@@ -466,19 +404,11 @@ router.put('/publicar', async (req, res) => {
     if (!publish) return res.status(400).json({ error: 'publish debe ser true' });
 
     const desired = slugify(req.body?.slug || tienda.slug || tienda.nombre || 'mi-tienda');
-    // Garantizar unicidad del slug
-    let slug = desired;
-    let i = 1;
-    while (
-      await prisma.tienda.findFirst({
-        where: { slug, NOT: { id: tienda.id } },
-        select: { id: true },
-      })
-    ) {
+    let slug = desired, i = 1;
+    while (await prisma.tienda.findFirst({ where: { slug, NOT: { id: tienda.id } }, select: { id: true } })) {
       slug = `${desired}-${++i}`;
     }
 
-    // Asegura publicUuid si no existe
     const publicUuid = tienda.publicUuid || randomId();
 
     const updated = await prisma.tienda.update({
@@ -490,7 +420,6 @@ router.put('/publicar', async (req, res) => {
     res.json({ ok: true, tienda: updated });
   } catch (e) {
     console.error(e);
-    // Prisma unique error (por si tuvieras unique en DB)
     if (e.code === 'P2002') return res.status(409).json({ error: 'Slug ocupado, intenta con otro' });
     res.status(500).json({ error: 'No se pudo publicar la tienda' });
   }
@@ -498,6 +427,7 @@ router.put('/publicar', async (req, res) => {
 
 /* =========================
    Upload portada | logo | banner
+   (crea Media y conecta relación)
    ========================= */
 const storage = multer.diskStorage({
   destination: async (req, _file, cb) => {
@@ -523,11 +453,11 @@ const storage = multer.diskStorage({
 const upload = multer({
   storage,
   fileFilter: (_req, file, cb) => {
-    const ok = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp'];
-    if (!ok.includes(file.mimetype)) return cb(new Error('Usa PNG, JPG o WEBP'));
+    const ok = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/gif'];
+    if (!ok.includes(file.mimetype)) return cb(new Error('Usa PNG, JPG, WEBP o GIF'));
     cb(null, true);
   },
-  limits: { fileSize: 5 * 1024 * 1024 },
+  limits: { fileSize: 8 * 1024 * 1024 },
 });
 
 router.post('/upload/:tipo', (req, res) => {
@@ -545,24 +475,34 @@ router.post('/upload/:tipo', (req, res) => {
         return res.status(400).json({ error: 'Archivo faltante' });
       }
 
+      // Limpia versiones previas del mismo tipo en el folder físico
       const dir = brandingDir(req._tiendaId);
       const just = req.file.filename; // p.ej. portada.jpg
       const base = `${tipo}.`;
-      // borra versiones anteriores del mismo tipo
       fs.readdirSync(dir).forEach((f) => {
         if (f.startsWith(base) && f !== just) removeFileIfExists(path.join(dir, f));
       });
 
-      const url = publicBrandingUrl(req._tiendaId, just);
-      const fieldMap = { portada: 'portadaUrl', logo: 'logoUrl', banner: 'bannerPromoUrl' };
-      const field = fieldMap[tipo];
+      // Crea registro Media y conecta relación
+      const url = publicBrandingUrl(req._tiendaId, req.file.filename);
 
-      const tienda = await prisma.tienda.update({
-        where: { id: req._tiendaId },
-        data: { [field]: url },
+      const media = await prisma.media.create({
+        data: {
+          provider: 'LOCAL',
+          key: url,    // guardamos la ruta pública relativa
+          url: url,
+          mime: req.file.mimetype || null,
+        },
       });
 
-      res.json({ ok: true, url, tienda });
+      const relMap = { portada: 'portada', logo: 'logo', banner: 'banner' };
+      const relField = relMap[tipo]; // 'portada' | 'logo' | 'banner'
+      await prisma.tienda.update({
+        where: { id: req._tiendaId },
+        data: { [relField]: { connect: { id: media.id } } },
+      });
+
+      res.json({ ok: true, mediaId: media.id, url });
     } catch (e) {
       console.error(e);
       res.status(500).json({ error: 'Error al procesar la subida' });

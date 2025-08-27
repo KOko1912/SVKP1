@@ -1,3 +1,4 @@
+// src/modules/productos/routes.js
 const express = require('express');
 const { buildAdvancedPatch } = require('./opcionesavanzadas');
 const prisma = require('../../config/db');
@@ -45,14 +46,25 @@ async function uniqueSlugForProduct(tiendaId, nombre, excludeId) {
   }
   return slug;
 }
+
+// ⬇️ include `media` en imagenes de producto (no tocamos variantes para evitar romper esquemas sin relación)
 const productInclude = {
-  imagenes: { orderBy: { orden: 'asc' } },
+  imagenes: { include: { media: true }, orderBy: { orden: 'asc' } },
   inventario: true,
   variantes: { include: { inventario: true, imagenes: true } },
   categorias: { include: { categoria: true } },
   atributos: true,
 };
-/** Agrega stockTotal y precioDesde/Hasta para tarjetas/listado */
+
+/** Normaliza imágenes: si falta m.url, usa m.media?.url (caso supabase vía /api/media/...) */
+function normImgs(arr = []) {
+  return (arr || []).map(m => ({
+    ...m,
+    url: m.url || m.media?.url || '',
+  }));
+}
+
+/** Agrega stockTotal y precioDesde/Hasta y normaliza imágenes */
 function mapForList(p) {
   const stockProducto = p.inventario?.stock ?? 0;
   const stockVar = (p.variantes || []).reduce((acc, v) => acc + (v.inventario?.stock ?? 0), 0);
@@ -68,38 +80,24 @@ function mapForList(p) {
       precioHasta = Math.max(...precios);
     }
   }
-  return { ...p, stockTotal, precioDesde, precioHasta };
-}
-/** Genera combinaciones a partir de [{nombre, valores:[...]}, ...] */
-function genCombos(opciones = []) {
-  const clean = (Array.isArray(opciones) ? opciones : [])
-    .filter(o => isNonEmptyStr(o?.nombre) && Array.isArray(o?.valores) && o.valores.length > 0)
-    .map(o => ({ nombre: String(o.nombre), valores: o.valores.map(v => String(v)) }));
-  if (!clean.length) return [];
-  return clean.reduce((acc, opt) => {
-    const next = [];
-    for (const base of acc) {
-      for (const v of opt.valores) next.push({ ...base, [opt.nombre]: v });
-    }
-    return next;
-  }, [{}]);
-}
-/** Decide tipo final a partir del payload */
-function inferTipo(payload) {
-  const hasVariantes = Array.isArray(payload.variantes) && payload.variantes.length > 0;
-  const hasOpciones  = Array.isArray(payload.opciones) && payload.opciones.length > 0;
-  const isServicio   = !!payload.servicioInfo;
-  const isBundle     = isNonEmptyStr(payload.bundleIncluye);
-  const hasDigital   = isNonEmptyStr(payload.digitalUrl);
-  if (hasVariantes || hasOpciones) return 'VARIANTE';
-  if (isServicio) return 'SERVICIO';
-  if (isBundle)   return 'BUNDLE';
-  if (hasDigital) return 'DIGITAL';
-  return 'SIMPLE';
+
+  const variantesNorm = (p.variantes || []).map(v => ({
+    ...v,
+    imagenes: normImgs(v.imagenes), // aunque variantes hoy no traen media, no estorba
+  }));
+
+  return {
+    ...p,
+    imagenes: normImgs(p.imagenes),
+    variantes: variantesNorm,
+    stockTotal,
+    precioDesde,
+    precioHasta,
+  };
 }
 
 /* ========== LISTADO (público o protegido) ========== */
-// GET /api/v1/productos?tiendaId=123 | ?slug=mi-tienda | (protegido por x-user-id)// GET /api/v1/productos?tiendaId=123 | ?slug=mi-tienda
+// GET /api/v1/productos?tiendaId=123 | ?slug=mi-tienda
 router.get('/', async (req, res) => {
   try {
     let tiendaId = toInt(req.query.tiendaId);

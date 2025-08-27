@@ -1,3 +1,4 @@
+// src/routes/media.js
 const express = require('express');
 const multer = require('multer');
 const { PrismaClient, StorageProvider } = require('@prisma/client');
@@ -6,13 +7,12 @@ const { uploadToSupabase } = require('../lib/uploadSupabase');
 const prisma = new PrismaClient();
 const router = express.Router();
 
-// 5 MB, en memoria, ideal para pasar a Supabase
+// 5 MB en memoria: ideal para pasar directo a Supabase
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 5 * 1024 * 1024 }
 });
 
-// (opcional) Lista simple de mimes de imagen permitidos
 const IMAGE_MIME = new Set(['image/png', 'image/jpeg', 'image/jpg', 'image/webp']);
 
 /**
@@ -98,14 +98,12 @@ router.post('/usuarios/:id/avatar', upload.single('file'), async (req, res) => {
 /**
  * POST /api/media/productos/:id/imagenes
  * Sube imagen de producto a Supabase, crea Media y también ProductoImagen
- * con la URL pública (clave del fix).
+ * guardando la URL pública (clave del fix).
  * Devuelve { ok, mediaId, url, productoImagenId, isPrincipal, orden }
  */
 router.post('/productos/:id/imagenes', upload.single('file'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'file requerido' });
-
-    // (opcional) Valida tipo de imagen
     if (!IMAGE_MIME.has(req.file.mimetype)) {
       return res.status(400).json({ error: 'Tipo de archivo no permitido' });
     }
@@ -134,12 +132,12 @@ router.post('/productos/:id/imagenes', upload.single('file'), async (req, res) =
       }
     });
 
-    // Calcula orden e isPrincipal de forma automática:
+    // Calcula orden e isPrincipal automáticamente
     const existingCount = await prisma.productoImagen.count({ where: { productoId } });
     const isPrincipal = existingCount === 0;
-    const orden = existingCount; // siguiente posición
+    const orden = existingCount;
 
-    // ⚠️ FIX: Guardar también la URL pública en ProductoImagen
+    // ⚠️ FIX: Guarda también la URL pública en ProductoImagen
     const img = await prisma.productoImagen.create({
       data: {
         productoId,

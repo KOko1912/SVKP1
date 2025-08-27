@@ -1,4 +1,5 @@
 // backend/src/modules/usuarios/controller.js
+const jwt = require('jsonwebtoken');
 const {
   crearUsuario,
   loginUsuario,
@@ -6,8 +7,11 @@ const {
   crearTokenReseteo,
   resetearConToken,
   cambiarConActual,
-  solicitarVendedor, // 👈 nuevo
+  solicitarVendedor,
 } = require('./service');
+
+const SECRET = process.env.JWT_SECRET || process.env.ADMIN_SECRET || 'dev-secret';
+const EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
 
 // Registro
 const registrar = async (req, res, next) => {
@@ -19,14 +23,30 @@ const registrar = async (req, res, next) => {
   } catch (err) { return next(err); }
 };
 
-// Login
+// Login (alias /api/usuarios/login)
 const login = async (req, res, next) => {
   try {
     const { telefono, contraseña, password } = req.body || {};
-    const pass = contraseña || password;
-    if (!telefono || !pass) return res.status(400).json({ error: 'telefono y contraseña son requeridos' });
-    const result = await loginUsuario({ telefono, contraseña: pass });
-    return res.json(result);
+    const pass =
+      contraseña ||
+      password ||
+      req.body?.contrasena ||
+      req.body?.contrasenia ||
+      req.body?.['contraseña'];
+
+    if (!telefono || !pass) {
+      return res.status(400).json({ error: 'telefono y contraseña son requeridos' });
+    }
+
+    const { usuario } = await loginUsuario({ telefono, contraseña: pass, password: pass });
+
+    const token = jwt.sign(
+      { sub: usuario.id, tel: usuario.telefono, v: usuario.vendedor ? 1 : 0 },
+      SECRET,
+      { expiresIn: EXPIRES_IN }
+    );
+
+    return res.json({ usuario, token });
   } catch (err) { return next(err); }
 };
 
@@ -55,10 +75,9 @@ const solicitarReset = async (req, res, next) => {
 
     const data = await crearTokenReseteo({ telefono });
 
-    // Respuesta neutra para no revelar si el teléfono existe.
+    // Respuesta neutra
     if (!data) return res.json({ ok: true, mensaje: 'Si el usuario existe, se generó un token.' });
 
-    // En producción lo enviarías por SMS/WhatsApp/email. Aquí se devuelve para pruebas.
     return res.json({ ok: true, ...data });
   } catch (err) { return next(err); }
 };
@@ -103,7 +122,7 @@ const solicitarVendedorCtrl = async (req, res, next) => {
     if (!id) return res.status(400).json({ error: 'id es requerido' });
 
     const r = await solicitarVendedor({ id: Number(id) });
-    if (!r.ok && r.code === 'NOT_FOUND') return res.status(404).json({ error: 'Usuario no encontrado' });
+    if (!r.ok && r.code === 'NOT_FOUND')   return res.status(404).json({ error: 'Usuario no encontrado' });
     if (!r.ok && r.code === 'ALREADY_VENDOR') return res.status(400).json({ error: 'El usuario ya es vendedor' });
 
     return res.json({ ok: true, already: !!r.already });
@@ -117,5 +136,5 @@ module.exports = {
   solicitarReset,
   resetear,
   cambiarContraseña,
-  solicitarVendedor: solicitarVendedorCtrl, // 👈 exportado
+  solicitarVendedor: solicitarVendedorCtrl,
 };

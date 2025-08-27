@@ -11,18 +11,22 @@ const app = express();
    ========================= */
 const FRONTEND_URLS = (
   process.env.FRONTEND_URLS ||
-  process.env.FRONTEND_URL  ||
+  process.env.FRONTEND_URL ||
   'http://localhost:5173'
 )
   .split(',')
   .map(s => s.trim())
   .filter(Boolean);
 
-// CORS – incluye el header del admin y preflight global
+const allowOrigin = (origin) =>
+  !origin || FRONTEND_URLS.includes(origin);
+
+/* =========================
+   CORS
+   ========================= */
 const corsOptions = {
   origin(origin, cb) {
-    // Permite llamadas desde tu dev server y requests sin origin (curl/postman)
-    if (!origin || FRONTEND_URLS.includes(origin)) return cb(null, true);
+    if (allowOrigin(origin)) return cb(null, true);
     return cb(new Error(`Origen no permitido por CORS: ${origin}`));
   },
   credentials: true,
@@ -34,8 +38,9 @@ const corsOptions = {
     'Accept',
     'Origin',
     'X-User-Id',
-    'X-Admin-Secret',  // ← necesario para /api/admin/*
-    'x-admin-secret',  // por si el navegador normaliza distinto
+    'x-user-id',
+    'X-Admin-Secret',
+    'x-admin-secret',
   ],
   exposedHeaders: ['Content-Disposition'],
   optionsSuccessStatus: 204,
@@ -46,7 +51,7 @@ app.use(cors(corsOptions));
 // Preflight para todo
 app.options(/.*/, cors(corsOptions));
 
-// Vary para caches intermedios y early return OPTIONS (seguro)
+// Vary para caches intermedios y early return OPTIONS
 app.use((req, res, next) => {
   res.header('Vary', 'Origin, Access-Control-Request-Headers, Access-Control-Request-Method');
   if (req.method === 'OPTIONS') return res.sendStatus(204);
@@ -68,22 +73,26 @@ for (const d of [tiendaUploadsDir, userUploadsDir]) {
   if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true });
 }
 
-// Nota: express.static no recibe req en setHeaders, así que fijamos al primer origin
-const STATIC_ALLOW_ORIGIN = FRONTEND_URLS[0] || '*';
+// Nota: express.static no tiene acceso a req en setHeaders.
+// Para evitar problemas de carga de imágenes desde distintos orígenes
+// habilitamos origen * y políticas cross-origin seguras.
 const setStaticHeaders = (res) => {
-  res.setHeader('Access-Control-Allow-Origin', STATIC_ALLOW_ORIGIN);
+  res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Admin-Secret, x-admin-secret');
   res.setHeader('Access-Control-Allow-Methods', 'GET,HEAD,OPTIONS');
+  res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+  res.setHeader('Cache-Control', 'public, max-age=604800, immutable'); // ~7d
 };
 
 app.use('/TiendaUploads', express.static(tiendaUploadsDir, { maxAge: '7d', setHeaders: setStaticHeaders }));
 app.use('/uploads',       express.static(userUploadsDir,   { maxAge: '7d', setHeaders: setStaticHeaders }));
 
-
-
-/*imagenes superbase*/
+/* =========================
+   Media (Supabase/otros)
+   ========================= */
 const mediaRouter = require('./routes/media');
 app.use('/api/media', mediaRouter);
+
 /* =========================
    Rutas (Routers)
    ========================= */
@@ -97,7 +106,13 @@ const productosRoutes      = require('./modules/productos/routes');
 const categoriasRoutes     = require('./modules/categorias/routes');
 const uploadProductoRoutes = require('./modules/productos/upload');
 
-app.use('/api/auth',          authRoutes);       // login
+// 🔐 Alias directo para asegurar que /api/auth/login use el controller correcto
+// (lo definimos ANTES de montar el router genérico de /api/auth)
+const authCtrl = require('./modules/auth/controller');
+app.post('/api/auth/login', authCtrl.login);
+
+// Resto de routers
+app.use('/api/auth',          authRoutes);       // otras rutas de auth (si existen)
 app.use('/api/usuarios',      usuariosRoutes);
 app.use('/api/admin',         adminRoutes);
 app.use('/api/sdkadmin',      sdkadminRoutes);
@@ -113,11 +128,17 @@ app.use('/api/v1/upload',     uploadProductoRoutes);
 app.get('/health', (_req, res) => res.json({
   ok: true,
   origins: FRONTEND_URLS,
-  staticAllowOrigin: STATIC_ALLOW_ORIGIN,
   tiendaUploadsDir,
   userUploadsDir,
 }));
 
+/* =========================
+   404
+   ========================= */
+app.use((req, res, next) => {
+  if (req.method === 'GET') return res.status(404).json({ error: 'Not Found' });
+  next();
+});
 
 /* =========================
    Manejo de errores

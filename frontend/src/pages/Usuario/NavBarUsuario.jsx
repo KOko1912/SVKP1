@@ -1,91 +1,119 @@
-import { NavLink, useNavigate } from 'react-router-dom';
+import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useEffect, useMemo, useState } from 'react';
 import {
-  FiHome, FiShoppingBag, FiHeart, FiSettings, FiUser
+  FiShoppingBag, FiHeart, FiSettings, FiUser
 } from 'react-icons/fi';
 import { motion, AnimatePresence } from 'framer-motion';
 import './NavBarUsuario.css';
 
-const API = (import.meta.env.VITE_API_URL || 'http://localhost:5000').replace(/\/$/, '');
+const API   = (import.meta.env.VITE_API_URL    || 'http://localhost:5000').replace(/\/$/, '');
+const FILES = (import.meta.env.VITE_FILES_BASE || API).replace(/\/$/, '');
 
 const toPublic = (u) => {
   if (!u) return '';
-  if (/^https?:\/\//i.test(u)) return u;
-  if (u.startsWith('/')) return `${API}${u}`;
-  return u;
+  const val = typeof u === 'string'
+    ? u
+    : (u.url || u.path || u.src || u.href || u.filepath || u.location || u.image || u.thumbnail || '');
+  if (!val) return '';
+  if (/^https?:\/\//i.test(val)) return val;
+  const rel = val.startsWith('/') ? val : `/${val}`;
+  return `${FILES}${rel}`;
 };
+
+/** Lee la tienda actual desde la URL (soporta HashRouter y BrowserRouter) */
+function readPublicStoreKey(loc) {
+  // Con HashRouter, location.pathname ya viene como "/t/slug"
+  // pero para máxima compatibilidad revisamos también window.location.hash
+  let path = loc?.pathname || window.location.pathname || '';
+  if (!path || path === '/') {
+    const h = window.location.hash || '';
+    if (h.startsWith('#/')) path = h.slice(1); // "/t/slug"
+  }
+  const parts = String(path).split('/').filter(Boolean); // ["t","slug"] | ["s","uuid"] | ...
+
+  if (parts[0] === 't' && parts[1]) return { type: 'slug', value: decodeURIComponent(parts[1]) };
+  if (parts[0] === 's' && parts[1]) return { type: 'uuid', value: decodeURIComponent(parts[1]) };
+  return null;
+}
 
 /**
  * NavBarUsuario
  * @param {object|null} contextStore  { slug, nombre, logoUrl } para mostrar chip de tienda actual
  */
 export default function NavBarUsuario({ contextStore = null }) {
-  const navigate = useNavigate();
-  const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' ? window.innerWidth < 768 : false);
+  const navigate  = useNavigate();
+  const location  = useLocation();
+
+  const [isMobile, setIsMobile] = useState(
+    typeof window !== 'undefined' ? window.matchMedia('(max-width: 767px)').matches : false
+  );
   const [activeTab, setActiveTab] = useState('');
-  const [storeCtx, setStoreCtx] = useState(contextStore); // estado interno con fallback autodetección
+  const [storeCtx, setStoreCtx]   = useState(contextStore); // estado local (prop tiene prioridad)
 
   const user = useMemo(() => {
     try { return JSON.parse(localStorage.getItem('usuario') || 'null'); } catch { return null; }
   }, []);
   const avatarUrl = toPublic(user?.fotoUrl);
 
-  // Sync prop -> state
+  // Prop -> state
   useEffect(() => setStoreCtx(contextStore), [contextStore]);
 
+  // Responsivo
   useEffect(() => {
-    const handleResize = () => setIsMobile(window.innerWidth < 768);
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
+    const mq = window.matchMedia('(max-width: 767px)');
+    const onChange = () => setIsMobile(mq.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
   }, []);
 
-  // Fallback: detectar slug en URL y cargar tienda pública si no nos pasaron contextStore
+  // Autodetectar tienda pública desde la URL cuando no llega por props
   useEffect(() => {
-    if (storeCtx) return;
-    const hashMode = window.location.hash.startsWith('#/');
-    const path = hashMode ? window.location.hash.slice(2) : window.location.pathname.slice(1);
-    const first = (path || '').split('/')[0];
+    if (contextStore) return; // si te la pasan desde arriba, respetarla
 
-    // evita páginas reservadas
-    const reserved = new Set(['', 'usuario', 'login', 'registro', 'admin', 'producto', 'p', 'carrito']);
-    if (!first || reserved.has(first)) return;
+    const key = readPublicStoreKey(location);
+    if (!key) { setStoreCtx(null); return; } // evita GETs inválidos (/api/tienda/public/t)
 
     let cancelled = false;
     (async () => {
       try {
-        const r = await fetch(`${API}/api/tienda/public/${encodeURIComponent(first)}`);
-        const d = await r.json().catch(() => null);
+        const url = key.type === 'slug'
+          ? `${API}/api/tienda/public/${encodeURIComponent(key.value)}`
+          : `${API}/api/tienda/public/uuid/${encodeURIComponent(key.value)}`;
+
+        const r  = await fetch(url);
+        const tx = await r.text();
+        let d = null; try { d = JSON.parse(tx); } catch {}
         if (!r.ok || !d) return;
         if (cancelled) return;
-        setStoreCtx({ slug: d.slug, nombre: d.nombre, logoUrl: d.logoUrl });
-      } catch { /* noop */ }
-    })();
-    return () => { cancelled = true; };
-  }, [storeCtx]);
 
+        setStoreCtx({
+          slug: d.slug || key.value,
+          nombre: d.nombre || d.titulo || key.value,
+          logoUrl: (d.logo && d.logo.url) || d.logoUrl || ''
+        });
+      } catch {/* noop */}
+    })();
+
+    return () => { cancelled = true; };
+  }, [location, contextStore]);
+
+  // Ir a la tienda actual
   const goStore = () => {
     if (!storeCtx?.slug) return;
-    const path = `/${encodeURIComponent(storeCtx.slug)}`;
-    const useHash = window.location.hash.startsWith('#/');
-    if (useHash) window.location.hash = path;
-    else navigate(path);
+    navigate(`/t/${encodeURIComponent(storeCtx.slug)}`);
   };
 
-  const isStoreActive = (() => {
+  // ¿Estoy dentro de la tienda actual?
+  const isStoreActive = useMemo(() => {
     if (!storeCtx?.slug) return false;
-    const current = window.location.hash.startsWith('#/')
-      ? window.location.hash.slice(1) // incluye la barra inicial
-      : window.location.pathname;
-    const re = new RegExp(`^/${storeCtx.slug}(?:/|$)`, 'i');
-    return re.test(current);
-  })();
+    const key = readPublicStoreKey(location);
+    return key?.type === 'slug' && String(key.value).toLowerCase() === String(storeCtx.slug).toLowerCase();
+  }, [location, storeCtx]);
 
   const navItems = [
-    { path: '/usuario/home',         icon: FiHome,        label: 'Home' },
-    { path: '/usuario/compras',      icon: FiShoppingBag, label: 'Compras' },
-    { path: '/usuario/tiendas',      icon: FiHeart,       label: 'Tiendas' },
-    { path: '/usuario/configuracion',icon: FiSettings,    label: 'Config' },
-    { path: '/usuario/perfil',       icon: FiUser,        label: 'Perfil' }
+    { path: '/usuario/tiendas',       icon: FiHeart,    label: 'Tiendas' },
+    { path: '/usuario/configuracion', icon: FiSettings, label: 'Config'  },
+    { path: '/usuario/perfil',        icon: FiUser,     label: 'Perfil'  }
   ];
 
   // estilos inline
@@ -134,7 +162,7 @@ export default function NavBarUsuario({ contextStore = null }) {
                   </motion.li>
                 ))}
 
-                {/* Icono de TIENDA ACTUAL, a la derecha de los íconos normales */}
+                {/* Icono de TIENDA ACTUAL al final */}
                 {storeCtx?.slug && (
                   <motion.li whileHover={{ y: -2 }}>
                     <button
@@ -168,7 +196,6 @@ export default function NavBarUsuario({ contextStore = null }) {
             </div>
 
             <div className="nav-actions" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              {/* avatar (perfil) */}
               <button
                 onClick={() => navigate('/usuario/perfil')}
                 style={avatarBtn}
@@ -176,12 +203,10 @@ export default function NavBarUsuario({ contextStore = null }) {
               >
                 {avatarUrl ? <img src={avatarUrl} alt="" style={avatarImg} /> : <FiUser size={18} />}
               </button>
-              {/* ❌ Se elimina el botón de “Salir” del navbar */}
             </div>
           </div>
         </motion.nav>
       )}
-    
 
       {/* Mobile bottom bar */}
       {isMobile && (

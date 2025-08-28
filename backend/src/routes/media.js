@@ -7,13 +7,20 @@ const { uploadToSupabase } = require('../lib/uploadSupabase');
 const prisma = new PrismaClient();
 const router = express.Router();
 
+const IMAGE_MIME = new Set([
+  'image/png',
+  'image/jpeg',
+  'image/jpg',
+  'image/webp',
+  'image/avif',
+  'image/svg+xml',
+]);
+
 // 5 MB en memoria: ideal para pasar directo a Supabase
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 5 * 1024 * 1024 }
+  limits: { fileSize: 5 * 1024 * 1024 },
 });
-
-const IMAGE_MIME = new Set(['image/png', 'image/jpeg', 'image/jpg', 'image/webp']);
 
 /**
  * POST /api/media?folder=usuarios/123
@@ -32,7 +39,8 @@ router.post('/', upload.single('file'), async (req, res) => {
       buffer,
       mimetype,
       folder,
-      filename: baseName
+      filename: baseName,
+      visibility: 'public',
     });
 
     const media = await prisma.media.create({
@@ -41,8 +49,8 @@ router.post('/', upload.single('file'), async (req, res) => {
         key,
         url,
         mime: mimetype,
-        sizeBytes: size
-      }
+        sizeBytes: size,
+      },
     });
 
     res.json({ ok: true, media });
@@ -70,7 +78,8 @@ router.post('/usuarios/:id/avatar', upload.single('file'), async (req, res) => {
       buffer,
       mimetype,
       folder: `usuarios/${userId}`,
-      filename: (originalname || '').split('.')[0]?.slice(0, 40)
+      filename: (originalname || '').split('.')[0]?.slice(0, 40),
+      visibility: 'public',
     });
 
     const media = await prisma.media.create({
@@ -79,13 +88,13 @@ router.post('/usuarios/:id/avatar', upload.single('file'), async (req, res) => {
         key,
         url,
         mime: mimetype,
-        sizeBytes: size
-      }
+        sizeBytes: size,
+      },
     });
 
     await prisma.usuario.update({
       where: { id: userId },
-      data: { fotoId: media.id }
+      data: { fotoId: media.id },
     });
 
     res.json({ ok: true, mediaId: media.id, url: media.url });
@@ -97,8 +106,7 @@ router.post('/usuarios/:id/avatar', upload.single('file'), async (req, res) => {
 
 /**
  * POST /api/media/productos/:id/imagenes
- * Sube imagen de producto a Supabase, crea Media y también ProductoImagen
- * guardando la URL pública (clave del fix).
+ * Sube imagen de producto a Supabase, crea Media y también ProductoImagen.
  * Devuelve { ok, mediaId, url, productoImagenId, isPrincipal, orden }
  */
 router.post('/productos/:id/imagenes', upload.single('file'), async (req, res) => {
@@ -119,7 +127,8 @@ router.post('/productos/:id/imagenes', upload.single('file'), async (req, res) =
       buffer,
       mimetype,
       folder: `productos/${productoId}`,
-      filename: (originalname || '').split('.')[0]?.slice(0, 40)
+      filename: (originalname || '').split('.')[0]?.slice(0, 40),
+      visibility: 'public',
     });
 
     const media = await prisma.media.create({
@@ -128,8 +137,8 @@ router.post('/productos/:id/imagenes', upload.single('file'), async (req, res) =
         key,
         url,
         mime: mimetype,
-        sizeBytes: size
-      }
+        sizeBytes: size,
+      },
     });
 
     // Calcula orden e isPrincipal automáticamente
@@ -137,15 +146,14 @@ router.post('/productos/:id/imagenes', upload.single('file'), async (req, res) =
     const isPrincipal = existingCount === 0;
     const orden = existingCount;
 
-    // ⚠️ FIX: Guarda también la URL pública en ProductoImagen
     const img = await prisma.productoImagen.create({
       data: {
         productoId,
         mediaId: media.id,
-        url: media.url,
+        url: media.url,      // guardamos URL pública (clave del fix)
         isPrincipal,
-        orden
-      }
+        orden,
+      },
     });
 
     res.json({
@@ -154,11 +162,80 @@ router.post('/productos/:id/imagenes', upload.single('file'), async (req, res) =
       url: media.url,
       productoImagenId: img.id,
       isPrincipal,
-      orden
+      orden,
     });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'Producto imagen upload failed', detail: String(e.message || e) });
+  }
+});
+
+/**
+ * POST /api/media/variantes/:id/imagenes
+ * Igual que productos pero ligada a Variante.
+ * Devuelve { ok, mediaId, url, varianteImagenId, orden }
+ */
+router.post('/variantes/:id/imagenes', upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'file requerido' });
+    if (!IMAGE_MIME.has(req.file.mimetype)) {
+      return res.status(400).json({ error: 'Tipo de archivo no permitido' });
+    }
+
+    const varianteId = Number(req.params.id);
+    if (!Number.isFinite(varianteId)) {
+      return res.status(400).json({ error: 'varianteId inválido' });
+    }
+
+    // obtenemos productoId para la carpeta (opcional)
+    const variante = await prisma.variante.findUnique({
+      where: { id: varianteId },
+      select: { productoId: true },
+    });
+    if (!variante) return res.status(404).json({ error: 'Variante no existe' });
+
+    const { buffer, mimetype, originalname, size } = req.file;
+
+    const { key, url } = await uploadToSupabase({
+      buffer,
+      mimetype,
+      folder: `productos/${variante.productoId}/variantes/${varianteId}`,
+      filename: (originalname || '').split('.')[0]?.slice(0, 40),
+      visibility: 'public',
+    });
+
+    const media = await prisma.media.create({
+      data: {
+        provider: StorageProvider.SUPABASE,
+        key,
+        url,
+        mime: mimetype,
+        sizeBytes: size,
+      },
+    });
+
+    const existingCount = await prisma.varianteImagen.count({ where: { varianteId } });
+    const orden = existingCount;
+
+    const vimg = await prisma.varianteImagen.create({
+      data: {
+        varianteId,
+        mediaId: media.id,
+        url: media.url,
+        orden,
+      },
+    });
+
+    res.json({
+      ok: true,
+      mediaId: media.id,
+      url: media.url,
+      varianteImagenId: vimg.id,
+      orden,
+    });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Variante imagen upload failed', detail: String(e.message || e) });
   }
 });
 

@@ -406,23 +406,47 @@ export default function Productos() {
   /* -------------------- imágenes producto -------------------- */
   const onUploadImages = async (files) => {
     if (!files?.length) return;
-    if (!tiendaId) { alert('No se encontró tu tienda. Ve a Configuración → Perfil.'); return; }
     const uploads = Array.from(files).slice(0, 12 - form.imagenes.length);
+
     for (const f of uploads) {
       try {
         const fd = new FormData();
         fd.append('file', f);
-        const res = await fetch(`${API}/api/v1/upload/producto`, { method: 'POST', headers: { ...baseHeaders }, body: fd });
-        if (!res.ok) throw new Error('No se pudo subir imagen');
-        const { url } = await res.json();
+
+        let url = '';
+        if (mode === 'edit' && editId) {
+          // Producto existente → liga Media + ProductoImagen en backend
+          const res = await fetch(`${API}/api/media/productos/${editId}/imagenes`, {
+            method: 'POST',
+            headers: { ...baseHeaders },
+            body: fd,
+          });
+          const json = await res.json();
+          if (!res.ok || !json.ok) throw new Error(json.error || 'No se pudo subir imagen');
+          url = json.url;
+        } else {
+          // Aún no hay productId → staging (solo Media); luego guardas el producto con esas URLs
+          const res = await fetch(`${API}/api/media?folder=staging/productos`, {
+            method: 'POST',
+            headers: { ...baseHeaders },
+            body: fd,
+          });
+          const json = await res.json();
+          if (!res.ok || !json.ok) throw new Error(json.error || 'No se pudo subir imagen');
+          url = json.media?.url || json.url;
+        }
+
         setForm((prev) => {
           const next = [...prev.imagenes];
           next.push({ url, alt: '', isPrincipal: next.length === 0, orden: next.length });
           return { ...prev, imagenes: next };
         });
-      } catch (e) { alert(e?.message || 'Error subiendo imagen'); }
+      } catch (e) {
+        alert(e?.message || 'Error subiendo imagen');
+      }
     }
   };
+
   const setPrincipal = (idx) => {
     setForm((prev) => {
       const next = prev.imagenes.map((img, i) => ({ ...img, isPrincipal: i === idx, orden: i === idx ? 0 : img.orden }));
@@ -628,20 +652,49 @@ export default function Productos() {
       await refreshProductoLocal(); if (vEditId === v.id) vStartCreate();
     } catch (e) { alert(e?.message || 'Error al eliminar variante'); }
   };
+
+  // ⬇️ Subida de imágenes de variante → /api/media/variantes/:id/imagenes o staging
   const onUploadVImages = async (files) => {
     if (!files?.length) return;
-    if (!tiendaId) { alert('No se encontró tu tienda.'); return; }
     const uploads = Array.from(files).slice(0, 12 - vForm.imagenes.length);
+
     for (const f of uploads) {
       try {
-        const fd = new FormData(); fd.append('file', f);
-        const res = await fetch(`${API}/api/v1/upload/producto`, { method: 'POST', headers: { ...baseHeaders }, body: fd });
-        if (!res.ok) throw new Error('No se pudo subir imagen');
-        const { url } = await res.json();
-        setVForm((prev) => { const next = [...prev.imagenes]; next.push({ url, alt: '', orden: next.length }); return { ...prev, imagenes: next }; });
-      } catch (e) { alert(e?.message || 'Error subiendo imagen'); }
+        const fd = new FormData();
+        fd.append('file', f);
+
+        let url = '';
+        if (vMode === 'edit' && vEditId) {
+          const res = await fetch(`${API}/api/media/variantes/${vEditId}/imagenes`, {
+            method: 'POST',
+            headers: { ...baseHeaders },
+            body: fd,
+          });
+          const json = await res.json();
+          if (!res.ok || !json.ok) throw new Error(json.error || 'No se pudo subir imagen');
+          url = json.url;
+        } else {
+          const res = await fetch(`${API}/api/media?folder=staging/variantes`, {
+            method: 'POST',
+            headers: { ...baseHeaders },
+            body: fd,
+          });
+          const json = await res.json();
+          if (!res.ok || !json.ok) throw new Error(json.error || 'No se pudo subir imagen');
+          url = json.media?.url || json.url;
+        }
+
+        setVForm((prev) => {
+          const next = [...prev.imagenes];
+          next.push({ url, alt: '', orden: next.length });
+          return { ...prev, imagenes: next };
+        });
+      } catch (e) {
+        alert(e?.message || 'Error subiendo imagen');
+      }
     }
   };
+
   const moveVImagen = (idx, dir = -1) => { setVForm((prev) => { const arr = [...prev.imagenes]; const j = idx + dir; if (j < 0 || j >= arr.length) return prev; const t = arr[idx]; arr[idx] = arr[j]; arr[j] = t; arr.forEach((img, i) => (img.orden = i)); return { ...prev, imagenes: arr }; }); };
   const removeVImagen = (idx) => { setVForm((prev) => { const arr = prev.imagenes.filter((_, i) => i !== idx).map((m, i) => ({ ...m, orden: i })); return { ...prev, imagenes: arr }; }); };
   const updateVAlt = (idx, alt) => { setVForm((prev) => { const arr = [...prev.imagenes]; if (!arr[idx]) return prev; arr[idx] = { ...arr[idx], alt }; return { ...prev, imagenes: arr }; }); };
@@ -982,7 +1035,13 @@ export default function Productos() {
                 <div className="crear-uploader" onDrop={handleDrop} onDragOver={handleDragOver}>
                   <label className="btn-file">
                     <FiUpload /> Seleccionar imágenes
-                    <input type="file" accept="image/png,image/jpeg,image/jpg,image/webp" multiple onChange={(e) => onUploadImages(e.target.files)} style={{ display: 'none' }} />
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg,image/jpg,image/webp,image/avif,image/svg+xml"
+                      multiple
+                      onChange={(e) => onUploadImages(e.target.files)}
+                      style={{ display: 'none' }}
+                    />
                   </label>
                   <p className="muted" style={{margin:0}}>O arrastra y suelta aquí (máx. 12)</p>
 
@@ -1213,7 +1272,13 @@ export default function Productos() {
                 <div className="crear-uploader" onDragOver={(e)=>{e.preventDefault();}} onDrop={(e)=>{e.preventDefault(); onUploadVImages(e.dataTransfer?.files);}}>
                   <label className="btn-file">
                     <FiUpload /> Subir imágenes
-                    <input type="file" accept="image/png,image/jpeg,image/jpg,image/webp" multiple onChange={(e) => onUploadVImages(e.target.files)} style={{ display: 'none' }} />
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg,image/jpg,image/webp,image/avif,image/svg+xml"
+                      multiple
+                      onChange={(e) => onUploadVImages(e.target.files)}
+                      style={{ display: 'none' }}
+                    />
                   </label>
                   {vForm.imagenes.length > 0 ? (
                     <ul className="imgs-list">

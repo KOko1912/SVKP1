@@ -1,4 +1,3 @@
-// E:\SVKP1\frontend\src\pages\Public\PublicProducto.jsx
 import { useEffect, useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
@@ -14,36 +13,13 @@ const FILES = (import.meta.env.VITE_FILES_BASE || API).replace(/\/$/, '');
 const grad = (from, to) => `linear-gradient(135deg, ${from}, ${to})`;
 const withT = (url, t) => (url ? `${url}${url.includes('?') ? '&' : '?'}t=${t || 0}` : '');
 
-/** Normaliza y devuelve pathname iniciando con "/" */
-const toWebPath = (u) => {
-  if (!u) return '';
-  if (Array.isArray(u)) return toWebPath(u.find(Boolean));
-  if (typeof u === 'object')
-    return toWebPath(u.url || u.path || u.src || u.href || u.filepath || u.location || u.image || u.thumbnail || '');
-
-  const clean = String(u).trim().replace(/\\/g, '/');
-  if (!clean) return '';
-
-  if (/^https?:\/\//i.test(clean)) {
-    try { return new URL(clean).pathname || ''; } catch { /* noop */ }
-  }
-
-  const lower = clean.toLowerCase();
-  const marks = ['/tiendauploads/','tiendauploads/','/uploads/','uploads/','/files/','files/'];
-  for (const m of marks) {
-    const i = lower.indexOf(m);
-    if (i !== -1) {
-      const slice = clean.slice(i);
-      return slice.startsWith('/') ? slice : `/${slice}`;
-    }
-  }
-  return clean.startsWith('/') ? clean : `/${clean}`;
-};
-
-/** Une base + pathname y codifica (espacios, acentos) */
-const toPublicUrl = (u) => {
-  const p = toWebPath(u);
-  return p ? `${FILES}${encodeURI(p)}` : '';
+/** 🔗 Normaliza cualquier URL (absoluta de Supabase o relativa local) -> pública */
+const toPublicSrc = (u) => {
+  const v = typeof u === 'string'
+    ? u
+    : (u?.url || u?.path || u?.src || u?.href || u?.filepath || u?.location || u?.image || u?.thumbnail || '');
+  if (!v) return '';
+  return /^https?:\/\//i.test(v) ? v : `${FILES}${v.startsWith('/') ? '' : '/'}${v}`;
 };
 
 const hexToRgb = (hex) => {
@@ -67,8 +43,9 @@ const extractColors = (gradientString) => {
   return { from: m?.[0] || '#6d28d9', to: m?.[1] || '#c026d3' };
 };
 const composeHeaderBg = (portadaUrl, from, to, ver) => {
+  const bg = toPublicSrc(portadaUrl);
   const layers = [`linear-gradient(135deg, ${from}, ${to})`];
-  if (portadaUrl) layers.push(`url("${withT(toPublicUrl(portadaUrl), ver)}")`);
+  if (bg) layers.push(`url("${withT(bg, ver)}")`);
   return layers.join(', ');
 };
 const money = (n, currency = 'MXN') =>
@@ -157,8 +134,9 @@ export default function PublicProducto() {
       if (embedded && (embedded.nombre || embedded.slug || embedded.publicUuid || embedded.id)) {
         const normalized = {
           ...embedded,
-          portadaUrl: toWebPath(embedded.portadaUrl),
-          logoUrl: toWebPath(embedded.logoUrl),
+          // no normalizamos aquí: resolvemos al render con toPublicSrc
+          portadaUrl: embedded.portada?.url || embedded.portadaUrl || '',
+          logoUrl: embedded.logo?.url || embedded.logoUrl || '',
           redes: embedded.redes || { facebook: '', instagram: '', tiktok: '' },
           colorPrincipal: embedded.colorPrincipal || grad('#6d28d9', '#c026d3'),
         };
@@ -184,12 +162,12 @@ export default function PublicProducto() {
         if (tiendaResp) break;
       }
 
-      // 2.3: si no hubo tienda, NO usar /me (evita mostrar la tienda del usuario logueado por error)
+      // 2.3: si no hubo tienda, NO usar /me
       if (!cancelled && tiendaResp) {
         const normalized = {
           ...tiendaResp,
-          portadaUrl: toWebPath(tiendaResp.portadaUrl),
-          logoUrl: toWebPath(tiendaResp.logoUrl),
+          portadaUrl: tiendaResp.portada?.url || tiendaResp.portadaUrl || '',
+          logoUrl: tiendaResp.logo?.url || tiendaResp.logoUrl || '',
           redes: tiendaResp.redes || { facebook: '', instagram: '', tiktok: '' },
           colorPrincipal: tiendaResp.colorPrincipal || grad('#6d28d9', '#c026d3'),
         };
@@ -213,7 +191,7 @@ export default function PublicProducto() {
   const principal = useMemo(() => {
     if (!galeria.length) return '';
     const p = galeria.find(g => g.isPrincipal) || galeria[0];
-    return toPublicUrl(p.url);
+    return toPublicSrc(p?.url || p);
   }, [galeria]);
 
   const categorias = useMemo(
@@ -340,16 +318,18 @@ export default function PublicProducto() {
     tienda?.envioCobertura || tienda?.envioCosto || tienda?.envioTiempo || tienda?.devoluciones
   );
 
+  const logoUrl = toPublicSrc(tienda.logo?.url || tienda.logoUrl);
+
   return (
     <div className="pp-wrap">
       {/* Header tienda (solo si logramos obtener info de esa tienda) */}
-      {(tienda?.nombre || tienda?.logoUrl || tienda?.descripcion) && (
+      {(tienda?.nombre || logoUrl || tienda?.descripcion) && (
         <div className="pp-header" style={{ backgroundImage: headerBg, color: 'var(--brand-contrast)' }}>
           <div className="pp-header-inner">
             <div className="pp-shop">
-              {tienda.logoUrl && (
+              {logoUrl && (
                 <img
-                  src={withT(toPublicUrl(tienda.logoUrl), imgV.logo)}
+                  src={withT(logoUrl, imgV.logo)}
                   alt=""
                   className="pp-shop-logo"
                   onError={e => { e.currentTarget.style.display = 'none'; }}
@@ -389,7 +369,7 @@ export default function PublicProducto() {
             {galeria.length > 1 && (
               <div className="pp-gallery-thumbs">
                 {galeria.map((m, i) => {
-                  const src = toPublicUrl(m.url);
+                  const src = toPublicSrc(m?.url || m);
                   const active = src === principal;
                   return (
                     <button
@@ -402,7 +382,7 @@ export default function PublicProducto() {
                       aria-label={`Imagen ${i + 1}`}
                     >
                       <div className="pp-thumb-frame">
-                        <img src={src} alt={m.alt || ''} />
+                        <img src={src} alt={m?.alt || ''} />
                       </div>
                     </button>
                   );
@@ -506,9 +486,14 @@ export default function PublicProducto() {
             )}
 
             {/* Archivo digital */}
-            {producto?.digitalUrl && (
+            {(producto?.digital?.url || producto?.digitalUrl) && (
               <div className="pp-digital">
-                <a href={producto.digitalUrl} target="_blank" rel="noreferrer" className="pp-digital-link">
+                <a
+                  href={toPublicSrc(producto?.digital?.url || producto?.digitalUrl)}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="pp-digital-link"
+                >
                   <FiExternalLink /> Ver archivo digital
                 </a>
               </div>

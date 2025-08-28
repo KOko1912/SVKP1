@@ -1,4 +1,3 @@
-// frontend/src/pages/Usuario/TiendasSeguidas.jsx
 import { useEffect, useRef, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import NavBarUsuario from './NavBarUsuario';
@@ -11,59 +10,81 @@ const RAW_API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const API = RAW_API.replace(/\/$/, '');
 const FOLLOW_KEY = 'stores_following';
 
-// === Helpers de URL/Media ===
+/* ================= Helpers de red y media ================= */
+const tryJson = async (url, init) => {
+  try {
+    const r = await fetch(url, init);
+    const t = await r.text();
+    let d = null; try { d = JSON.parse(t); } catch {}
+    if (!r.ok || d?.error) return null;
+    return d;
+  } catch { return null; }
+};
+
+// URL pública (acepta absolutas - Supabase/Cloud -, o rutas del backend)
 const toPublicUrl = (u) => {
   if (!u) return '';
-  if (/^https?:\/\//i.test(u)) return u;        // URL absoluta (Supabase/Cloud)
-  if (u.startsWith('/')) return `${API}${u}`;   // ruta del backend
-  return `${API}/${u}`;                         // ruta relativa simple
+  if (typeof u !== 'string') return '';
+  const s = u.trim();
+  if (!s) return '';
+  if (/^https?:\/\//i.test(s)) return s;
+  if (s.startsWith('/')) return `${API}${s}`;
+  return `${API}/${s}`;
 };
+
 const withCacheBuster = (url, stamp = Date.now()) =>
   url ? `${url}${url.includes('?') ? '&' : '?'}t=${stamp}` : '';
 
-/** Intenta obtener el logo desde múltiples formatos: nuevo (Media) o legado */
+/* ----------------- normalizadores de logo/portada ----------------- */
 const pickStoreLogo = (t) => {
-  // nuevo: objetos Media
   if (t?.logo?.url) return t.logo.url;
   if (t?.branding?.logo?.url) return t.branding.logo.url;
-
-  // a veces llega {logo: 'url'}
   if (typeof t?.logo === 'string') return t.logo;
-
-  // legado
   if (t?.logoUrl) return t.logoUrl;
-
   return '';
 };
 
-/** Intenta obtener portada/cabecera desde múltiples claves: nuevo o legado */
 const pickStoreCover = (t) => {
-  // nuevo
   if (t?.portada?.url) return t.portada.url;
   if (t?.banner?.url) return t.banner.url;
   if (t?.branding?.portada?.url) return t.branding.portada.url;
   if (t?.branding?.banner?.url) return t.branding.banner.url;
-
-  // legado
   if (t?.portadaUrl) return t.portadaUrl;
   if (t?.banner) return t.banner;
-
   return '';
 };
 
 const storeKey = (t) => t?.slug || t?.publicUuid || String(t?.id || '');
-
-// Link interno preferente por slug; si no hay, opcional por publicUuid
 const internalPathForStore = (t) => {
   if (t?.slug) return `/t/${encodeURIComponent(t.slug)}`;
-  if (t?.publicUuid) return `/s/${encodeURIComponent(t.publicUuid)}`; // por si tienes ruta pública por UUID
+  if (t?.publicUuid) return `/s/${encodeURIComponent(t.publicUuid)}`;
   return '';
 };
-
-// Si tu backend ya expone una URL pública calculada:
 const externalUrlForStore  = (t) =>
   t?.urlPublica || t?.urlPrincipal || t?.web || t?.url || '';
 
+/* ========= intenta resolver una tienda por clave (slug/uuid/id) ========= */
+async function fetchPublicStoreByKey(key) {
+  if (!key) return null;
+  const k = String(key).trim();
+
+  // 1) slug
+  let d = await tryJson(`${API}/api/tienda/public/${encodeURIComponent(k)}`);
+  if (d && (d.slug || d.id)) return d;
+
+  // 2) uuid pública
+  d = await tryJson(`${API}/api/tienda/public/uuid/${encodeURIComponent(k)}`);
+  if (d && (d.slug || d.id)) return d;
+
+  // 3) by-id (numérico)
+  if (/^\d+$/.test(k)) {
+    d = await tryJson(`${API}/api/tienda/public/by-id/${k}`);
+    if (d && (d.slug || d.id)) return d;
+  }
+  return null;
+}
+
+/* ============================= Página ============================= */
 export default function TiendasSeguidas() {
   const navigate = useNavigate();
 
@@ -85,7 +106,7 @@ export default function TiendasSeguidas() {
 
   const usesHashRouter = typeof window !== 'undefined' && window.location.hash.startsWith('#/');
 
-  // === Usuario & suscripciones
+  /* ============== Usuario y suscripciones ============== */
   useEffect(() => {
     try {
       const u = JSON.parse(localStorage.getItem('usuario') || 'null');
@@ -94,6 +115,7 @@ export default function TiendasSeguidas() {
         hydrateFollowingFromUser(u);
       }
     } catch {}
+
     (async () => {
       try {
         const uLS = JSON.parse(localStorage.getItem('usuario') || 'null');
@@ -133,13 +155,11 @@ export default function TiendasSeguidas() {
     if (persistTimer.current) clearTimeout(persistTimer.current);
     persistTimer.current = setTimeout(async () => {
       try {
-        // Preferente
         let r = await fetch(`${API}/api/usuarios/${usuario.id}/suscripciones`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ suscripciones: arr })
         });
-        // Fallback por si no existe el endpoint anterior
         if (!r.ok) {
           r = await fetch(`${API}/api/usuarios/${usuario.id}`, {
             method: 'PATCH',
@@ -174,33 +194,69 @@ export default function TiendasSeguidas() {
     });
   };
 
-  // === Fetch de tiendas
+  /* ====================== Fetch principal ====================== */
   const fetchStores = async (signal) => {
     setLoading(true);
     setMsg('');
-    const tryEndpoints = [
-      `${API}/api/tiendas/search?q=${encodeURIComponent(q)}&page=${page}&limit=24`,
-      `${API}/api/tiendas/public?search=${encodeURIComponent(q)}&page=${page}&limit=24`,
-      `${API}/api/tiendas?search=${encodeURIComponent(q)}&page=${page}&limit=24`,
-      `${API}/api/tienda/search?q=${encodeURIComponent(q)}&page=${page}&limit=24`,
-    ];
-    for (const url of tryEndpoints) {
-      try {
-        const r = await fetch(url, { signal });
-        if (!r.ok) continue;
-        const data = await r.json();
-        const list = data?.items || data?.data || data?.tiendas || (Array.isArray(data) ? data : []);
-        if (Array.isArray(list)) {
-          setStores(list);
-          setLoading(false);
-          return;
-        }
-      } catch (e) {
-        if (signal?.aborted) return;
+
+    const results = [];
+
+    // 1) Si hay texto, intenta resolverlo como slug/uuid/id (endpoints públicos que existen)
+    const term = q.trim();
+    if (term) {
+      const resolved = await fetchPublicStoreByKey(term);
+      if (resolved) {
+        results.push(resolved);
+        setStores(results);
+        setLoading(false);
+        return;
+      }
+
+      // Como “bonus”, si tuvieras /api/tiendas/search con q (a veces existe),
+      // lo intentamos SOLO cuando hay término:
+      const extra = await tryJson(`${API}/api/tiendas/search?q=${encodeURIComponent(term)}&page=${page}&limit=24`);
+      const list = extra?.items || extra?.data || extra?.tiendas || (Array.isArray(extra) ? extra : []);
+      if (Array.isArray(list) && list.length) {
+        setStores(list);
+        setLoading(false);
+        return;
+      }
+
+      setStores([]);
+      setMsg('No se encontraron tiendas para esa clave.');
+      setLoading(false);
+      return;
+    }
+
+    // 2) Sin término: carga seguidas del usuario (local/servidor) resolviendo cada clave
+    const followArr = JSON.parse(localStorage.getItem(FOLLOW_KEY) || '[]');
+    if (Array.isArray(followArr) && followArr.length) {
+      const batch = await Promise.allSettled(followArr.map(k => fetchPublicStoreByKey(k)));
+      for (const it of batch) {
+        if (it.status === 'fulfilled' && it.value) results.push(it.value);
       }
     }
-    setStores([]);
-    setMsg('No se encontraron tiendas.');
+
+    // 3) Si estás logueado como vendedor, intenta incluir tu tienda “me”
+    try {
+      const uLS = JSON.parse(localStorage.getItem('usuario') || 'null');
+      const headers = uLS?.id ? { 'x-user-id': uLS.id } : undefined;
+      const me = await tryJson(`${API}/api/tienda/me`, { headers, signal });
+      if (me && (me.isPublished || me.slug)) {
+        results.push(me);
+      }
+    } catch {}
+
+    // De-duplicar (por slug o id)
+    const seen = new Set();
+    const uniq = [];
+    for (const t of results) {
+      const key = t?.slug || `id:${t?.id}`;
+      if (key && !seen.has(key)) { seen.add(key); uniq.push(t); }
+    }
+
+    setStores(uniq);
+    setMsg(uniq.length ? '' : 'Aún no sigues tiendas. Busca por slug y pulsa “Seguir”.');
     setLoading(false);
   };
 
@@ -211,7 +267,7 @@ export default function TiendasSeguidas() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [q, page]);
 
-  // === Derivados: filtro “solo seguidas” y ordenamiento
+  /* ====================== Derivados y UI ====================== */
   const filtered = useMemo(() => {
     const base = onlyFollowing ? stores.filter((t) => isFollowing(t)) : stores;
     return base;
@@ -223,7 +279,7 @@ export default function TiendasSeguidas() {
       const term = q.trim().toLowerCase();
       list = list.filter((t) => {
         const hay = `${t?.nombre || ''} ${t?.descripcion || ''} ${t?.ciudad || ''} ${t?.categoria || ''}`.toLowerCase();
-        return hay.includes(term);
+        return hay.includes(term) || (t?.slug || '').toLowerCase().includes(term);
       });
     }
     switch (sort) {
@@ -245,7 +301,6 @@ export default function TiendasSeguidas() {
   const visitStore = (t) => {
     const internal = internalPathForStore(t);
     const external = externalUrlForStore(t);
-
     if (internal) {
       if (usesHashRouter) window.location.hash = internal;
       else navigate(internal);
@@ -269,10 +324,10 @@ export default function TiendasSeguidas() {
           <header className="card-svk" style={{ marginBottom: 16 }}>
             <div className="block-title" style={{ marginBottom: 10 }}>
               <span className="icon"><FiSearch /></span>
-              <h2>Explorar tiendas</h2>
+              <h2>Explorar / Tiendas seguidas</h2>
             </div>
             <p className="subtitle-svk" style={{ marginBottom: 14 }}>
-              Descubre tiendas de vendedores. Usa el corazón para seguir tus favoritas.
+              Escribe el <strong>slug</strong> de una tienda para buscarla, o mira tus tiendas seguidas.
             </p>
 
             <div className="shop-controls">
@@ -281,7 +336,7 @@ export default function TiendasSeguidas() {
                 <input
                   value={q}
                   onChange={(e) => { setPage(1); setQ(e.target.value); }}
-                  placeholder="Buscar por nombre, ciudad o categoría…"
+                  placeholder="Buscar por SLUG, UUID o ID… (ej. tiendasonline)"
                   aria-label="Buscar tiendas"
                 />
               </div>
@@ -325,7 +380,7 @@ export default function TiendasSeguidas() {
                   <p className="subtitle-svk">
                     {msg || (onlyFollowing
                       ? 'No hay coincidencias entre tus tiendas seguidas.'
-                      : 'Sin resultados. Ajusta tu búsqueda.')}
+                      : 'Sin resultados. Prueba buscando por el slug (ej. tiendasonline).')}
                   </p>
                 </div>
               ) : (
@@ -391,7 +446,7 @@ export default function TiendasSeguidas() {
                 </section>
               )}
 
-              {/* Paginación simple */}
+              {/* Paginación simple (útil cuando exista listado real) */}
               <div className="pager">
                 <button
                   className="btn btn-ghost"

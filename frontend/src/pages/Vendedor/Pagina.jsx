@@ -1,4 +1,3 @@
-// E:\SVKP1\frontend\src\pages\Vendedor\Pagina.jsx
 import React, { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import Nabvendedor from "./Nabvendedor";
 import "./Vendedor.css";
@@ -10,43 +9,20 @@ import {
 import Swal from "sweetalert2";
 
 /* ===================== Bases ===================== */
-const API_BASE  = (import.meta.env.VITE_API_URL || "http://localhost:5000").replace(/\/$/, "");
-const FILES_ENV = (import.meta.env.VITE_FILES_BASE || "").replace(/\/$/, "");
-const FILES_BASE = (
-  FILES_ENV
-    ? (/^https?:\/\//i.test(FILES_ENV) ? FILES_ENV : `${API_BASE}${FILES_ENV.startsWith("/") ? "" : "/"}${FILES_ENV}`)
-    : API_BASE
-).replace(/\/$/, "");
+const API    = (import.meta.env.VITE_API_URL    || "http://localhost:5000").replace(/\/$/, "");
+const FILES  = (import.meta.env.VITE_FILES_BASE || API).replace(/\/$/, "");
 
 /* ===================== Helpers ===================== */
 const grad = (from, to) => `linear-gradient(135deg, ${from}, ${to})`;
 
-const toWebPath = (u) => {
-  if (!u) return "";
-  if (Array.isArray(u)) return toWebPath(u.find(Boolean));
-  if (typeof u === "object")
-    return toWebPath(u.url || u.path || u.src || u.href || u.filepath || u.location || u.image || u.thumbnail || "");
-  const raw = String(u).trim();
-  if (!raw) return "";
-  const clean = raw.replace(/\\/g, "/");
-  if (/^https?:\/\//i.test(clean)) {
-    try { return new URL(clean).pathname || ""; } catch { /* noop */ }
-  }
-  const lower = clean.toLowerCase();
-  const marks = ["/tiendauploads/","tiendauploads/","/uploads/","uploads/","/files/","files/"];
-  for (const m of marks) {
-    const i = lower.indexOf(m.replace(/^\//,""));
-    if (i !== -1) {
-      const slice = clean.slice(i);
-      return slice.startsWith("/") ? slice : `/${slice}`;
-    }
-  }
-  return clean.startsWith("/") ? clean : `/${clean}`;
-};
-
-const toPublicUrl = (u) => {
-  const p = toWebPath(u);
-  return p ? `${FILES_BASE}${encodeURI(p)}` : "";
+/** Normaliza cualquier URL (acepta absoluta de Supabase o relativa local) */
+const toPublicSrc = (u) => {
+  const v =
+    typeof u === "string"
+      ? u
+      : (u?.url || u?.path || u?.src || u?.href || u?.filepath || u?.location || u?.image || u?.thumbnail || "");
+  if (!v) return "";
+  return /^https?:\/\//i.test(v) ? v : `${FILES}${v.startsWith("/") ? "" : "/"}${v}`;
 };
 
 const slugify = (str = "") =>
@@ -101,16 +77,16 @@ export default function Pagina() {
   useEffect(() => {
     (async () => {
       try {
-        const rt = await fetch(`${API_BASE}/api/tienda/me`, { headers });
+        const rt = await fetch(`${API}/api/tienda/me`, { headers });
         const dt = await rt.json();
         if (!rt.ok) throw new Error(dt?.message || dt?.error || "No se pudo cargar la tienda");
         setTienda(dt);
 
-        const rp = await fetch(`${API_BASE}/api/v1/productos?tiendaId=${dt.id}`, { headers });
+        const rp = await fetch(`${API}/api/v1/productos?tiendaId=${dt.id}`, { headers });
         const dp = await rp.json();
         setProductos(Array.isArray(dp?.items) ? dp.items : Array.isArray(dp) ? dp : []);
 
-        const rc = await fetch(`${API_BASE}/api/v1/categorias?tiendaId=${dt.id}`, { headers });
+        const rc = await fetch(`${API}/api/v1/categorias?tiendaId=${dt.id}`, { headers });
         const dc = await rc.json();
         setCategorias(Array.isArray(dc) ? dc : []);
       } catch (e) {
@@ -146,7 +122,7 @@ export default function Pagina() {
       });
       if (desiredSlug === undefined) return; // cancelado
 
-      const resp = await fetch(`${API_BASE}/api/tienda/publicar`, {
+      const resp = await fetch(`${API}/api/tienda/publicar`, {
         method: "PUT",
         headers: { "Content-Type": "application/json", "x-user-id": t.usuarioId || usuario?.id },
         body: JSON.stringify({ publish: true, slug: desiredSlug || t.slug || t.nombre || "" })
@@ -393,7 +369,7 @@ function RenderBlocks({ layout = [], productos = [], categorias = [], tienda }) 
         }
 
         if (type === "banner") {
-          const src = toPublicUrl(tienda?.bannerPromoUrl);
+          const src = toPublicSrc(tienda?.bannerPromoUrl);
           return (
             <section key={b.id} className="store-section">
               <div className="pv-banner" style={{ backgroundImage: src ? `url(${src})` : undefined }}>
@@ -411,9 +387,10 @@ function RenderBlocks({ layout = [], productos = [], categorias = [], tienda }) 
         }
 
         if (type === "logo") {
+          const logoUrl = toPublicSrc(tienda?.logo?.url || tienda?.logoUrl);
           return (
             <section key={b.id} className="store-section" style={{ display: "grid", placeItems: "center" }}>
-              {tienda?.logoUrl ? <img src={toPublicUrl(tienda.logoUrl)} alt="logo" style={{ maxWidth: 180 }} /> : null}
+              {logoUrl ? <img src={logoUrl} alt="logo" style={{ maxWidth: 180 }} /> : null}
             </section>
           );
         }
@@ -426,9 +403,9 @@ function RenderBlocks({ layout = [], productos = [], categorias = [], tienda }) 
 
 /* =================== Componentes =================== */
 function HeroPortada({ tienda, align = "center", showLogo = true, showDescripcion = true }) {
-  const portada = toPublicUrl(tienda?.portadaUrl);
-  const logo = toPublicUrl(tienda?.logoUrl);
-  const colors = extractColors(tienda?.colorPrincipal || grad("#6d28d9", "#c026d3"));
+  const portada = toPublicSrc(tienda?.portada?.url || tienda?.portadaUrl);
+  const logo    = toPublicSrc(tienda?.logo?.url    || tienda?.logoUrl);
+  const colors  = extractColors(tienda?.colorPrincipal || grad("#6d28d9", "#c026d3"));
 
   const justify =
     align === "left" ? "flex-start" :
@@ -458,16 +435,21 @@ function HeroPortada({ tienda, align = "center", showLogo = true, showDescripcio
 }
 
 function VendorInfoSection({ tienda }) {
+  const logo = toPublicSrc(tienda?.logo?.url || tienda?.logoUrl);
   return (
     <section className="store-section">
       <div className="store-info-card">
         <div className="store-info-header">
-          <img
-            src={toPublicUrl(tienda?.logoUrl)}
-            alt="Logo"
-            className="store-logo"
-            loading="lazy"
-          />
+          {logo ? (
+            <img
+              src={logo}
+              alt="Logo"
+              className="store-logo"
+              loading="lazy"
+            />
+          ) : (
+            <div className="store-logo placeholder" />
+          )}
           <div>
             <h2>{tienda?.nombre || "Mi Tienda"}</h2>
             <div className="store-categories">
@@ -626,35 +608,48 @@ function RowSection({ title, icon, items = [], enableSearch = false }) {
 
 function PosterCard({ p = {} }) {
   const pickImage = (prod) => {
-    const cand = [
+    const candidates = [
+      // prioridad: principal -> primera
       prod?.imagenes?.find(x => x?.isPrincipal)?.url,
       prod?.imagenes?.[0]?.url,
+      // posibles alias
       prod?.imagen, prod?.thumb, prod?.foto, prod?.cover
-    ];
-    return toPublicUrl(cand.find(Boolean));
+    ].filter(Boolean);
+    return toPublicSrc(candidates[0]);
   };
 
   const img = pickImage(p);
-  const categoria = p?.categoria || p?.category || (p?.categorias?.[0]?.nombre) || "";
+  const categoria =
+    p?.categoria?.nombre ||
+    p?.categoria ||
+    (Array.isArray(p?.categorias) ? (p.categorias[0]?.nombre || p.categorias[0]?.categoria?.nombre) : "") ||
+    p?.category ||
+    "";
+
   const conPrecio = typeof p?.precio === "number" || (typeof p?.precio === "string" && p.precio.trim() !== "");
   const desc = (p?.descripcion || p?.detalle || p?.resumen || "").toString().trim();
 
   return (
     <article className="poster-card">
       <div className="poster-media">
-        {img ? <img src={img} alt={p?.nombre || "producto"} loading="lazy"
-          onError={(e) => {
-            e.currentTarget.onerror = null;
-            e.currentTarget.src =
-              "data:image/svg+xml;utf8," +
-              encodeURIComponent(
-                `<svg xmlns='http://www.w3.org/2000/svg' width='480' height='360'>
-                   <rect width='100%' height='100%' fill='#f3f4f6'/>
-                   <text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' fill='#9ca3af' font-family='sans-serif' font-size='16'>Sin imagen</text>
-                 </svg>`
-              );
-          }}
-        /> : (
+        {img ? (
+          <img
+            src={img}
+            alt={p?.nombre || "producto"}
+            loading="lazy"
+            onError={(e) => {
+              e.currentTarget.onerror = null;
+              e.currentTarget.src =
+                "data:image/svg+xml;utf8," +
+                encodeURIComponent(
+                  `<svg xmlns='http://www.w3.org/2000/svg' width='480' height='360'>
+                     <rect width='100%' height='100%' fill='#f3f4f6'/>
+                     <text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' fill='#9ca3af' font-family='sans-serif' font-size='16'>Sin imagen</text>
+                   </svg>`
+                );
+            }}
+          />
+        ) : (
           <div className="image-placeholder"><FiShoppingBag size={24} color="#9ca3af" /></div>
         )}
         {p.destacado && <div className="featured-badge"><FiStar size={14} /></div>}
@@ -665,8 +660,20 @@ function PosterCard({ p = {} }) {
         {desc && <div className="poster-desc">{desc.length > 60 ? `${desc.substring(0, 60)}...` : desc}</div>}
         {conPrecio ? (
           <div className="poster-price">
-            <span className="price">${Number(p.precio || 0).toFixed(2)}</span>
-            {p.precioOriginal && (<span className="original-price">${Number(p.precioOriginal).toFixed(2)}</span>)}
+            <span className="price">
+              {(() => {
+                const n = Number(p.precio || 0);
+                return isFinite(n) ? `$${n.toFixed(2)}` : "$0.00";
+              })()}
+            </span>
+            {p.precioOriginal && (
+              <span className="original-price">
+                {(() => {
+                  const n = Number(p.precioOriginal);
+                  return isFinite(n) ? `$${n.toFixed(2)}` : "";
+                })()}
+              </span>
+            )}
           </div>
         ) : (
           <div className="poster-price"><span className="badge">Ver variantes</span></div>

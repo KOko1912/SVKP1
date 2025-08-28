@@ -1,4 +1,3 @@
-// E:\SVKP1\frontend\src\pages\SVKT.jsx
 // Página pública – respeta el layout del vendedor (mismos bloques/props que Pagina.jsx)
 
 import React, { Fragment, useEffect, useMemo, useRef, useState } from "react";
@@ -12,59 +11,20 @@ import { useParams, Link } from "react-router-dom";
 import NavBarUsuario from "./Usuario/NavBarUsuario";
 
 /* ================= Bases ================= */
-const API_BASE  = (import.meta.env.VITE_API_URL || "http://localhost:5000").replace(/\/$/, "");
-const FILES_ENV = (import.meta.env.VITE_FILES_BASE || "").replace(/\/$/, "");
-const FILES_BASE = (
-  FILES_ENV
-    ? (/^https?:\/\//i.test(FILES_ENV) ? FILES_ENV : `${API_BASE}${FILES_ENV.startsWith("/") ? "" : "/"}${FILES_ENV}`)
-    : API_BASE
-).replace(/\/$/, "");
+const API   = (import.meta.env.VITE_API_URL    || "http://localhost:5000").replace(/\/$/, "");
+const FILES = (import.meta.env.VITE_FILES_BASE || API).replace(/\/$/, "");
 
 /* ================= Helpers ================= */
 const grad = (from, to) => `linear-gradient(135deg, ${from}, ${to})`;
 
-// pathname que inicia con "/"
-const toWebPath = (u) => {
-  if (!u) return "";
-  if (Array.isArray(u)) return toWebPath(u.find(Boolean));
-  if (typeof u === "object")
-    return toWebPath(u.url || u.path || u.src || u.href || u.filepath || u.location || u.image || u.thumbnail || "");
-  const raw = String(u).trim();
-  if (!raw) return "";
-  const clean = raw.replace(/\\/g, "/");
-  if (/^https?:\/\//i.test(clean)) {
-    try { return new URL(clean).pathname || ""; } catch { /* noop */ }
-  }
-  const lower = clean.toLowerCase();
-  const marks = ["/tiendauploads/","tiendauploads/","/uploads/","uploads/","/files/","files/"];
-  for (const m of marks) {
-    const key = m.replace(/^\//,"");
-    const i = lower.indexOf(key);
-    if (i !== -1) {
-      const slice = clean.slice(i);
-      return slice.startsWith("/") ? slice : `/${slice}`;
-    }
-  }
-  return clean.startsWith("/") ? clean : `/${clean}`;
-};
-
-const toPublicUrl = (u) => {
-  const p = toWebPath(u);
-  return p ? `${FILES_BASE}${encodeURI(p)}` : "";
-};
-
-// Imagen principal del producto
-const primaryImageFrom = (imagenes = []) => {
-  if (!Array.isArray(imagenes) || !imagenes.length) return "";
-  const get = (o) => o?.url || o?.path || o?.src || o?.location || o?.image || o?.thumbnail || "";
-  const principal = imagenes.find(x => typeof x === "object" && x?.isPrincipal);
-  if (principal) return get(principal);
-  for (const it of imagenes) {
-    if (typeof it === "string" && it) return it;
-    const v = get(it);
-    if (v) return v;
-  }
-  return "";
+/** 🔗 Normaliza cualquier URL (absoluta de Supabase o relativa local) */
+const toPublicSrc = (u) => {
+  const v =
+    typeof u === "string"
+      ? u
+      : (u?.url || u?.path || u?.src || u?.href || u?.filepath || u?.location || u?.image || u?.thumbnail || "");
+  if (!v) return "";
+  return /^https?:\/\//i.test(v) ? v : `${FILES}${v.startsWith("/") ? "" : "/"}${v}`;
 };
 
 // Fetch robusto
@@ -133,16 +93,16 @@ export default function SVKT() {
       setLoading(true);
       setError("");
       try {
-        const tiendaData = await getJsonOrThrow(`${API_BASE}/api/tienda/public/${encodeURIComponent(slug)}`);
+        const tiendaData = await getJsonOrThrow(`${API}/api/tienda/public/${encodeURIComponent(slug)}`);
         setTienda(tiendaData);
 
         try {
-          const dp = await getJsonOrThrow(`${API_BASE}/api/v1/productos?tiendaId=${tiendaData.id}`);
+          const dp = await getJsonOrThrow(`${API}/api/v1/productos?tiendaId=${tiendaData.id}`);
           setProductos(Array.isArray(dp?.items) ? dp.items : Array.isArray(dp) ? dp : []);
         } catch { setProductos([]); }
 
         try {
-          const dc = await getJsonOrThrow(`${API_BASE}/api/v1/categorias?tiendaId=${tiendaData.id}`);
+          const dc = await getJsonOrThrow(`${API}/api/v1/categorias?tiendaId=${tiendaData.id}`);
           setCategorias(Array.isArray(dc) ? dc : []);
         } catch { setCategorias([]); }
       } catch (e) {
@@ -302,7 +262,7 @@ function RenderBlocks({ layout = [], productos = [], categorias = [], tienda }) 
         }
 
         if (type === "banner") {
-          const src = toPublicUrl(tienda?.bannerPromoUrl);
+          const src = toPublicSrc(tienda?.bannerPromoUrl);
           return (
             <section key={b.id} className="store-section">
               <div className="pv-banner" style={{ backgroundImage: src ? `url(${src})` : undefined }}>
@@ -320,9 +280,10 @@ function RenderBlocks({ layout = [], productos = [], categorias = [], tienda }) 
         }
 
         if (type === "logo") {
+          const logoUrl = toPublicSrc(tienda?.logo?.url || tienda?.logoUrl);
           return (
             <section key={b.id} className="store-section" style={{ display: "grid", placeItems: "center" }}>
-              {tienda?.logoUrl ? <img src={toPublicUrl(tienda.logoUrl)} alt="logo" style={{ maxWidth: 180 }} /> : null}
+              {logoUrl ? <img src={logoUrl} alt="logo" style={{ maxWidth: 180 }} /> : null}
             </section>
           );
         }
@@ -335,9 +296,9 @@ function RenderBlocks({ layout = [], productos = [], categorias = [], tienda }) 
 
 /* =============== Componentes UI =============== */
 function HeroPortada({ tienda, align = "center", showLogo = true, showDescripcion = true }) {
-  const portada = toPublicUrl(tienda?.portadaUrl);
-  const logo = toPublicUrl(tienda?.logoUrl);
-  const colors = extractColors(tienda?.colorPrincipal || grad("#6d28d9", "#c026d3"));
+  const portada = toPublicSrc(tienda?.portada?.url || tienda?.portadaUrl);
+  const logo    = toPublicSrc(tienda?.logo?.url    || tienda?.logoUrl);
+  const colors  = extractColors(tienda?.colorPrincipal || grad("#6d28d9", "#c026d3"));
 
   const justify =
     align === "left" ? "flex-start" :
@@ -367,11 +328,16 @@ function HeroPortada({ tienda, align = "center", showLogo = true, showDescripcio
 }
 
 function VendorInfoSection({ tienda }) {
+  const logo = toPublicSrc(tienda?.logo?.url || tienda?.logoUrl);
   return (
     <section className="store-section">
       <div className="store-info-card">
         <div className="store-info-header">
-          <img src={toPublicUrl(tienda?.logoUrl)} alt="Logo" className="store-logo" loading="lazy" />
+          {logo ? (
+            <img src={logo} alt="Logo" className="store-logo" loading="lazy" />
+          ) : (
+            <div className="store-logo placeholder" />
+          )}
           <div>
             <h2>{tienda?.nombre || "Mi Tienda"}</h2>
             <div className="store-categories">
@@ -514,11 +480,22 @@ function RowSection({ title, icon, items = [], enableSearch = false }) {
 }
 
 function PosterCard({ p = {} }) {
-  const img = toPublicUrl(primaryImageFrom(p?.imagenes)) ||
-              toPublicUrl(p?.imagen || p?.thumb || p?.foto || p?.cover);
+  const pickImage = (prod) => {
+    const candidates = [
+      prod?.imagenes?.find(x => x?.isPrincipal)?.url,
+      prod?.imagenes?.[0]?.url,
+      prod?.imagen, prod?.thumb, prod?.foto, prod?.cover
+    ].filter(Boolean);
+    return toPublicSrc(candidates[0]);
+  };
 
+  const img = pickImage(p);
   const categoria =
-    p?.categoria || p?.category || (Array.isArray(p?.categorias) && p.categorias[0]?.nombre) || "";
+    p?.categoria?.nombre ||
+    p?.categoria ||
+    (Array.isArray(p?.categorias) ? (p.categorias[0]?.nombre || p.categorias[0]?.categoria?.nombre) : "") ||
+    p?.category ||
+    "";
 
   const conPrecio =
     typeof p?.precio === "number" || (typeof p?.precio === "string" && p.precio.trim() !== "");
@@ -586,8 +563,20 @@ function PosterCard({ p = {} }) {
         <div className="poster-actions-row">
           {conPrecio ? (
             <div className="poster-price">
-              <span className="price">${Number(p.precio || 0).toFixed(2)}</span>
-              {p.precioOriginal && (<span className="original-price">${Number(p.precioOriginal).toFixed(2)}</span>)}
+              <span className="price">
+                {(() => {
+                  const n = Number(p.precio || 0);
+                  return isFinite(n) ? `$${n.toFixed(2)}` : "$0.00";
+                })()}
+              </span>
+              {p.precioOriginal && (
+                <span className="original-price">
+                  {(() => {
+                    const n = Number(p.precioOriginal);
+                    return isFinite(n) ? `$${n.toFixed(2)}` : "";
+                  })()}
+                </span>
+              )}
             </div>
           ) : (
             <div className="poster-price"><span className="badge">Ver variantes</span></div>

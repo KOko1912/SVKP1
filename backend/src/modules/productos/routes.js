@@ -1,8 +1,6 @@
-// backend/src/modules/productos/routes.js
 const express = require('express');
 const { buildAdvancedPatch } = require('./opcionesavanzadas');
 const prisma = require('../../config/db');
-// 👇 agrega:
 const { StorageProvider } = require('@prisma/client');
 const mime = require('mime-types');
 
@@ -72,20 +70,23 @@ function genCombos(opciones = []) {
     if (valores.length === 0) {
       recurse({ ...current, [opc.clave]: '' }, index + 1);
     } else {
-      for (const v of valores) {
-        recurse({ ...current, [opc.clave]: v }, index + 1);
-      }
+      for (const v of valores) recurse({ ...current, [opc.clave]: v }, index + 1);
     }
   };
   recurse({}, 0);
   return combos;
 }
 
-// ⬇️ include `media` también en imágenes de variantes
+// include `media` también en imágenes de variantes
 const productInclude = {
   imagenes: { include: { media: true }, orderBy: { orden: 'asc' } },
   inventario: true,
-  variantes: { include: { inventario: true, imagenes: { include: { media: true }, orderBy: { orden: 'asc' } } } },
+  variantes: {
+    include: {
+      inventario: true,
+      imagenes: { include: { media: true }, orderBy: { orden: 'asc' } }
+    }
+  },
   categorias: { include: { categoria: true } },
   atributos: true,
   digital: true,
@@ -131,11 +132,11 @@ function mapForList(p) {
   };
 }
 
-// 👇 Helpers para crear/reusar Media desde una URL y mapear provider
+// Helpers para crear/reusar Media desde una URL y mapear provider
 function guessProviderFromUrl(url = '') {
   if (url.includes('supabase.co')) return StorageProvider.SUPABASE;
   if (url.startsWith('/uploads') || url.startsWith('/TiendaUploads')) return StorageProvider.LOCAL;
-  return StorageProvider.SUPABASE; // fallback razonable
+  return StorageProvider.SUPABASE; // fallback
 }
 function keyFromUrl(url = '') {
   const m = url.match(/\/object\/public\/(.+)$/);
@@ -143,7 +144,7 @@ function keyFromUrl(url = '') {
   return url.replace(/^https?:\/\/[^/]+\//, '').replace(/^\//, '');
 }
 
-// 🔧 Asegura un Media (para imágenes)
+// Asegura un Media (para imágenes)
 async function ensureMedia(url) {
   if (!isNonEmptyStr(url)) return null;
   const provider = guessProviderFromUrl(url);
@@ -162,10 +163,8 @@ async function ensureMedia(url) {
   return media.id;
 }
 
-// 🔧 Asegura Media para digital (puedes reutilizar ensureMedia si quieres)
-async function ensureDigitalMedia(url) {
-  return ensureMedia(url);
-}
+// Asegura Media para digital (reusa ensureMedia)
+async function ensureDigitalMedia(url) { return ensureMedia(url); }
 
 /* ========== LISTADO (público o protegido) ========== */
 // GET /api/v1/productos?tiendaId=123 | ?slug=mi-tienda
@@ -188,12 +187,12 @@ router.get('/', async (req, res) => {
 
     if (!tiendaId) return res.json([]);
 
-    const isPublic = !userId; // <-- si no viene x-user-id, es público
+    const isPublic = !userId; // si no viene x-user-id, es público
     const { q = '', estado = '', categoria = '' } = req.query;
 
     const where = { tiendaId, deletedAt: null };
 
-    // 🔒 Solo en público, mostrar productos visibles y activos
+    // En público, mostrar únicamente visibles y activos
     if (isPublic) {
       where.visible = true;
       where.estado = 'ACTIVE';
@@ -228,7 +227,6 @@ router.get('/', async (req, res) => {
     res.status(500).json({ error: 'No se pudieron cargar los productos' });
   }
 });
-
 
 /* ========== PÚBLICO POR UUID ========== */
 // GET /api/v1/productos/public/uuid/:uuid
@@ -333,7 +331,7 @@ router.post('/', async (req, res) => {
     }
     if (isNonEmptyStr(bundleIncluye)) baseAttr.push({ clave: 'bundle.incluye', valor: String(bundleIncluye) });
 
-    // --- construir imágenes con mediaId
+    // construir imágenes con mediaId
     const inputImgs = Array.isArray(imagenes) ? imagenes.filter(m => m && m.url) : [];
     let imgsCreate = [];
     if (inputImgs.length) {
@@ -350,7 +348,7 @@ router.post('/', async (req, res) => {
       }));
     }
 
-    // --- variantes con mediaId en imágenes
+    // variantes con mediaId en imágenes
     let variantesCreate = [];
     if (isVariante && finalVariantes.length) {
       variantesCreate = await Promise.all(finalVariantes.map(async (v) => {
@@ -408,7 +406,7 @@ router.post('/', async (req, res) => {
 
     const creado = await prisma.producto.create({ data, include: productInclude });
 
-    // 👇 CREAR producto: si viene digitalUrl, conviértelo a digitalId después
+    // CREAR: si viene digitalUrl, vincular vía relación digital
     let productoFinal = creado;
     if (isNonEmptyStr(digitalUrl)) {
       try {
@@ -416,12 +414,12 @@ router.post('/', async (req, res) => {
         if (mid) {
           productoFinal = await prisma.producto.update({
             where: { id: creado.id },
-            data: { digitalId: mid },
+            data: { digital: { connect: { id: mid } } },
             include: productInclude,
           });
         }
       } catch (e) {
-        console.warn('[crear producto] No se pudo registrar digitalUrl → digitalId:', e?.message || e);
+        console.warn('[crear producto] No se pudo vincular digital:', e?.message || e);
       }
     }
     res.json(mapForList(productoFinal));
@@ -444,17 +442,21 @@ router.patch('/:id', async (req, res) => {
       imagenes, categoriasIds, inventario, atributos, digitalUrl
     } = req.body;
 
-    const isVariante      = p.tipo === 'VARIANTE';
-    const allowInventory  = p.tipo === 'SIMPLE';
+    const isVariante     = p.tipo === 'VARIANTE';
+    const allowInventory = p.tipo === 'SIMPLE';
 
-    // 👇 EDITAR producto: cambia digitalUrl → digitalId
-    let digitalIdPatch = undefined;
+    // EDITAR: digitalUrl → relación "digital"
+    let digitalRelPatch = undefined;
     if (digitalUrl !== undefined) {
       if (isNonEmptyStr(digitalUrl)) {
-        try { digitalIdPatch = await ensureDigitalMedia(digitalUrl); }
-        catch (e) { console.warn('[patch producto] ensureDigitalMedia falló:', e?.message || e); }
+        try {
+          const mid = await ensureDigitalMedia(digitalUrl);
+          if (mid) digitalRelPatch = { connect: { id: mid } };
+        } catch (e) {
+          console.warn('[patch producto] ensureDigitalMedia falló:', e?.message || e);
+        }
       } else {
-        digitalIdPatch = null; // limpiar enlace digital
+        digitalRelPatch = { disconnect: true }; // limpiar enlace digital
       }
     }
 
@@ -468,12 +470,18 @@ router.patch('/:id', async (req, res) => {
       ...(!isVariante && precioComparativo  !== undefined ? { precioComparativo: toNum(precioComparativo) } : {}),
       ...(!isVariante && costo              !== undefined ? { costo: toNum(costo) } : {}),
       ...(!isVariante && descuentoPct       !== undefined ? { descuentoPct: toInt(descuentoPct) } : {}),
-      ...(digitalIdPatch !== undefined ? { digitalId: digitalIdPatch } : {}),
-      updatedAt: new Date(),
+      ...(digitalRelPatch ? { digital: digitalRelPatch } : {}),
     };
 
     // Opciones avanzadas
     Object.assign(data, buildAdvancedPatch(req.body, { producto: p }));
+
+    // Sanitiza posibles claves no pertenecientes al modelo
+    delete data.digitalUrl;
+    delete data.imagenes;
+    delete data.categoriasIds;
+    delete data.inventario;
+    delete data.atributos;
 
     if (nombre !== undefined) {
       data.slug = await uniqueSlugForProduct(p.tiendaId, nombre, p.id);
@@ -481,7 +489,7 @@ router.patch('/:id', async (req, res) => {
 
     const tx = [];
 
-    // Imágenes
+    // Imágenes (reemplazo completo si viene el arreglo)
     if (Array.isArray(imagenes)) {
       let imgs = imagenes.filter(m => m && m.url);
       const seen = new Set();
@@ -506,10 +514,7 @@ router.patch('/:id', async (req, res) => {
             orden: Number.isFinite(m.orden) ? m.orden : i
           };
         }));
-        tx.push(prisma.productoImagen.createMany({
-          data: rows,
-          skipDuplicates: true
-        }));
+        tx.push(prisma.productoImagen.createMany({ data: rows, skipDuplicates: true }));
       }
     }
 
@@ -595,40 +600,105 @@ router.patch('/:id', async (req, res) => {
   }
 });
 
-/* ========== ELIMINAR ========== */
-router.delete('/:id', async (req, res) => {
+/* ================== Imágenes de PRODUCTO (editar rápido) ================== */
+// Reemplaza TODAS las imágenes
+router.put('/:id/imagenes', async (req, res) => {
   try {
-    const id = Number(req.params.id);
-    const p = await prisma.producto.findUnique({ where: { id } });
-    if (!p) return res.status(404).json({ error: 'No existe' });
+    const productoId = Number(req.params.id);
+    const bodyImgs = Array.isArray(req.body?.imagenes) ? req.body.imagenes : [];
+    await prisma.productoImagen.deleteMany({ where: { productoId } });
 
-    const force = String(req.query.force || '') === '1';
-    if (force) {
-      const vars = await prisma.variante.findMany({ where: { productoId: id }, select: { id: true } });
-      const varIds = vars.map(v => v.id);
+    if (bodyImgs.length) {
+      const seen = new Set();
+      const imgs = bodyImgs
+        .filter(m => m && m.url && !seen.has(m.url) && seen.add(m.url))
+        .map((m, i) => ({ ...m, orden: Number.isFinite(m.orden) ? m.orden : i }));
 
-      await prisma.$transaction([
-        prisma.varianteImagen.deleteMany({ where: { varianteId: { in: varIds } } }),
-        prisma.inventario.deleteMany({ where: { varianteId: { in: varIds } } }),
-        prisma.variante.deleteMany({ where: { productoId: id } }),
-        prisma.productoImagen.deleteMany({ where: { productoId: id } }),
-        prisma.productoCategoria.deleteMany({ where: { productoId: id } }),
-        prisma.productoAtributo.deleteMany({ where: { productoId: id } }),
-        prisma.inventario.deleteMany({ where: { productoId: id } }),
-        prisma.producto.delete({ where: { id } }),
-      ], { isolationLevel: 'ReadCommitted' });
+      // Asegurar 1 principal
+      let found = false;
+      const finalImgs = imgs.map((m, i) => {
+        const isP = !found && (m.isPrincipal || i === 0);
+        if (isP) found = true;
+        return { ...m, isPrincipal: isP };
+      });
 
-      return res.json({ ok: true, id, hardDeleted: true });
+      const rows = await Promise.all(finalImgs.map(async (m) => {
+        const mid = await ensureMedia(m.url);
+        return { productoId, mediaId: mid, alt: m.alt || null, isPrincipal: !!m.isPrincipal, orden: m.orden ?? 0 };
+      }));
+      await prisma.productoImagen.createMany({ data: rows, skipDuplicates: true });
     }
 
-    await prisma.producto.update({
-      where: { id },
-      data: { deletedAt: new Date(), visible: false, estado: 'ARCHIVED' },
-    });
-    res.json({ ok: true, id, hardDeleted: false });
+    const full = await prisma.producto.findUnique({ where: { id: productoId }, include: productInclude });
+    res.json(mapForList(full));
   } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: 'No se pudo eliminar' });
+    console.error('[PUT /productos/:id/imagenes] ERROR =>', e);
+    res.status(500).json({ error: 'No se pudieron reemplazar las imágenes' });
+  }
+});
+
+// Agrega una o varias imágenes (sin borrar las existentes)
+router.post('/:id/imagenes', async (req, res) => {
+  try {
+    const productoId = Number(req.params.id);
+    const addImgs = Array.isArray(req.body?.imagenes) ? req.body.imagenes : [];
+    if (!addImgs.length) return res.json({ ok: true });
+
+    const last = await prisma.productoImagen.findFirst({ where: { productoId }, orderBy: { orden: 'desc' } });
+    let nextOrden = (last?.orden ?? -1) + 1;
+
+    const existingPrincipal = await prisma.productoImagen.findFirst({
+      where: { productoId, isPrincipal: true }
+    });
+
+    let setPrincipal = !existingPrincipal; // si no hay principal, el primero agregado se marca
+    const rows = [];
+    for (const m of addImgs) {
+      if (!m || !m.url) continue;
+      const mid = await ensureMedia(m.url);
+      rows.push({
+        productoId,
+        mediaId: mid,
+        alt: m.alt || null,
+        isPrincipal: setPrincipal ? true : !!m.isPrincipal,
+        orden: Number.isFinite(m.orden) ? m.orden : nextOrden++,
+      });
+      setPrincipal = false;
+    }
+
+    if (rows.length) await prisma.productoImagen.createMany({ data: rows, skipDuplicates: true });
+
+    const full = await prisma.producto.findUnique({ where: { id: productoId }, include: productInclude });
+    res.json(mapForList(full));
+  } catch (e) {
+    console.error('[POST /productos/:id/imagenes] ERROR =>', e);
+    res.status(500).json({ error: 'No se pudieron agregar las imágenes' });
+  }
+});
+
+// Elimina una imagen específica
+router.delete('/:id/imagenes/:imagenId', async (req, res) => {
+  try {
+    const productoId = Number(req.params.id);
+    const imagenId = Number(req.params.imagenId);
+
+    const img = await prisma.productoImagen.findUnique({ where: { id: imagenId } });
+    if (!img || img.productoId !== productoId) return res.status(404).json({ error: 'Imagen no encontrada' });
+
+    await prisma.productoImagen.delete({ where: { id: imagenId } });
+
+    // Asegurar que quede una principal
+    const anyPrincipal = await prisma.productoImagen.findFirst({ where: { productoId, isPrincipal: true } });
+    if (!anyPrincipal) {
+      const first = await prisma.productoImagen.findFirst({ where: { productoId }, orderBy: { orden: 'asc' } });
+      if (first) await prisma.productoImagen.update({ where: { id: first.id }, data: { isPrincipal: true } });
+    }
+
+    const full = await prisma.producto.findUnique({ where: { id: productoId }, include: productInclude });
+    res.json(mapForList(full));
+  } catch (e) {
+    console.error('[DELETE /productos/:id/imagenes/:imagenId] ERROR =>', e);
+    res.status(500).json({ error: 'No se pudo eliminar la imagen' });
   }
 });
 
@@ -692,10 +762,7 @@ router.patch('/variantes/:varianteId', async (req, res) => {
             const mid = await ensureMedia(m.url);
             return { varianteId, mediaId: mid, alt: m.alt || null, orden: Number.isFinite(m.orden) ? m.orden : i };
           }));
-        tx.push(prisma.varianteImagen.createMany({
-          data: rows,
-          skipDuplicates: true
-        }));
+        tx.push(prisma.varianteImagen.createMany({ data: rows, skipDuplicates: true }));
       }
     }
 
@@ -754,6 +821,94 @@ router.delete('/variantes/:varianteId', async (req, res) => {
   }
 });
 
+/* ===== Imágenes de VARIANTE (editar rápido) ===== */
+// Reemplaza todas las imágenes de la variante
+router.put('/variantes/:varianteId/imagenes', async (req, res) => {
+  try {
+    const varianteId = Number(req.params.varianteId);
+    const bodyImgs = Array.isArray(req.body?.imagenes) ? req.body.imagenes : [];
+
+    await prisma.varianteImagen.deleteMany({ where: { varianteId } });
+
+    if (bodyImgs.length) {
+      const seen = new Set();
+      const imgs = bodyImgs
+        .filter(m => m && m.url && !seen.has(m.url) && seen.add(m.url))
+        .map((m, i) => ({ ...m, orden: Number.isFinite(m.orden) ? m.orden : i }));
+
+      const rows = await Promise.all(imgs.map(async (m) => {
+        const mid = await ensureMedia(m.url);
+        return { varianteId, mediaId: mid, alt: m.alt || null, orden: m.orden ?? 0 };
+      }));
+      await prisma.varianteImagen.createMany({ data: rows, skipDuplicates: true });
+    }
+
+    const v = await prisma.variante.findUnique({
+      where: { id: varianteId },
+      include: { inventario: true, imagenes: { include: { media: true }, orderBy: { orden: 'asc' } } }
+    });
+    res.json(v);
+  } catch (e) {
+    console.error('[PUT /variantes/:varianteId/imagenes] ERROR =>', e);
+    res.status(500).json({ error: 'No se pudieron reemplazar las imágenes de la variante' });
+  }
+});
+
+// Agrega imágenes a la variante
+router.post('/variantes/:varianteId/imagenes', async (req, res) => {
+  try {
+    const varianteId = Number(req.params.varianteId);
+    const addImgs = Array.isArray(req.body?.imagenes) ? req.body.imagenes : [];
+    if (!addImgs.length) return res.json({ ok: true });
+
+    const last = await prisma.varianteImagen.findFirst({ where: { varianteId }, orderBy: { orden: 'desc' } });
+    let nextOrden = (last?.orden ?? -1) + 1;
+
+    const rows = [];
+    for (const m of addImgs) {
+      if (!m || !m.url) continue;
+      const mid = await ensureMedia(m.url);
+      rows.push({
+        varianteId,
+        mediaId: mid,
+        alt: m.alt || null,
+        orden: Number.isFinite(m.orden) ? m.orden : nextOrden++,
+      });
+    }
+    if (rows.length) await prisma.varianteImagen.createMany({ data: rows, skipDuplicates: true });
+
+    const v = await prisma.variante.findUnique({
+      where: { id: varianteId },
+      include: { inventario: true, imagenes: { include: { media: true }, orderBy: { orden: 'asc' } } }
+    });
+    res.json(v);
+  } catch (e) {
+    console.error('[POST /variantes/:varianteId/imagenes] ERROR =>', e);
+    res.status(500).json({ error: 'No se pudieron agregar las imágenes de la variante' });
+  }
+});
+
+// Elimina una imagen específica de variante
+router.delete('/variantes/imagenes/:imagenId', async (req, res) => {
+  try {
+    const imagenId = Number(req.params.imagenId);
+    const img = await prisma.varianteImagen.findUnique({ where: { id: imagenId } });
+    if (!img) return res.status(404).json({ error: 'Imagen no encontrada' });
+
+    const varianteId = img.varianteId;
+    await prisma.varianteImagen.delete({ where: { id: imagenId } });
+
+    const v = await prisma.variante.findUnique({
+      where: { id: varianteId },
+      include: { inventario: true, imagenes: { include: { media: true }, orderBy: { orden: 'asc' } } }
+    });
+    res.json(v);
+  } catch (e) {
+    console.error('[DELETE /variantes/imagenes/:imagenId] ERROR =>', e);
+    res.status(500).json({ error: 'No se pudo eliminar la imagen de la variante' });
+  }
+});
+
 /* ========== DIGITAL rápido ========== */
 // POST /:id/digital
 router.post('/:id/digital', async (req, res) => {
@@ -772,7 +927,7 @@ router.post('/:id/digital', async (req, res) => {
 
     const p = await prisma.producto.update({
       where: { id },
-      data: { digitalId: mid },
+      data: { digital: mid ? { connect: { id: mid } } : { disconnect: true } },
       include: productInclude,
     });
     res.json(mapForList(p));
@@ -810,7 +965,7 @@ router.post('/:id/duplicate', async (req, res) => {
       pesoGramos: src.pesoGramos, altoCm: src.altoCm, anchoCm: src.anchoCm, largoCm: src.largoCm,
       claseEnvio: src.claseEnvio, diasPreparacion: src.diasPreparacion,
       politicaDevolucion: src.politicaDevolucion,
-      digitalId: null,
+      digital: { disconnect: true },
       licenciamiento: src.licenciamiento,
       imagenes: src.imagenes?.length ? {
         create: src.imagenes.map(m => ({

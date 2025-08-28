@@ -99,6 +99,7 @@ router.post('/usuarios/:id/avatar', upload.single('file'), async (req, res) => {
 
 /**
  * POST /api/media/productos/:id/imagenes
+ * Sube imagen → crea Media → inserta ProductoImagen (sin campo url)
  */
 router.post('/productos/:id/imagenes', upload.single('file'), async (req, res) => {
   try {
@@ -126,7 +127,7 @@ router.post('/productos/:id/imagenes', upload.single('file'), async (req, res) =
     const orden = existingCount;
 
     const img = await prisma.productoImagen.create({
-      data: { productoId, mediaId: media.id, url: media.url, isPrincipal, orden },
+      data: { productoId, mediaId: media.id, isPrincipal, orden, alt: null },
     });
 
     res.json({ ok: true, mediaId: media.id, url: media.url, productoImagenId: img.id, isPrincipal, orden });
@@ -138,6 +139,7 @@ router.post('/productos/:id/imagenes', upload.single('file'), async (req, res) =
 
 /**
  * POST /api/media/variantes/:id/imagenes
+ * Sube imagen → crea Media → inserta VarianteImagen (sin campo url)
  */
 router.post('/variantes/:id/imagenes', upload.single('file'), async (req, res) => {
   try {
@@ -167,7 +169,7 @@ router.post('/variantes/:id/imagenes', upload.single('file'), async (req, res) =
     const orden = existingCount;
 
     const vimg = await prisma.varianteImagen.create({
-      data: { varianteId, mediaId: media.id, url: media.url, orden },
+      data: { varianteId, mediaId: media.id, orden, alt: null },
     });
 
     res.json({ ok: true, mediaId: media.id, url: media.url, varianteImagenId: vimg.id, orden });

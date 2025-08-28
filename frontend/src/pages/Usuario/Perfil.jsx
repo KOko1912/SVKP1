@@ -85,8 +85,23 @@ export default function Perfil() {
         method: 'POST',
         body: fd,
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || 'No se pudo subir la foto');
+
+      // Lee JSON o texto según content-type para poder mostrar detail del backend
+      const ct = res.headers.get('content-type') || '';
+      const data = ct.includes('application/json') ? await res.json() : await res.text();
+
+      if (!res.ok) {
+        // Mensaje claro + detail del servidor (útil en Render)
+        const serverMsg =
+          typeof data === 'string'
+            ? data
+            : [data?.error, data?.detail].filter(Boolean).join(' — ') || 'No se pudo subir la foto';
+
+        if (res.status === 413) setMsg('La imagen es demasiado grande. Prueba con una de menor tamaño.');
+        else if (res.status === 415) setMsg('Tipo de archivo no permitido. Usa JPG, PNG, WEBP o GIF.');
+        else setMsg(serverMsg);
+        return;
+      }
 
       // Actualiza estado/localStorage: preferimos dejar un objeto foto {id,url}
       const next = {

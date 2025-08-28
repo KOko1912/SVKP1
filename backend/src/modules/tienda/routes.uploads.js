@@ -7,9 +7,11 @@ const mime = require('mime-types');
 const prisma = require('../../config/db');
 const { StorageProvider } = require('@prisma/client');
 const { uploadToSupabase } = require('../../lib/uploadSupabase');
+const { getSupabase } = require('../../lib/supabase');
 
 const router = express.Router();
 const STORAGE_PROVIDER = (process.env.STORAGE_PROVIDER || 'LOCAL').toUpperCase();
+const BUCKET = process.env.SUPABASE_BUCKET || 'media';
 
 /* =========================
    Helpers
@@ -66,20 +68,21 @@ function validateSlot(req, res, next) {
 }
 
 /* =========================
-   Soporte de almacenamiento local (fallback)
+   Almacenamiento
    ========================= */
 const PUBLIC_DIR = path.resolve(process.cwd(), process.env.PUBLIC_DIR || 'public');
 function ensureDir(p) {
   if (!fs.existsSync(p)) fs.mkdirSync(p, { recursive: true });
 }
 
-// storage para multer según provider
+const ALLOWED = new Set(['image/png','image/jpeg','image/webp','image/avif','image/svg+xml']);
+
 let storage;
 if (STORAGE_PROVIDER === 'SUPABASE') {
-  storage = multer.memoryStorage(); // subiremos buffer a Supabase
+  storage = multer.memoryStorage();
 } else {
   storage = multer.diskStorage({
-    destination(req, file, cb) {
+    destination(req, _file, cb) {
       try {
         const dir = path.join(
           PUBLIC_DIR,
@@ -94,7 +97,7 @@ if (STORAGE_PROVIDER === 'SUPABASE') {
         cb(e);
       }
     },
-    filename(req, file, cb) {
+    filename(_req, file, cb) {
       const ext = mime.extension(file.mimetype) || 'bin';
       const safe = `${Date.now()}_${Math.random().toString(36).slice(2, 10)}.${ext}`;
       cb(null, safe);
@@ -104,23 +107,26 @@ if (STORAGE_PROVIDER === 'SUPABASE') {
 
 const upload = multer({
   storage,
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter(_req, file, cb) {
+    if (ALLOWED.has(file.mimetype)) return cb(null, true);
+    cb(new Error('Formato de imagen no permitido'));
+  }
 });
 
 /* =========================
    POST /api/tienda/upload/:slot
-   slot: portada | logo | banner
-   body: multipart/form-data (field "file")
-   Respuesta: { ok, mediaId, url, slot }
    ========================= */
 router.post('/upload/:slot', loadTienda, validateSlot, upload.single('file'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'Archivo ausente (field: file)' });
 
+    // Referencia anterior para limpieza
+    const oldMedia = req.tienda[req.slot] || null;
+
     let media;
 
     if (STORAGE_PROVIDER === 'SUPABASE') {
-      // SUBIR A SUPABASE
       const { key, url } = await uploadToSupabase({
         buffer: req.file.buffer,
         mimetype: req.file.mimetype,
@@ -143,7 +149,6 @@ router.post('/upload/:slot', loadTienda, validateSlot, upload.single('file'), as
         },
       });
     } else {
-      // SUBIDA LOCAL (solo para desarrollo / fallback)
       const relKey = path
         .join('TiendaUploads', `tienda-${req.tienda.id}`, 'branding', req.slot, req.file.filename)
         .replace(/\\/g, '/');
@@ -163,12 +168,29 @@ router.post('/upload/:slot', loadTienda, validateSlot, upload.single('file'), as
       });
     }
 
-    // Ligar a tienda (portadaId / logoId / bannerId)
+    // Actualizar tienda al nuevo media
     const field = SLOT_FIELDS[req.slot];
     await prisma.tienda.update({
       where: { id: req.tienda.id },
       data: { [field]: media.id },
     });
+
+    // Limpieza del anterior (bucket + DB), sin romper si falla
+    try {
+      if (oldMedia?.id) {
+        if (oldMedia.provider === 'SUPABASE' && oldMedia.key) {
+          const supabase = await getSupabase();
+          const { error } = await supabase.storage.from(BUCKET).remove([oldMedia.key]);
+          if (error) console.warn('[cleanup supabase] remove error', error);
+        } else if (oldMedia.provider === 'LOCAL' && oldMedia.key) {
+          const abs = path.join(PUBLIC_DIR, oldMedia.key);
+          if (fs.existsSync(abs)) fs.unlinkSync(abs);
+        }
+        await prisma.media.delete({ where: { id: oldMedia.id } });
+      }
+    } catch (cleanupErr) {
+      console.warn('[cleanup media] warning:', cleanupErr?.message || cleanupErr);
+    }
 
     res.json({ ok: true, mediaId: media.id, url: media.url, slot: req.slot });
   } catch (e) {

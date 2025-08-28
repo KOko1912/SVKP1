@@ -8,17 +8,24 @@ import {
 } from 'react-icons/fi';
 import './usuario.css';
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+const RAW_API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+const API_URL = RAW_API.replace(/\/$/, '');
 
-// helpers para mostrar la foto igual que en Perfil.jsx
+// Helpers de imagen (mismo criterio que en Perfil.jsx)
 const toPublicUrl = (u) => {
   if (!u) return '';
-  if (/^https?:\/\//i.test(u)) return u;
-  if (u.startsWith('/')) return `${API_BASE.replace(/\/$/, '')}${u}`;
-  return `${API_BASE.replace(/\/$/, '')}/${u}`;
+  if (/^https?:\/\//i.test(u)) return u;       // URL absoluta (p.ej. Supabase)
+  if (u.startsWith('/')) return `${API_URL}${u}`; // Ruta relativa del backend
+  return `${API_URL}/${u}`;
 };
 const withCacheBuster = (url, stamp = Date.now()) =>
   url ? `${url}${url.includes('?') ? '&' : '?'}t=${stamp}` : '';
+const pickUserPhotoUrl = (u) => {
+  if (!u) return '';
+  if (u.foto?.url) return u.foto.url;   // nuevo (Media)
+  if (u.fotoUrl)   return u.fotoUrl;    // legado
+  return '';
+};
 
 export default function ConfiguracionUsuario() {
   const navigate = useNavigate();
@@ -56,12 +63,13 @@ export default function ConfiguracionUsuario() {
   }, [navigate]);
 
   const fotoSrc = useMemo(() => {
-    if (!usuario?.fotoUrl) return '';
+    const raw = pickUserPhotoUrl(usuario);
+    if (!raw) return '';
     return withCacheBuster(
-      toPublicUrl(usuario.fotoUrl),
-      usuario.updatedAt || Date.now()
+      toPublicUrl(raw),
+      usuario?.updatedAt || Date.now()
     );
-  }, [usuario?.fotoUrl, usuario?.updatedAt]);
+  }, [usuario?.foto, usuario?.fotoUrl, usuario?.updatedAt]);
 
   const resetForm = () => {
     setActual('');
@@ -90,7 +98,7 @@ export default function ConfiguracionUsuario() {
 
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/api/usuarios/cambiar-contraseña`, {
+      const res = await fetch(`${API_URL}/api/usuarios/cambiar-contraseña`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: usuario.id, actual, nueva })
@@ -108,7 +116,7 @@ export default function ConfiguracionUsuario() {
     }
   };
 
-  // === Cambio de foto (subida) ===
+  // === Cambio de foto (unificado a /api/media/usuarios/:id/avatar con campo "file") ===
   const abrirSelector = () => fileRef.current?.click();
 
   const onChangeFoto = async (e) => {
@@ -117,11 +125,11 @@ export default function ConfiguracionUsuario() {
 
     setFotoMsg('');
     const formData = new FormData();
-    formData.append('foto', file);
+    formData.append('file', file); // campo esperado por /api/media/usuarios/:id/avatar
 
     setSubiendo(true);
     try {
-      const res = await fetch(`${API_BASE}/api/usuarios/${usuario.id}/foto`, {
+      const res = await fetch(`${API_URL}/api/media/usuarios/${usuario.id}/avatar`, {
         method: 'POST',
         body: formData
       });
@@ -138,10 +146,15 @@ export default function ConfiguracionUsuario() {
         return;
       }
 
-      // refrescar usuario local
-      const updated = data?.usuario ? { ...usuario, ...data.usuario } : usuario;
-      setUsuario(updated);
-      localStorage.setItem('usuario', JSON.stringify(updated));
+      // Actualizar usuario local (guardamos foto {id,url} y cache-busteamos con updatedAt)
+      const next = {
+        ...usuario,
+        fotoId: data.mediaId ?? usuario.fotoId,
+        foto: { ...(usuario.foto || {}), id: data.mediaId, url: data.url },
+        updatedAt: Date.now(),
+      };
+      setUsuario(next);
+      localStorage.setItem('usuario', JSON.stringify(next));
       setFotoMsg('Foto actualizada ✅');
     } catch (err) {
       setFotoMsg(err.message || 'No se pudo subir la imagen');
@@ -167,9 +180,7 @@ export default function ConfiguracionUsuario() {
             <h2>Foto de perfil</h2>
           </div>
 
-          <div style={{
-            display:'flex', alignItems:'center', gap:16, flexWrap:'wrap'
-          }}>
+          <div style={{ display:'flex', alignItems:'center', gap:16, flexWrap:'wrap' }}>
             <div className="avatar-svk" title="Foto de perfil">
               {fotoSrc ? (
                 <img src={fotoSrc} alt="Foto de perfil" />
@@ -291,7 +302,7 @@ export default function ConfiguracionUsuario() {
                 <button
                   type="button"
                   className="btn btn-ghost"
-                  onClick={() => { resetForm(); setMostrarForm(false); }}
+                  onClick={() => { setMsg(''); resetForm(); setMostrarForm(false); }}
                 >
                   Cancelar
                 </button>

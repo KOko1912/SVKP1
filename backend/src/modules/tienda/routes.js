@@ -1,8 +1,5 @@
 // backend/src/modules/tienda/routes.js
 const express = require('express');
-const path = require('path');
-const fs = require('fs');
-const multer = require('multer');
 const crypto = require('crypto');
 const prisma = require('../../config/db');
 
@@ -28,25 +25,6 @@ function slugify(str = '') {
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/(^-|-$)+/g, '') || 'mi-tienda'
   );
-}
-
-function ensureDir(dir) {
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-}
-function removeFileIfExists(absPath) {
-  try {
-    if (absPath && fs.existsSync(absPath)) fs.unlinkSync(absPath);
-  } catch (_) {}
-}
-
-const TIENDA_UPLOADS_DIR = process.env.TIENDA_UPLOADS_DIR || path.join(process.cwd(), 'TiendaUploads');
-const PUBLIC_BASE = '/TiendaUploads';
-
-function brandingDir(tiendaId) {
-  return path.join(TIENDA_UPLOADS_DIR, `tienda-${tiendaId}`, 'branding');
-}
-function publicBrandingUrl(tiendaId, filename) {
-  return `${PUBLIC_BASE}/tienda-${tiendaId}/branding/${filename}`.replace(/\\/g, '/');
 }
 
 // Normaliza una referencia tipo SKU de tienda
@@ -168,6 +146,18 @@ function normalizeHomeLayout(raw) {
 }
 
 /* =========================
+   Presenter
+   ========================= */
+function presentTienda(tienda) {
+  return {
+    ...tienda,
+    portadaUrl: tienda.portada?.url || null,
+    logoUrl: tienda.logo?.url || null,
+    bannerPromoUrl: tienda.banner?.url || null,
+  };
+}
+
+/* =========================
    GET /api/tienda/me
    ========================= */
 router.get('/me', async (req, res) => {
@@ -195,14 +185,7 @@ router.get('/me', async (req, res) => {
       });
     }
 
-    const resp = {
-      ...tienda,
-      portadaUrl: tienda.portada?.url || null,
-      logoUrl: tienda.logo?.url || null,
-      bannerPromoUrl: tienda.banner?.url || null,
-    };
-
-    res.json(resp);
+    res.json(presentTienda(tienda));
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'No se pudo obtener la tienda' });
@@ -211,7 +194,7 @@ router.get('/me', async (req, res) => {
 
 /* =========================
    PUT /api/tienda/me
-   (actualiza datos; las imágenes van por /upload/:tipo)
+   (actualiza datos; las imágenes van por /upload/:slot)
    ========================= */
 router.put('/me', async (req, res) => {
   try {
@@ -289,14 +272,7 @@ router.put('/me', async (req, res) => {
       }
     }
 
-    const resp = {
-      ...updated,
-      portadaUrl: updated.portada?.url || null,
-      logoUrl: updated.logo?.url || null,
-      bannerPromoUrl: updated.banner?.url || null,
-    };
-
-    res.json(resp);
+    res.json(presentTienda(updated));
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'No se pudo actualizar la tienda' });
@@ -317,14 +293,7 @@ router.get('/public/:slug', async (req, res) => {
     });
     if (!tienda) return res.status(404).json({ error: 'Tienda no publicada o no existe' });
 
-    const resp = {
-      ...tienda,
-      portadaUrl: tienda.portada?.url || null,
-      logoUrl: tienda.logo?.url || null,
-      bannerPromoUrl: tienda.banner?.url || null,
-    };
-
-    res.json(resp);
+    res.json(presentTienda(tienda));
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'No se pudo cargar la tienda pública' });
@@ -349,14 +318,7 @@ router.get('/public/by-id/:id', async (req, res) => {
     const tienda = await findPublicTienda({ id });
     if (!tienda) return res.status(404).json({ error: 'Tienda no publicada o no existe' });
 
-    const resp = {
-      ...tienda,
-      portadaUrl: tienda.portada?.url || null,
-      logoUrl: tienda.logo?.url || null,
-      bannerPromoUrl: tienda.banner?.url || null,
-    };
-
-    res.json(resp);
+    res.json(presentTienda(tienda));
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'No se pudo cargar la tienda pública (id)' });
@@ -371,14 +333,7 @@ router.get('/public/uuid/:uuid', async (req, res) => {
     const tienda = await findPublicTienda({ publicUuid: uuid });
     if (!tienda) return res.status(404).json({ error: 'Tienda no publicada o no existe' });
 
-    const resp = {
-      ...tienda,
-      portadaUrl: tienda.portada?.url || null,
-      logoUrl: tienda.logo?.url || null,
-      bannerPromoUrl: tienda.banner?.url || null,
-    };
-
-    res.json(resp);
+    res.json(presentTienda(tienda));
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'No se pudo cargar la tienda pública (uuid)' });
@@ -423,91 +378,6 @@ router.put('/publicar', async (req, res) => {
     if (e.code === 'P2002') return res.status(409).json({ error: 'Slug ocupado, intenta con otro' });
     res.status(500).json({ error: 'No se pudo publicar la tienda' });
   }
-});
-
-/* =========================
-   Upload portada | logo | banner
-   (crea Media y conecta relación)
-   ========================= */
-const storage = multer.diskStorage({
-  destination: async (req, _file, cb) => {
-    try {
-      const userId = getUserId(req);
-      if (!userId) return cb(new Error('No autorizado'));
-      const tienda = await prisma.tienda.findFirst({ where: { usuarioId: userId }, select: { id: true } });
-      if (!tienda) return cb(new Error('Tienda no encontrada'));
-      const dir = brandingDir(tienda.id);
-      ensureDir(dir);
-      req._tiendaId = tienda.id;
-      cb(null, dir);
-    } catch (e) {
-      cb(e);
-    }
-  },
-  filename: (req, file, cb) => {
-    const tipo = (req.params.tipo || '').toLowerCase(); // portada | logo | banner
-    const ext = (path.extname(file.originalname) || '.jpg').toLowerCase();
-    cb(null, `${tipo}${ext}`);
-  },
-});
-const upload = multer({
-  storage,
-  fileFilter: (_req, file, cb) => {
-    const ok = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/gif'];
-    if (!ok.includes(file.mimetype)) return cb(new Error('Usa PNG, JPG, WEBP o GIF'));
-    cb(null, true);
-  },
-  limits: { fileSize: 8 * 1024 * 1024 },
-});
-
-router.post('/upload/:tipo', (req, res) => {
-  upload.single('file')(req, res, async (err) => {
-    try {
-      if (err) return res.status(400).json({ error: err.message || 'Error al subir archivo' });
-      const userId = getUserId(req);
-      if (!userId) return res.status(401).json({ error: 'No autorizado' });
-
-      const tipo = (req.params.tipo || '').toLowerCase();
-      if (!['portada', 'logo', 'banner'].includes(tipo)) {
-        return res.status(400).json({ error: 'Tipo inválido. Usa: portada | logo | banner' });
-      }
-      if (!req.file || !req._tiendaId) {
-        return res.status(400).json({ error: 'Archivo faltante' });
-      }
-
-      // Limpia versiones previas del mismo tipo en el folder físico
-      const dir = brandingDir(req._tiendaId);
-      const just = req.file.filename; // p.ej. portada.jpg
-      const base = `${tipo}.`;
-      fs.readdirSync(dir).forEach((f) => {
-        if (f.startsWith(base) && f !== just) removeFileIfExists(path.join(dir, f));
-      });
-
-      // Crea registro Media y conecta relación
-      const url = publicBrandingUrl(req._tiendaId, req.file.filename);
-
-      const media = await prisma.media.create({
-        data: {
-          provider: 'LOCAL',
-          key: url,    // guardamos la ruta pública relativa
-          url: url,
-          mime: req.file.mimetype || null,
-        },
-      });
-
-      const relMap = { portada: 'portada', logo: 'logo', banner: 'banner' };
-      const relField = relMap[tipo]; // 'portada' | 'logo' | 'banner'
-      await prisma.tienda.update({
-        where: { id: req._tiendaId },
-        data: { [relField]: { connect: { id: media.id } } },
-      });
-
-      res.json({ ok: true, mediaId: media.id, url });
-    } catch (e) {
-      console.error(e);
-      res.status(500).json({ error: 'Error al procesar la subida' });
-    }
-  });
 });
 
 module.exports = router;

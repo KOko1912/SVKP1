@@ -131,6 +131,7 @@ const tiendasRoutes        = require('./modules/tiendas/routes');  // plural (b�
 const productosRoutes      = require('./modules/productos/routes');
 const categoriasRoutes     = require('./modules/categorias/routes');
 const uploadProductoRoutes = require('./modules/productos/upload');
+const tiendaUploadsRoutes  = require('./modules/tienda/routes.uploads');
 
 // 🔐 Alias directo para asegurar que /api/auth/login use el controller correcto
 // (lo definimos ANTES de montar el router genérico de /api/auth)
@@ -146,6 +147,7 @@ app.use('/api/tienda',        tiendaRoutes);
 app.use('/api/tiendas',       tiendasRoutes);    // 🔎 /api/tiendas/search
 app.use('/api/v1/productos',  productosRoutes);
 app.use('/api/v1/categorias', categoriasRoutes);
+app.use('/api/tienda',      tiendaUploadsRoutes);
 
 // Fallback de SUBIDA LOCAL (disco):
 // - En producción queda DESACTIVADO por defecto para no usar el disco efímero de Render.

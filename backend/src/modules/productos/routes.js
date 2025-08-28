@@ -1,7 +1,10 @@
-// src/modules/productos/routes.js
+// backend/src/modules/productos/routes.js
 const express = require('express');
 const { buildAdvancedPatch } = require('./opcionesavanzadas');
 const prisma = require('../../config/db');
+// 👇 agrega:
+const { StorageProvider } = require('@prisma/client');
+const mime = require('mime-types');
 
 const router = express.Router();
 
@@ -47,16 +50,48 @@ async function uniqueSlugForProduct(tiendaId, nombre, excludeId) {
   return slug;
 }
 
-// ⬇️ include `media` en imagenes de producto (no tocamos variantes para evitar romper esquemas sin relación)
+function inferTipo({ variantes, opciones, servicioInfo, bundleIncluye, digitalUrl }) {
+  if (Array.isArray(variantes) && variantes.length) return 'VARIANTE';
+  if (Array.isArray(opciones) && opciones.length) return 'VARIANTE';
+  if (servicioInfo && Object.keys(servicioInfo).length) return 'SERVICIO';
+  if (bundleIncluye && isNonEmptyStr(bundleIncluye)) return 'BUNDLE';
+  if (digitalUrl && isNonEmptyStr(digitalUrl)) return 'DIGITAL';
+  return 'SIMPLE';
+}
+
+function genCombos(opciones = []) {
+  if (!opciones.length) return [];
+  const combos = [];
+  const recurse = (current, index) => {
+    if (index === opciones.length) {
+      combos.push(current);
+      return;
+    }
+    const opc = opciones[index];
+    const valores = Array.isArray(opc.valores) ? opc.valores : [];
+    if (valores.length === 0) {
+      recurse({ ...current, [opc.clave]: '' }, index + 1);
+    } else {
+      for (const v of valores) {
+        recurse({ ...current, [opc.clave]: v }, index + 1);
+      }
+    }
+  };
+  recurse({}, 0);
+  return combos;
+}
+
+// ⬇️ include `media` también en imágenes de variantes
 const productInclude = {
   imagenes: { include: { media: true }, orderBy: { orden: 'asc' } },
   inventario: true,
-  variantes: { include: { inventario: true, imagenes: true } },
+  variantes: { include: { inventario: true, imagenes: { include: { media: true }, orderBy: { orden: 'asc' } } } },
   categorias: { include: { categoria: true } },
   atributos: true,
+  digital: true,
 };
 
-/** Normaliza imágenes: si falta m.url, usa m.media?.url (caso supabase vía /api/media/...) */
+/** Normaliza imágenes: si falta m.url, usa m.media?.url */
 function normImgs(arr = []) {
   return (arr || []).map(m => ({
     ...m,
@@ -83,7 +118,7 @@ function mapForList(p) {
 
   const variantesNorm = (p.variantes || []).map(v => ({
     ...v,
-    imagenes: normImgs(v.imagenes), // aunque variantes hoy no traen media, no estorba
+    imagenes: normImgs(v.imagenes),
   }));
 
   return {
@@ -94,6 +129,42 @@ function mapForList(p) {
     precioDesde,
     precioHasta,
   };
+}
+
+// 👇 Helpers para crear/reusar Media desde una URL y mapear provider
+function guessProviderFromUrl(url = '') {
+  if (url.includes('supabase.co')) return StorageProvider.SUPABASE;
+  if (url.startsWith('/uploads') || url.startsWith('/TiendaUploads')) return StorageProvider.LOCAL;
+  return StorageProvider.SUPABASE; // fallback razonable
+}
+function keyFromUrl(url = '') {
+  const m = url.match(/\/object\/public\/(.+)$/);
+  if (m && m[1]) return m[1];
+  return url.replace(/^https?:\/\/[^/]+\//, '').replace(/^\//, '');
+}
+
+// 🔧 Asegura un Media (para imágenes)
+async function ensureMedia(url) {
+  if (!isNonEmptyStr(url)) return null;
+  const provider = guessProviderFromUrl(url);
+  const key = keyFromUrl(url) || `external://${Date.now()}`;
+  const mimeStr = mime.lookup(url) || null;
+
+  const existing = await prisma.media.findFirst({
+    where: { OR: [{ url }, { provider, key }] },
+    select: { id: true },
+  });
+  if (existing) return existing.id;
+
+  const media = await prisma.media.create({
+    data: { provider, key, url, mime: mimeStr, sizeBytes: null }
+  });
+  return media.id;
+}
+
+// 🔧 Asegura Media para digital (puedes reutilizar ensureMedia si quieres)
+async function ensureDigitalMedia(url) {
+  return ensureMedia(url);
 }
 
 /* ========== LISTADO (público o protegido) ========== */
@@ -262,46 +333,33 @@ router.post('/', async (req, res) => {
     }
     if (isNonEmptyStr(bundleIncluye)) baseAttr.push({ clave: 'bundle.incluye', valor: String(bundleIncluye) });
 
-    const data = {
-      tiendaId, slug, nombre, descripcion, tipo: finalTipo, estado, visible, destacado,
-      sku, gtin, marca, condicion,
-      precio:            isVariante ? null : toNum(precio),
-      precioComparativo: isVariante ? null : toNum(precioComparativo),
-      costo:             isVariante ? null : toNum(costo),
-      descuentoPct:      isVariante ? null : toInt(descuentoPct),
-      pesoGramos, altoCm, anchoCm, largoCm, claseEnvio, diasPreparacion,
-      politicaDevolucion,
-      digitalUrl: isNonEmptyStr(digitalUrl) ? digitalUrl : null,
-      licenciamiento,
-      imagenes: (Array.isArray(imagenes) && imagenes.length) ? {
-        create: imagenes
-          .filter(m => m && m.url)
-          .map((m, i) => ({
-            url: m.url,
-            alt: m.alt || null,
-            isPrincipal: !!m.isPrincipal || i === 0,
-            orden: Number.isFinite(m.orden) ? m.orden : i
-          }))
-      } : undefined,
-      categorias: cats.length ? {
-        create: cats.map(categoriaId => ({ categoria: { connect: { id: categoriaId } } }))
-      } : undefined,
-      atributos: baseAttr.length ? { create: baseAttr } : undefined,
-    };
-
-    if (!isVariante && inventario && typeof inventario.stock !== 'undefined') {
-      data.inventario = {
-        create: {
-          stock: toInt(inventario.stock) ?? 0,
-          umbralAlerta: toInt(inventario.umbralAlerta) ?? 0,
-          permitirBackorder: !!inventario.permitirBackorder,
-        }
-      };
+    // --- construir imágenes con mediaId
+    const inputImgs = Array.isArray(imagenes) ? imagenes.filter(m => m && m.url) : [];
+    let imgsCreate = [];
+    if (inputImgs.length) {
+      const seen = new Set();
+      const dedup = inputImgs.filter(m => { if (seen.has(m.url)) return false; seen.add(m.url); return true; });
+      imgsCreate = await Promise.all(dedup.map(async (m, i) => {
+        const mid = await ensureMedia(m.url);
+        return {
+          mediaId: mid,
+          alt: m.alt || null,
+          isPrincipal: !!m.isPrincipal || i === 0,
+          orden: Number.isFinite(m.orden) ? m.orden : i
+        };
+      }));
     }
 
+    // --- variantes con mediaId en imágenes
+    let variantesCreate = [];
     if (isVariante && finalVariantes.length) {
-      data.variantes = {
-        create: finalVariantes.map((v) => ({
+      variantesCreate = await Promise.all(finalVariantes.map(async (v) => {
+        const vImgs = Array.isArray(v.imagenes) ? v.imagenes.filter(m => m && m.url) : [];
+        const vImgsCreate = await Promise.all(vImgs.map(async (m, i) => {
+          const mid = await ensureMedia(m.url);
+          return { mediaId: mid, alt: m.alt || null, orden: Number.isFinite(m.orden) ? m.orden : i };
+        }));
+        return {
           sku: v.sku || null,
           nombre: v.nombre || null,
           opciones: v.opciones || null,
@@ -315,17 +373,58 @@ router.post('/', async (req, res) => {
               permitirBackorder: !!v.inventario.permitirBackorder,
             }
           } : undefined,
-          imagenes: (Array.isArray(v.imagenes) && v.imagenes.length) ? {
-            create: v.imagenes
-              .filter(m => m && m.url)
-              .map((m, i) => ({ url: m.url, alt: m.alt || null, orden: Number.isFinite(m.orden) ? m.orden : i }))
-          } : undefined,
-        }))
+          imagenes: vImgsCreate.length ? { create: vImgsCreate } : undefined,
+        };
+      }));
+    }
+
+    const data = {
+      tiendaId, slug, nombre, descripcion, tipo: finalTipo, estado, visible, destacado,
+      sku, gtin, marca, condicion,
+      precio:            isVariante ? null : toNum(precio),
+      precioComparativo: isVariante ? null : toNum(precioComparativo),
+      costo:             isVariante ? null : toNum(costo),
+      descuentoPct:      isVariante ? null : toInt(descuentoPct),
+      pesoGramos, altoCm, anchoCm, largoCm, claseEnvio, diasPreparacion,
+      politicaDevolucion,
+      licenciamiento,
+      imagenes: imgsCreate.length ? { create: imgsCreate } : undefined,
+      categorias: cats.length ? {
+        create: cats.map(categoriaId => ({ categoria: { connect: { id: categoriaId } } }))
+      } : undefined,
+      atributos: baseAttr.length ? { create: baseAttr } : undefined,
+      ...(isVariante && variantesCreate.length ? { variantes: { create: variantesCreate } } : {}),
+    };
+
+    if (!isVariante && inventario && typeof inventario.stock !== 'undefined') {
+      data.inventario = {
+        create: {
+          stock: toInt(inventario.stock) ?? 0,
+          umbralAlerta: toInt(inventario.umbralAlerta) ?? 0,
+          permitirBackorder: !!inventario.permitirBackorder,
+        }
       };
     }
 
     const creado = await prisma.producto.create({ data, include: productInclude });
-    res.json(mapForList(creado));
+
+    // 👇 CREAR producto: si viene digitalUrl, conviértelo a digitalId después
+    let productoFinal = creado;
+    if (isNonEmptyStr(digitalUrl)) {
+      try {
+        const mid = await ensureDigitalMedia(digitalUrl);
+        if (mid) {
+          productoFinal = await prisma.producto.update({
+            where: { id: creado.id },
+            data: { digitalId: mid },
+            include: productInclude,
+          });
+        }
+      } catch (e) {
+        console.warn('[crear producto] No se pudo registrar digitalUrl → digitalId:', e?.message || e);
+      }
+    }
+    res.json(mapForList(productoFinal));
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'No se pudo crear el producto', code: e?.code || null, message: e?.message || null, meta: e?.meta || null });
@@ -347,7 +446,17 @@ router.patch('/:id', async (req, res) => {
 
     const isVariante      = p.tipo === 'VARIANTE';
     const allowInventory  = p.tipo === 'SIMPLE';
-    const allowDigitalUrl = true;
+
+    // 👇 EDITAR producto: cambia digitalUrl → digitalId
+    let digitalIdPatch = undefined;
+    if (digitalUrl !== undefined) {
+      if (isNonEmptyStr(digitalUrl)) {
+        try { digitalIdPatch = await ensureDigitalMedia(digitalUrl); }
+        catch (e) { console.warn('[patch producto] ensureDigitalMedia falló:', e?.message || e); }
+      } else {
+        digitalIdPatch = null; // limpiar enlace digital
+      }
+    }
 
     const data = {
       ...(nombre        !== undefined ? { nombre } : {}),
@@ -359,7 +468,7 @@ router.patch('/:id', async (req, res) => {
       ...(!isVariante && precioComparativo  !== undefined ? { precioComparativo: toNum(precioComparativo) } : {}),
       ...(!isVariante && costo              !== undefined ? { costo: toNum(costo) } : {}),
       ...(!isVariante && descuentoPct       !== undefined ? { descuentoPct: toInt(descuentoPct) } : {}),
-      ...(allowDigitalUrl && digitalUrl      !== undefined ? { digitalUrl: digitalUrl || null } : {}),
+      ...(digitalIdPatch !== undefined ? { digitalId: digitalIdPatch } : {}),
       updatedAt: new Date(),
     };
 
@@ -376,9 +485,7 @@ router.patch('/:id', async (req, res) => {
     if (Array.isArray(imagenes)) {
       let imgs = imagenes.filter(m => m && m.url);
       const seen = new Set();
-      imgs = imgs.filter(m => {
-        if (seen.has(m.url)) return false; seen.add(m.url); return true;
-      });
+      imgs = imgs.filter(m => { if (seen.has(m.url)) return false; seen.add(m.url); return true; });
       if (imgs.length) {
         let found = false;
         imgs = imgs.map((m, i) => {
@@ -389,14 +496,18 @@ router.patch('/:id', async (req, res) => {
       }
       tx.push(prisma.productoImagen.deleteMany({ where: { productoId: id } }));
       if (imgs.length) {
-        tx.push(prisma.productoImagen.createMany({
-          data: imgs.map((m, i) => ({
+        const rows = await Promise.all(imgs.map(async (m, i) => {
+          const mid = await ensureMedia(m.url);
+          return {
             productoId: id,
-            url: m.url,
+            mediaId: mid,
             alt: m.alt || null,
             isPrincipal: !!m.isPrincipal,
             orden: Number.isFinite(m.orden) ? m.orden : i
-          })),
+          };
+        }));
+        tx.push(prisma.productoImagen.createMany({
+          data: rows,
           skipDuplicates: true
         }));
       }
@@ -531,6 +642,12 @@ router.post('/:id/variantes', async (req, res) => {
 
     const { sku, nombre, opciones, precio, precioComparativo, costo, inventario, imagenes = [] } = req.body;
 
+    const vImgsInput = Array.isArray(imagenes) ? imagenes.filter(m => m && m.url) : [];
+    const vImgsCreate = await Promise.all(vImgsInput.map(async (m, i) => {
+      const mid = await ensureMedia(m.url);
+      return { mediaId: mid, alt: m.alt || null, orden: Number.isFinite(m.orden) ? m.orden : i };
+    }));
+
     const created = await prisma.variante.create({
       data: {
         productoId,
@@ -547,13 +664,9 @@ router.post('/:id/variantes', async (req, res) => {
             permitirBackorder: !!inventario.permitirBackorder,
           }
         } : undefined,
-        imagenes: (Array.isArray(imagenes) && imagenes.length) ? {
-          create: imagenes
-            .filter(m => m && m.url)
-            .map((m, i) => ({ url: m.url, alt: m.alt || null, orden: Number.isFinite(m.orden) ? m.orden : i }))
-        } : undefined,
+        imagenes: vImgsCreate.length ? { create: vImgsCreate } : undefined,
       },
-      include: { inventario: true, imagenes: true }
+      include: { inventario: true, imagenes: { include: { media: true }, orderBy: { orden: 'asc' } } }
     });
 
     res.status(201).json(created);
@@ -573,10 +686,14 @@ router.patch('/variantes/:varianteId', async (req, res) => {
     if (Array.isArray(imagenes)) {
       tx.push(prisma.varianteImagen.deleteMany({ where: { varianteId } }));
       if (imagenes.length) {
+        const rows = await Promise.all(imagenes
+          .filter(m => m && m.url)
+          .map(async (m, i) => {
+            const mid = await ensureMedia(m.url);
+            return { varianteId, mediaId: mid, alt: m.alt || null, orden: Number.isFinite(m.orden) ? m.orden : i };
+          }));
         tx.push(prisma.varianteImagen.createMany({
-          data: imagenes
-            .filter(m => m && m.url)
-            .map((m, i) => ({ varianteId, url: m.url, alt: m.alt || null, orden: Number.isFinite(m.orden) ? m.orden : i })),
+          data: rows,
           skipDuplicates: true
         }));
       }
@@ -615,7 +732,7 @@ router.patch('/variantes/:varianteId', async (req, res) => {
         ...(precioComparativo !== undefined ? { precioComparativo: toNum(precioComparativo) } : {}),
         ...(costo       !== undefined ? { costo: toNum(costo) } : {}),
       },
-      include: { inventario: true, imagenes: true }
+      include: { inventario: true, imagenes: { include: { media: true }, orderBy: { orden: 'asc' } } }
     }));
 
     const [updated] = await prisma.$transaction(tx, { isolationLevel: 'ReadCommitted' });
@@ -638,13 +755,24 @@ router.delete('/variantes/:varianteId', async (req, res) => {
 });
 
 /* ========== DIGITAL rápido ========== */
+// POST /:id/digital
 router.post('/:id/digital', async (req, res) => {
   try {
     const id = Number(req.params.id);
-    const { url } = req.body;
+    const { url, mediaId } = req.body || {};
+
+    let mid = null;
+    if (Number.isFinite(Number(mediaId))) {
+      const exists = await prisma.media.findUnique({ where: { id: Number(mediaId) }, select: { id: true } });
+      if (!exists) return res.status(400).json({ error: 'mediaId no existe' });
+      mid = exists.id;
+    } else if (isNonEmptyStr(url)) {
+      mid = await ensureDigitalMedia(url);
+    }
+
     const p = await prisma.producto.update({
       where: { id },
-      data: { digitalUrl: url || null },
+      data: { digitalId: mid },
       include: productInclude,
     });
     res.json(mapForList(p));
@@ -682,11 +810,12 @@ router.post('/:id/duplicate', async (req, res) => {
       pesoGramos: src.pesoGramos, altoCm: src.altoCm, anchoCm: src.anchoCm, largoCm: src.largoCm,
       claseEnvio: src.claseEnvio, diasPreparacion: src.diasPreparacion,
       politicaDevolucion: src.politicaDevolucion,
-      digitalUrl: null,
+      digitalId: null,
       licenciamiento: src.licenciamiento,
       imagenes: src.imagenes?.length ? {
         create: src.imagenes.map(m => ({
-          url: m.url, alt: m.alt, isPrincipal: m.isPrincipal, orden: m.orden
+          mediaId: m.mediaId ?? m.media?.id,
+          alt: m.alt, isPrincipal: m.isPrincipal, orden: m.orden
         }))
       } : undefined,
       categorias: src.categorias?.length ? {
@@ -705,7 +834,7 @@ router.post('/:id/duplicate', async (req, res) => {
           precioComparativo: v.precioComparativo,
           costo: null,
           inventario: { create: { stock: 0, umbralAlerta: v.inventario?.umbralAlerta ?? 0, permitirBackorder: v.inventario?.permitirBackorder ?? false } },
-          imagenes: v.imagenes?.length ? { create: v.imagenes.map(m => ({ url: m.url, alt: m.alt, orden: m.orden })) } : undefined,
+          imagenes: v.imagenes?.length ? { create: v.imagenes.map(m => ({ mediaId: m.mediaId ?? m.media?.id, alt: m.alt, orden: m.orden })) } : undefined,
         }))
       } : undefined,
     };

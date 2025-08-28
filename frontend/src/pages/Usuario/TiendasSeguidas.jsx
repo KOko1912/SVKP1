@@ -1,4 +1,4 @@
-// E:\SVKP1\frontend\src\pages\Usuario\TiendasSeguidas.jsx
+// frontend/src/pages/Usuario/TiendasSeguidas.jsx
 import { useEffect, useRef, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import NavBarUsuario from './NavBarUsuario';
@@ -11,15 +11,58 @@ const RAW_API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const API = RAW_API.replace(/\/$/, '');
 const FOLLOW_KEY = 'stores_following';
 
+// === Helpers de URL/Media ===
 const toPublicUrl = (u) => {
   if (!u) return '';
-  if (/^https?:\/\//i.test(u)) return u;
-  if (u.startsWith('/')) return `${API}${u}`;
-  return `${API}/${u}`;
+  if (/^https?:\/\//i.test(u)) return u;        // URL absoluta (Supabase/Cloud)
+  if (u.startsWith('/')) return `${API}${u}`;   // ruta del backend
+  return `${API}/${u}`;                         // ruta relativa simple
 };
+const withCacheBuster = (url, stamp = Date.now()) =>
+  url ? `${url}${url.includes('?') ? '&' : '?'}t=${stamp}` : '';
+
+/** Intenta obtener el logo desde múltiples formatos: nuevo (Media) o legado */
+const pickStoreLogo = (t) => {
+  // nuevo: objetos Media
+  if (t?.logo?.url) return t.logo.url;
+  if (t?.branding?.logo?.url) return t.branding.logo.url;
+
+  // a veces llega {logo: 'url'}
+  if (typeof t?.logo === 'string') return t.logo;
+
+  // legado
+  if (t?.logoUrl) return t.logoUrl;
+
+  return '';
+};
+
+/** Intenta obtener portada/cabecera desde múltiples claves: nuevo o legado */
+const pickStoreCover = (t) => {
+  // nuevo
+  if (t?.portada?.url) return t.portada.url;
+  if (t?.banner?.url) return t.banner.url;
+  if (t?.branding?.portada?.url) return t.branding.portada.url;
+  if (t?.branding?.banner?.url) return t.branding.banner.url;
+
+  // legado
+  if (t?.portadaUrl) return t.portadaUrl;
+  if (t?.banner) return t.banner;
+
+  return '';
+};
+
 const storeKey = (t) => t?.slug || t?.publicUuid || String(t?.id || '');
-const internalPathForStore = (t) => (t?.slug ? `/t/${encodeURIComponent(t.slug)}` : '');
-const externalUrlForStore  = (t) => t?.urlPublica || t?.urlPrincipal || t?.web || t?.url || '';
+
+// Link interno preferente por slug; si no hay, opcional por publicUuid
+const internalPathForStore = (t) => {
+  if (t?.slug) return `/t/${encodeURIComponent(t.slug)}`;
+  if (t?.publicUuid) return `/s/${encodeURIComponent(t.publicUuid)}`; // por si tienes ruta pública por UUID
+  return '';
+};
+
+// Si tu backend ya expone una URL pública calculada:
+const externalUrlForStore  = (t) =>
+  t?.urlPublica || t?.urlPrincipal || t?.web || t?.url || '';
 
 export default function TiendasSeguidas() {
   const navigate = useNavigate();
@@ -90,11 +133,13 @@ export default function TiendasSeguidas() {
     if (persistTimer.current) clearTimeout(persistTimer.current);
     persistTimer.current = setTimeout(async () => {
       try {
+        // Preferente
         let r = await fetch(`${API}/api/usuarios/${usuario.id}/suscripciones`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ suscripciones: arr })
         });
+        // Fallback por si no existe el endpoint anterior
         if (!r.ok) {
           r = await fetch(`${API}/api/usuarios/${usuario.id}`, {
             method: 'PATCH',
@@ -191,7 +236,7 @@ export default function TiendasSeguidas() {
       case 'city':
         list = [...list].sort((a, b) => (a?.ciudad || '').localeCompare(b?.ciudad || ''));
         break;
-      default: // relevance: ya viene del backend por búsqueda, mantenemos orden
+      default: // relevance
         break;
     }
     return list;
@@ -286,8 +331,12 @@ export default function TiendasSeguidas() {
               ) : (
                 <section className="shop-grid">
                   {visibleStores.map((t, i) => {
-                    const logo = toPublicUrl(t?.logoUrl || t?.logo);
-                    const hdr = toPublicUrl(t?.portadaUrl || t?.banner);
+                    const logoRaw = pickStoreLogo(t);
+                    const coverRaw = pickStoreCover(t);
+                    const stamp = t?.updatedAt || Date.now();
+
+                    const logo = withCacheBuster(toPublicUrl(logoRaw), stamp);
+                    const hdr  = withCacheBuster(toPublicUrl(coverRaw), stamp);
                     const external = externalUrlForStore(t);
                     const followed = isFollowing(t);
 
@@ -342,7 +391,7 @@ export default function TiendasSeguidas() {
                 </section>
               )}
 
-              {/* Paginación simple (si tu backend pagina) */}
+              {/* Paginación simple */}
               <div className="pager">
                 <button
                   className="btn btn-ghost"

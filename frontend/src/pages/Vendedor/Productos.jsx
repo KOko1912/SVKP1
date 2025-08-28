@@ -9,16 +9,23 @@ import {
 } from 'react-icons/fi';
 import './Productos.css';
 
-const API   = import.meta.env.VITE_API_URL   || 'http://localhost:5000';
+const API   = import.meta.env.VITE_API_URL    || 'http://localhost:5000';
 const FILES = import.meta.env.VITE_FILES_BASE || API;
+
+// 🔗 Normaliza cualquier URL (absoluta de Supabase o relativa local)
+const toPublicSrc = (u) => {
+  const v = typeof u === 'string' ? u : (u?.url || '');
+  if (!v) return '';
+  return /^https?:\/\//i.test(v) ? v : `${FILES}${v.startsWith('/') ? '' : '/'}${v}`;
+};
 
 /* -------------------- Tipos de producto -------------------- */
 const TIPOS = [
-  { value: 'SIMPLE',   label: 'Simple',     desc: 'Un solo SKU con precio y stock únicos.' },
+  { value: 'SIMPLE',   label: 'Simple',   desc: 'Un solo SKU con precio y stock únicos.' },
   { value: 'VARIANTE', label: 'Con variantes', desc: 'Varias combinaciones (talla, color…).'},
-  { value: 'DIGITAL',  label: 'Digital',    desc: 'Archivo descargable (no requiere stock).'},
-  { value: 'SERVICIO', label: 'Servicio',   desc: 'Reservas/citas; precio por sesión.' },
-  { value: 'BUNDLE',   label: 'Bundle',     desc: 'Paquete de varios productos (combos).'},
+  { value: 'DIGITAL',  label: 'Digital',  desc: 'Archivo descargable (no requiere stock).'},
+  { value: 'SERVICIO', label: 'Servicio', desc: 'Reservas/citas; precio por sesión.' },
+  { value: 'BUNDLE',   label: 'Bundle',   desc: 'Paquete de varios productos (combos).'},
 ];
 
 /* -------------------- helpers de tema -------------------- */
@@ -54,7 +61,7 @@ const ImageCarousel = ({ images, productName }) => {
     <div className="producto-media-carousel" aria-roledescription="carrusel" aria-label={`Imágenes de ${productName}`}>
       <button className="carousel-btn prev" onClick={prevImage} aria-label="Imagen anterior"><FiChevronLeft /></button>
       <img
-        src={`${FILES}${images[currentIndex].url}`}
+        src={toPublicSrc(images[currentIndex])}
         alt={`${productName} – imagen ${currentIndex + 1} de ${images.length}`}
         className="carousel-image"
         loading="lazy"
@@ -255,7 +262,8 @@ export default function Productos() {
       altoCm: asNum(p?.altoCm), anchoCm: asNum(p?.anchoCm), largoCm: asNum(p?.largoCm),
       claseEnvio: p?.claseEnvio || '', diasPreparacion: asNum(p?.diasPreparacion),
       politicaDevolucion: p?.politicaDevolucion || '',
-      digitalUrl: p?.digitalUrl || '',
+      // ⬇️ si el backend devuelve relación `digital`, úsala; si no, fallback a digitalUrl
+      digitalUrl: p?.digital?.url || p?.digitalUrl || '',
       licOriginal: Boolean(p?.licenciamiento?.original),
       licNotas: typeof p?.licenciamiento?.notas === 'string' ? p.licenciamiento.notas : '',
     };
@@ -508,6 +516,7 @@ export default function Productos() {
       claseEnvio: form.claseEnvio || null,
       diasPreparacion: form.diasPreparacion === '' ? null : Number(form.diasPreparacion),
       politicaDevolucion: form.politicaDevolucion || null,
+      // ⬇️ seguimos enviando digitalUrl; el backend lo mapea a digitalId
       digitalUrl: form.tipo === 'DIGITAL' ? (form.digitalUrl || null) : null,
       licenciamiento: buildLicenciamiento(),
       // taxonomía e imágenes
@@ -981,7 +990,7 @@ export default function Productos() {
                     <ul className="imgs-list">
                       {form.imagenes.map((img, idx) => (
                         <li key={idx}>
-                          <img src={`${FILES}${img.url}`} alt={img.alt || `Imagen ${idx + 1}`} loading="lazy" decoding="async" />
+                          <img src={toPublicSrc(img)} alt={img.alt || `Imagen ${idx + 1}`} loading="lazy" decoding="async" />
                           <div className="img-actions">
                             <div style={{display:'flex', gap:6}}>
                               <button type="button" className="icon" onClick={() => moveImagen(idx, -1)} title="Mover a la izquierda"><FiChevronLeft /></button>
@@ -1210,7 +1219,7 @@ export default function Productos() {
                     <ul className="imgs-list">
                       {vForm.imagenes.map((img, idx) => (
                         <li key={idx}>
-                          <img src={`${FILES}${img.url}`} alt={img.alt || `var-${idx}`} loading="lazy" decoding="async" />
+                          <img src={toPublicSrc(img)} alt={img.alt || `var-${idx}`} loading="lazy" decoding="async" />
                           <div className="img-actions">
                             <div style={{display:'flex', gap:6}}>
                               <button type="button" className="icon" onClick={() => moveVImagen(idx, -1)} title="Mover a la izquierda"><FiChevronLeft /></button>

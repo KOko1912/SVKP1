@@ -31,19 +31,19 @@ const PALETA_NEON = [
 /* ===================== Utils ===================== */
 const grad = (from, to) => `linear-gradient(135deg, ${from}, ${to})`;
 const withT = (url, t) => (url ? `${url}${url.includes('?') ? '&' : '?'}t=${t || 0}` : '');
-const toWebPath = (u) => {
+
+const isAbs = (u) => /^https?:\/\//i.test(String(u || ''));
+
+// PUBLIC: para mostrar imágenes en el navegador.
+// - Absolutas (Supabase): se dejan intactas.
+// - Relativas (backend local): se antepone API.
+const toPublicUrl = (u) => {
   if (!u) return '';
-  if (/^https?:\/\//i.test(u)) { try { return new URL(u).pathname; } catch { return ''; } }
-  const clean = String(u).replace(/\\/g, '/');
-  const lower = clean.toLowerCase();
-  const marks = ['/tiendauploads/', 'tiendauploads/', '/uploads/', 'uploads/'];
-  for (const m of marks) {
-    const i = lower.indexOf(m);
-    if (i !== -1) { const slice = clean.slice(i); return slice.startsWith('/') ? slice : `/${slice}`; }
-  }
-  return clean.startsWith('/') ? clean : `/${clean}`;
+  const s = String(u).replace(/\\/g, '/');
+  if (isAbs(s)) return s;
+  const p = s.startsWith('/') ? s : `/${s}`;
+  return `${API}${encodeURI(p)}`;
 };
-const toPublicUrl = (u) => { const p = toWebPath(u); return p ? `${API}${encodeURI(p)}` : ''; };
 
 const hexToRgb = (hex) => {
   const m = hex?.match(/^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i);
@@ -65,11 +65,13 @@ const extractColors = (gradientString) => {
   const m = gradientString?.match(/#([0-9a-f]{6})/gi);
   return { from: m?.[0] || '#6d28d9', to: m?.[1] || '#c026d3' };
 };
+
+// Imagen de portada + tinte
 const composeHeaderBg = (portadaUrl, from, to, ver) => {
-  const layers = [`linear-gradient(135deg, ${from}, ${to})`];
-  if (portadaUrl) layers.push(`url("${withT(toPublicUrl(portadaUrl), ver)}")`);
-  return layers.join(', ');
+  if (!portadaUrl) return `linear-gradient(135deg, ${from}, ${to})`;
+  return `linear-gradient(135deg, ${from}cc, ${to}cc), url("${withT(toPublicUrl(portadaUrl), ver)}")`;
 };
+
 const normalizeUrl = (url) => {
   if (!url) return '';
   const u = String(url).trim();
@@ -78,8 +80,6 @@ const normalizeUrl = (url) => {
 };
 
 /* ===================== Componentes internos (reutilizables) ===================== */
-
-// PATCH: Card evita <h3><h3>…</h3></h3> si title ya es un nodo
 function Card({ as: As = 'section', children, title, subtitle, actions, footer, id }) {
   const TitleWrap = typeof title === 'string' ? 'h3' : 'div';
   return (
@@ -101,9 +101,7 @@ function Card({ as: As = 'section', children, title, subtitle, actions, footer, 
   );
 }
 
-function FormField({
-  label, hint, error, required, children, id, inline, htmlFor, a11yDescription
-}) {
+function FormField({ label, hint, error, required, children, id, inline, htmlFor, a11yDescription }) {
   return (
     <div className={`form-group ${inline ? 'form-group-inline' : ''}`}>
       {label && (
@@ -118,9 +116,7 @@ function FormField({
   );
 }
 
-function ImageUploader({
-  label, value, onUpload, accept = 'image/*', ratio, busy, previewHeight = 180, id
-}) {
+function ImageUploader({ label, value, onUpload, accept = 'image/*', ratio, busy, previewHeight = 180, id }) {
   const inputRef = useRef(null);
   return (
     <div className="image-upload" aria-busy={busy ? 'true' : 'false'}>
@@ -163,7 +159,6 @@ function Toast({ open, message }) {
   );
 }
 
-// PATCH: SectionTitle ya no usa <h3>, es un span accesible
 function SectionTitle({ icon: Icon, children, level = 3 }) {
   return (
     <span className="section-title" role="heading" aria-level={level}>
@@ -213,7 +208,6 @@ export default function VendedorPerfil() {
     return () => document.body.classList.remove('vendor-theme');
   }, []);
 
-  // Color mode sync
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', colorMode);
     localStorage.setItem('vk-color-mode', colorMode);
@@ -228,9 +222,11 @@ export default function VendedorPerfil() {
         if (r.ok && d) {
           const normal = {
             ...d,
-            portadaUrl: toWebPath(d.portadaUrl),
-            logoUrl: toWebPath(d.logoUrl),
-            bannerPromoUrl: toWebPath(d.bannerPromoUrl),
+            portadaUrl: d.portadaUrl || '',
+            logoUrl: d.logoUrl || '',
+            bannerPromoUrl: d.bannerPromoUrl || '',
+            categoria: d.categoria || '',
+            envioCobertura: d.envioCobertura || '',
             subcategorias: d.subcategorias || [],
             metodosPago: d.metodosPago || [],
             seoKeywords: d.seoKeywords || [],
@@ -246,7 +242,7 @@ export default function VendedorPerfil() {
         console.error(e);
       } finally { setCargando(false); }
     })();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Propaga tema a CSS
@@ -300,9 +296,10 @@ export default function VendedorPerfil() {
         headers: { 'Content-Type': 'application/json', ...headers },
         body: JSON.stringify({
           ...tienda,
-          portadaUrl: toWebPath(tienda.portadaUrl),
-          logoUrl: toWebPath(tienda.logoUrl),
-          bannerPromoUrl: toWebPath(tienda.bannerPromoUrl),
+          // Enviamos las URLs tal cual (Supabase absoluto o ruta local)
+          portadaUrl: tienda.portadaUrl || '',
+          logoUrl: tienda.logoUrl || '',
+          bannerPromoUrl: tienda.bannerPromoUrl || '',
         }),
       });
       if (!r.ok) {
@@ -324,7 +321,9 @@ export default function VendedorPerfil() {
       const r = await fetch(`${API}/api/tienda/upload/${tipo}`, { method: 'POST', headers, body: fd });
       const d = await r.json();
       if (!r.ok) throw new Error(d?.error || 'Error al subir imagen');
-      const webPath = toWebPath(d.url);
+
+      // Usamos exactamente la URL que devuelve el backend (Supabase o local)
+      const webPath = d.url || '';
       const campo = tipo === 'portada' ? 'portadaUrl' : (tipo === 'logo' ? 'logoUrl' : 'bannerPromoUrl');
       setTienda(t => ({ ...t, [campo]: webPath }));
       setImgV(v => ({ ...v, [tipo]: Date.now() }));
@@ -369,7 +368,7 @@ export default function VendedorPerfil() {
     );
   }
 
-  const imageUrl = (p, v) => p ? withT(toPublicUrl(p), v) : '';
+  const imageUrl = (p, v) => (p ? withT(toPublicUrl(p), v) : '');
 
   return (
     <div className="vendedor-container">
@@ -378,7 +377,13 @@ export default function VendedorPerfil() {
       {/* Header */}
       <div
         className="tienda-header"
-        style={{ backgroundImage: headerBg, color: 'var(--brand-contrast)' }}
+        style={{
+          backgroundImage: headerBg,
+          backgroundSize: tienda.portadaUrl ? 'cover, cover' : 'cover',
+          backgroundPosition: 'center',
+          backgroundRepeat: 'no-repeat',
+          color: 'var(--brand-contrast)',
+        }}
       >
         <div className="tienda-header-content">
           <div className="tienda-header-info">
@@ -434,7 +439,6 @@ export default function VendedorPerfil() {
 
       {/* Panel principal */}
       <div className="config-panel">
-
         {/* Sidebar / Drawer */}
         <aside
           className={`sidebar ${drawerOpen ? 'open' : ''}`}
@@ -543,7 +547,7 @@ export default function VendedorPerfil() {
                   <FormField label="Categoría Principal" required error={errors.categoria}>
                     <select
                       className="form-select"
-                      value={tienda.categoria}
+                      value={tienda.categoria ?? ''}  // ← evita null
                       aria-invalid={!!errors.categoria}
                       onChange={e => { setTienda({ ...tienda, categoria: e.target.value }); if (errors.categoria) validate(); }}
                     >
@@ -731,7 +735,7 @@ export default function VendedorPerfil() {
                   <FormField label="Cobertura de Envíos">
                     <select
                       className="form-select"
-                      value={tienda.envioCobertura}
+                      value={tienda.envioCobertura ?? ''}
                       onChange={e => setTienda({ ...tienda, envioCobertura: e.target.value })}
                     >
                       <option value="">Selecciona una opción</option>

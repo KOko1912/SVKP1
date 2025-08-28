@@ -1,21 +1,31 @@
 // frontend/src/pages/Usuario/Perfil.jsx
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import NavBarUsuario from './NavBarUsuario';
 import {
   FiUser, FiPhone, FiShoppingBag, FiLogOut, FiHeart,
-  FiMapPin, FiSettings, FiChevronRight, FiBookmark
+  FiMapPin, FiSettings, FiChevronRight, FiBookmark, FiCamera
 } from 'react-icons/fi';
 import './usuario.css';
 
 const RAW_API = import.meta.env.VITE_API_URL || '';
 const API_URL = RAW_API.replace(/\/$/, '');
 
+// Normaliza una URL: si viene absoluta (Supabase) se devuelve tal cual.
+// Si viene relativa (ruta local del backend) la anteponemos con API_URL.
 const toPublicUrl = (u) => {
   if (!u) return '';
   if (/^https?:\/\//i.test(u)) return u;
   if (u.startsWith('/')) return `${API_URL}${u}`;
   return `${API_URL}/${u}`;
+};
+
+// Escoge la mejor URL de foto: nuevo esquema (usuario.foto.url) o el viejo (usuario.fotoUrl)
+const pickUserPhotoUrl = (u) => {
+  if (!u) return '';
+  if (u.foto?.url) return u.foto.url;   // 👈 nuevo (Media)
+  if (u.fotoUrl)   return u.fotoUrl;    // 👈 legado
+  return '';
 };
 
 const withCacheBuster = (url, stamp = Date.now()) =>
@@ -25,12 +35,17 @@ export default function Perfil() {
   const [usuario, setUsuario] = useState(null);
   const [msg, setMsg] = useState('');
   const navigate = useNavigate();
+  const fileInputRef = useRef(null);
 
+  // URL final para la imagen (soporta Supabase o rutas locales antiguas)
   const fotoSrc = useMemo(() => {
-    if (!usuario?.fotoUrl) return '';
-    return withCacheBuster(toPublicUrl(usuario.fotoUrl), usuario.updatedAt || Date.now());
-  }, [usuario?.fotoUrl, usuario?.updatedAt]);
+    const raw = pickUserPhotoUrl(usuario);
+    if (!raw) return '';
+    const publicUrl = toPublicUrl(raw);
+    return withCacheBuster(publicUrl, usuario?.updatedAt || Date.now());
+  }, [usuario?.foto, usuario?.fotoUrl, usuario?.updatedAt]);
 
+  // Cargar usuario y refrescar datos desde la API (incluye foto si el backend la expone)
   useEffect(() => {
     const raw = localStorage.getItem('usuario');
     if (!raw) return navigate('/login');
@@ -39,6 +54,7 @@ export default function Perfil() {
       const u = JSON.parse(raw);
       setUsuario(u);
 
+      // Refresca desde el backend (ideal si el endpoint incluye { foto: true })
       fetch(`${API_URL}/api/usuarios/${u.id}`)
         .then(async (r) => {
           if (!r.ok) return;
@@ -55,6 +71,40 @@ export default function Perfil() {
       navigate('/login');
     }
   }, [navigate]);
+
+  // Subir avatar a Supabase vía backend
+  const onAvatarSelected = async (e) => {
+    try {
+      const file = e.target.files?.[0];
+      if (!file || !usuario?.id) return;
+
+      const fd = new FormData();
+      fd.append('file', file);
+
+      const res = await fetch(`${API_URL}/api/media/usuarios/${usuario.id}/avatar`, {
+        method: 'POST',
+        body: fd,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'No se pudo subir la foto');
+
+      // Actualiza estado/localStorage: preferimos dejar un objeto foto {id,url}
+      const next = {
+        ...usuario,
+        fotoId: data.mediaId ?? usuario.fotoId,
+        foto: { ...(usuario.foto || {}), id: data.mediaId, url: data.url },
+        updatedAt: Date.now(),
+      };
+      setUsuario(next);
+      localStorage.setItem('usuario', JSON.stringify(next));
+      setMsg('Foto actualizada correctamente.');
+    } catch (err) {
+      setMsg(err.message || 'Error al subir la foto');
+    } finally {
+      // Limpia input para permitir re-seleccionar el mismo archivo si hace falta
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
 
   const solicitarVendedor = async () => {
     if (!usuario?.id) return;
@@ -123,7 +173,7 @@ export default function Perfil() {
         {/* Header */}
         <header className="card-svk header-svk">
           <div className="header-left">
-            <div className="avatar-svk">
+            <div className="avatar-svk" style={{ position: 'relative' }}>
               {fotoSrc ? (
                 <img src={fotoSrc} alt="Foto de perfil" />
               ) : (
@@ -131,6 +181,24 @@ export default function Perfil() {
                   <FiUser size={36} />
                 </div>
               )}
+
+              {/* Botón de cambiar foto */}
+              <label
+                className="btn btn-ghost"
+                style={{
+                  position: 'absolute', bottom: -8, right: -8,
+                  fontSize: '0.9rem', display: 'inline-flex', alignItems: 'center', gap: 6
+                }}
+              >
+                <FiCamera /> Cambiar
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={onAvatarSelected}
+                  style={{ display: 'none' }}
+                />
+              </label>
             </div>
 
             <div className="user-head">
@@ -156,7 +224,7 @@ export default function Perfil() {
           </div>
         </header>
 
-        {/* Quick stats (ahora 2 items, auto-fit) */}
+        {/* Quick stats */}
         <section className="card-svk" style={{ marginTop: '16px' }}>
           <div className="stat-grid" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(220px,1fr))' }}>
             <div className="stat-card">

@@ -138,8 +138,11 @@ export default function ConfiguracionUsuario() {
       const data = ct.includes('application/json') ? await res.json() : await res.text();
 
       if (!res.ok) {
+        // 👇 Mostrar también el detail que manda el backend (clave para Render)
         const serverMsg =
-          typeof data === 'string' ? data : (data?.error || 'Error al subir imagen');
+          typeof data === 'string'
+            ? data
+            : [data?.error, data?.detail].filter(Boolean).join(' — ') || 'Error al subir imagen';
         if (res.status === 413) setFotoMsg('La imagen es demasiado grande. Prueba con una menor.');
         else if (res.status === 415) setFotoMsg('Tipo no permitido. Usa JPG, PNG, WEBP o GIF.');
         else setFotoMsg(serverMsg);

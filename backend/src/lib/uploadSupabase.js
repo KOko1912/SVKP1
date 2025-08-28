@@ -1,29 +1,43 @@
-// src/lib/uploadSupabase.js
+// backend/src/lib/uploadSupabase.js
 const { getSupabase } = require('./supabase');
 const mime = require('mime-types');
 const crypto = require('crypto');
 
+/** UID seguro, sin caracteres raros */
 function uid(n = 12) {
-  return crypto.randomBytes(n).toString('base64url')
-    .replace(/[^a-zA-Z0-9]/g, '')
-    .slice(0, n);
+  try {
+    // Node 16+ soporta 'base64url'
+    return crypto.randomBytes(n).toString('base64url').slice(0, n);
+  } catch {
+    // Fallback por si no existe 'base64url'
+    return crypto
+      .randomBytes(n)
+      .toString('base64')
+      .replace(/[^a-zA-Z0-9]/g, '')
+      .slice(0, n);
+  }
 }
 
+/** Nombre base limpio para archivos */
 function slugifyName(s = '') {
-  return String(s)
-    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-zA-Z0-9._-]+/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^[-.]+|[-.]+$/g, '')
-    .slice(0, 40) || 'file';
+  return (
+    String(s)
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-zA-Z0-9._-]+/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^[-.]+|[-.]+$/g, '')
+      .slice(0, 40) || 'file'
+  );
 }
 
+/** Carpeta limpia (sin //, sin .., sin barras al inicio/fin) */
 function cleanFolderPath(folder = 'misc') {
-  return String(folder)
-    .replace(/^\/+|\/+$/g, '')      // sin slashes al inicio/fin
-    .replace(/\.\./g, '')           // nada de subir directorios
-    .replace(/\/{2,}/g, '/')
-    || 'misc';
+  return (
+    String(folder)
+      .replace(/^\/+|\/+$/g, '')
+      .replace(/\.\./g, '')
+      .replace(/\/{2,}/g, '/') || 'misc'
+  );
 }
 
 function requireEnv(name) {
@@ -36,14 +50,13 @@ function requireEnv(name) {
  * Sube un buffer a Supabase Storage.
  *
  * @param {Object} opts
- * @param {Buffer} opts.buffer             - contenido del archivo
- * @param {string} opts.mimetype           - mimetype (image/png, ...)
- * @param {string} [opts.folder='misc']    - carpeta lógica dentro del bucket
- * @param {string} [opts.filename='']      - base del nombre (sin extensión)
- * @param {'public'|'signed'} [opts.visibility] - si no especificas: usa SUPABASE_BUCKET_PUBLIC
+ * @param {Buffer} opts.buffer
+ * @param {string} opts.mimetype
+ * @param {string} [opts.folder='misc']
+ * @param {string} [opts.filename='']
+ * @param {'public'|'signed'} [opts.visibility]        - si no se especifica, usa SUPABASE_BUCKET_PUBLIC
  * @param {boolean} [opts.upsert=false]
- * @param {string|number} [opts.cacheSeconds='31536000'] - Cache-Control en segundos
- *
+ * @param {string|number} [opts.cacheSeconds='31536000']
  * @returns {Promise<{ key:string, url:string, isSigned:boolean }>}
  */
 async function uploadToSupabase({
@@ -53,7 +66,7 @@ async function uploadToSupabase({
   filename = '',
   visibility,
   upsert = false,
-  cacheSeconds = '31536000', // 1 año
+  cacheSeconds = '31536000',
 }) {
   if (!buffer || !Buffer.isBuffer(buffer)) {
     throw new Error('[uploadToSupabase] buffer inválido');
@@ -69,6 +82,7 @@ async function uploadToSupabase({
   const baseName = slugifyName(filename);
   const ext = mime.extension(mimetype) || 'bin';
 
+  // key final: carpeta/epoch-uid-nombre.ext
   const key = `${cleanFolder}/${Date.now()}-${uid()}-${baseName}.${ext}`;
 
   // Subida
@@ -77,22 +91,23 @@ async function uploadToSupabase({
     .upload(key, buffer, {
       contentType: mimetype,
       upsert,
-      cacheControl: String(cacheSeconds), // Supabase espera segundos ("31536000")
+      cacheControl: String(cacheSeconds), // en segundos
     });
 
   if (upErr) {
-    // Mensaje más claro
+    // Errores comunes: bucket inexistente, permisos, tamaño, etc.
     throw new Error(`[Supabase upload] ${upErr.message || upErr}`);
   }
 
-  // ¿Bucket público o firmamos URL?
-  const bucketIsPublic = (process.env.SUPABASE_BUCKET_PUBLIC === '1' || process.env.SUPABASE_BUCKET_PUBLIC === 'true');
+  // URL pública o firmada según config
+  const bucketIsPublic =
+    process.env.SUPABASE_BUCKET_PUBLIC === '1' ||
+    process.env.SUPABASE_BUCKET_PUBLIC === 'true';
 
   let url = '';
   let isSigned = false;
 
   if (visibility === 'signed' || (!bucketIsPublic && visibility !== 'public')) {
-    // Firmada (por defecto 7 días si no especificas; puedes ajustar SUPABASE_SIGNED_TTL)
     const ttl = Number(process.env.SUPABASE_SIGNED_TTL || 60 * 60 * 24 * 7); // 7 días
     const { data, error: signErr } = await supabase.storage
       .from(bucket)

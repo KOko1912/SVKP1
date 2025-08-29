@@ -36,34 +36,55 @@ router.get('/ping', (req, res) => {
   });
 });
 
-/**
- * POST /api/media?folder=usuarios/123
- * Subida genérica → crea Media
- */
-router.post('/', upload.single('file'), async (req, res) => {
+// Handler común de subida a Supabase → crea Media
+async function handleUpload(req, res) {
   try {
     if (!req.file) return res.status(400).json({ error: 'Archivo requerido (name="file")' });
 
     const folder = (req.query.folder || 'misc').toString();
     const { buffer, mimetype, originalname, size } = req.file;
 
-    if (!IMAGE_MIME.has(mimetype)) return res.status(415).json({ error: 'Tipo de archivo no permitido' });
+    if (!IMAGE_MIME.has(mimetype)) {
+      return res.status(415).json({ error: 'Tipo de archivo no permitido' });
+    }
 
     const baseName = (originalname || '').split('.')[0]?.slice(0, 40) || 'file';
     const { key, url } = await uploadToSupabase({
-      buffer, mimetype, folder, filename: baseName, visibility: 'public',
+      buffer,
+      mimetype,
+      folder,
+      filename: baseName,
+      visibility: 'public',
     });
 
     const media = await prisma.media.create({
-      data: { provider: StorageProvider.SUPABASE, key, url, mime: mimetype, sizeBytes: size },
+      data: {
+        provider: StorageProvider.SUPABASE,
+        key,
+        url,
+        mime: mimetype,
+        sizeBytes: size,
+      },
     });
 
-    res.json({ ok: true, media });
+    return res.json({ ok: true, mediaId: media.id, url: media.url, media });
   } catch (e) {
-    console.error('POST /api/media error:', e);
-    res.status(500).json({ error: 'Upload failed', detail: String(e.message || e) });
+    console.error('Upload error:', e);
+    return res.status(500).json({ error: 'Upload failed', detail: String(e.message || e) });
   }
-});
+}
+
+/**
+ * POST /api/media?folder=usuarios/123
+ * Subida genérica → crea Media
+ */
+router.post('/', upload.single('file'), handleUpload);
+
+/**
+ * POST /api/media/upload
+ * Alias explícito (el front lo usa primero) → misma lógica
+ */
+router.post('/upload', upload.single('file'), handleUpload);
 
 /**
  * POST /api/media/usuarios/:id/avatar
@@ -90,7 +111,7 @@ router.post('/usuarios/:id/avatar', upload.single('file'), async (req, res) => {
     });
 
     await prisma.usuario.update({ where: { id: userId }, data: { fotoId: media.id } });
-    res.json({ ok: true, mediaId: media.id, url: media.url });
+    res.json({ ok: true, mediaId: media.id, url: media.url, media });
   } catch (e) {
     console.error('POST /api/media/usuarios/:id/avatar error:', e);
     res.status(500).json({ error: 'Avatar upload failed', detail: String(e.message || e) });
@@ -99,7 +120,7 @@ router.post('/usuarios/:id/avatar', upload.single('file'), async (req, res) => {
 
 /**
  * POST /api/media/productos/:id/imagenes
- * Sube imagen → crea Media → inserta ProductoImagen (sin campo url)
+ * Sube imagen → crea Media → inserta ProductoImagen
  */
 router.post('/productos/:id/imagenes', upload.single('file'), async (req, res) => {
   try {
@@ -114,7 +135,7 @@ router.post('/productos/:id/imagenes', upload.single('file'), async (req, res) =
     const { key, url } = await uploadToSupabase({
       buffer, mimetype,
       folder: `productos/${productoId}`,
-      filename: (originalname || '').split('.')[0]?.slice(0, 40),
+      filename: (originalname || '').split(0, 40),
       visibility: 'public',
     });
 
@@ -130,7 +151,7 @@ router.post('/productos/:id/imagenes', upload.single('file'), async (req, res) =
       data: { productoId, mediaId: media.id, isPrincipal, orden, alt: null },
     });
 
-    res.json({ ok: true, mediaId: media.id, url: media.url, productoImagenId: img.id, isPrincipal, orden });
+    res.json({ ok: true, mediaId: media.id, url: media.url, productoImagenId: img.id, isPrincipal, orden, media });
   } catch (e) {
     console.error('POST /api/media/productos/:id/imagenes error:', e);
     res.status(500).json({ error: 'Producto imagen upload failed', detail: String(e.message || e) });
@@ -139,7 +160,7 @@ router.post('/productos/:id/imagenes', upload.single('file'), async (req, res) =
 
 /**
  * POST /api/media/variantes/:id/imagenes
- * Sube imagen → crea Media → inserta VarianteImagen (sin campo url)
+ * Sube imagen → crea Media → inserta VarianteImagen
  */
 router.post('/variantes/:id/imagenes', upload.single('file'), async (req, res) => {
   try {
@@ -172,7 +193,7 @@ router.post('/variantes/:id/imagenes', upload.single('file'), async (req, res) =
       data: { varianteId, mediaId: media.id, orden, alt: null },
     });
 
-    res.json({ ok: true, mediaId: media.id, url: media.url, varianteImagenId: vimg.id, orden });
+    res.json({ ok: true, mediaId: media.id, url: media.url, varianteImagenId: vimg.id, orden, media });
   } catch (e) {
     console.error('POST /api/media/variantes/:id/imagenes error:', e);
     res.status(500).json({ error: 'Variante imagen upload failed', detail: String(e.message || e) });

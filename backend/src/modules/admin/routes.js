@@ -2,8 +2,30 @@
 const express = require('express');
 const isAdmin = require('../../middlewares/isAdmin');
 const prisma = require('../../config/db');
+const crypto = require('crypto');
 
 const router = express.Router();
+
+const constEq = (a = '', b = '') => {
+  const A = Buffer.from(String(a));
+  const B = Buffer.from(String(b));
+  if (A.length !== B.length) return false;
+  return crypto.timingSafeEqual(A, B);
+};
+
+// === NUEVO: /api/admin/login (sin isAdmin) ===
+router.post('/login', (req, res) => {
+  const pwd = String(req.body?.password || '');
+  const adminSecret = process.env.ADMIN_SECRET || '';
+  if (!adminSecret) {
+    return res.status(500).json({ error: 'ADMIN_SECRET no configurado' });
+  }
+  // Compara la contraseña enviada con el ADMIN_SECRET
+  if (pwd && constEq(pwd, adminSecret)) {
+    return res.json({ ok: true, secret: adminSecret });
+  }
+  return res.status(401).json({ error: 'Credenciales inválidas' });
+});
 
 // Ping protegido
 router.get('/hello', isAdmin, (_req, res) => {
@@ -19,13 +41,12 @@ router.get('/solicitudes-vendedor', isAdmin, async (_req, res, next) => {
         id: true,
         nombre: true,
         telefono: true,
-        fechaCreacion: true,      // <-- nombre real en el modelo
-        foto: { select: { url: true } }, // relación Media (si existe)
+        fechaCreacion: true,
+        foto: { select: { url: true } },
       },
       orderBy: { id: 'asc' },
     });
 
-    // Normalizamos para el frontend
     const lista = rows.map(u => ({
       id: u.id,
       nombre: u.nombre,
@@ -89,7 +110,7 @@ router.get('/vendedores-activos', isAdmin, async (_req, res, next) => {
         id: true,
         nombre: true,
         telefono: true,
-        fechaCreacion: true,                 // <-- nombre real
+        fechaCreacion: true,
         foto: { select: { url: true } },
       },
       orderBy: { id: 'asc' },

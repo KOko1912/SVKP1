@@ -79,7 +79,7 @@ function makeUploader({ subdir, maxSizeBytes, allowedMime }) {
   });
 
   const fileFilter = function (_req, file, cb) {
-    if (!allowedMime.has(file.mimetype)) {
+    if (allowedMime && allowedMime.size && !allowedMime.has(file.mimetype)) {
       return cb(new Error('Tipo de archivo no permitido'), false);
     }
     cb(null, true);
@@ -95,6 +95,41 @@ function makeUploader({ subdir, maxSizeBytes, allowedMime }) {
 /* =========================
    Endpoints
    ========================= */
+
+// === Fallback genérico: POST /api/v1/upload ===
+// (Pensado para el Comprobante: imagen, crea Media LOCAL y devuelve mediaId)
+const uploadGeneric = makeUploader({
+  subdir: 'misc',
+  maxSizeBytes: Number(process.env.MAX_IMAGE_SIZE || 8 * 1024 * 1024),
+  allowedMime: IMAGE_MIME,
+});
+
+router.post('/', (req, res) => {
+  uploadGeneric(req, res, async (err) => {
+    try {
+      if (err) return res.status(400).json({ error: err?.message || 'No se pudo subir el archivo' });
+      if (!req.file || !req._uploadTarget) return res.status(400).json({ error: 'Archivo faltante' });
+
+      const url = `${req._uploadTarget.baseUrl}/${req.file.filename}`.replace(/\\/g, '/');
+      const key = url.replace(/^\//, ''); // clave relativa para provider LOCAL
+
+      const media = await prisma.media.create({
+        data: {
+          provider: 'LOCAL',
+          key,
+          url,
+          mime: req.file.mimetype || null,
+          sizeBytes: req.file.size || null,
+        },
+      });
+
+      return res.json({ ok: true, mediaId: media.id, id: media.id, url, media });
+    } catch (e) {
+      console.error('POST /api/v1/upload error:', e);
+      return res.status(500).json({ error: 'Error subiendo archivo' });
+    }
+  });
+});
 
 // Imágenes de producto
 const uploadProducto = makeUploader({
@@ -113,7 +148,6 @@ router.post('/producto', (req, res) => {
       return res.status(400).json({ error: 'Archivo faltante' });
     }
     const url = `${req._uploadTarget.baseUrl}/${req.file.filename}`.replace(/\\/g, '/');
-    // Respuesta estándar que tu frontend ya consume
     res.json({ ok: true, url, name: req.file.originalname, size: req.file.size });
   });
 });

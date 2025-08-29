@@ -1,5 +1,5 @@
 // frontend/src/AppRouter.jsx
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useParams } from 'react-router-dom';
 import { useEffect } from 'react';
 import App from './App';
 
@@ -7,6 +7,7 @@ import App from './App';
 // Público
 // ===============================
 import PublicProducto from './pages/Public/PublicProducto';
+import Comprobante from './pages/Public/Comprobante';
 import SVKT from './pages/SVKT'; // Vista pública de tienda
 
 // ===============================
@@ -37,6 +38,14 @@ import ConfiguracionVista from './pages/Vendedor/ConfiguracionVista';
 import Productos from './pages/Vendedor/Productos';
 
 // ------------------------------------------------------------------
+// Token de URL para acceder al panel admin
+// Colócalo en .env del frontend: VITE_ADMIN_URL_TOKEN="<tu hash>"
+// ------------------------------------------------------------------
+export const ADMIN_URL_TOKEN =
+  (import.meta.env.VITE_ADMIN_URL_TOKEN && String(import.meta.env.VITE_ADMIN_URL_TOKEN)) ||
+  '$2a$10$ONMIsejyxVNdsaEvZgJWE.Yo1YBSD.wyXPYOVZhOu3OncahAEYhXe';
+
+// ------------------------------------------------------------------
 // Helpers de protección de rutas
 // ------------------------------------------------------------------
 const getUsuario = () => {
@@ -48,7 +57,6 @@ const getUsuario = () => {
   }
 };
 
-/** Requiere sesión (usuario en localStorage) */
 const RequireAuth = ({ children }) => {
   const user = getUsuario();
   if (!user) return <Navigate to="/login" replace />;
@@ -57,28 +65,39 @@ const RequireAuth = ({ children }) => {
 
 /**
  * Arregla el caso típico de HashRouter:
- * Si el usuario abre /admin (sin #/), redirigimos a /#/admin
+ * Si el usuario abre /algo (sin #/), redirigimos a /#/algo
  * para que las rutas coincidan correctamente.
  */
 function HashPathFix() {
   useEffect(() => {
     const hasHash = typeof window !== 'undefined' && window.location.hash.startsWith('#/');
     const pathIsRoot = window.location.pathname === '/' || window.location.pathname === '';
-    const needsFix = !hasHash && !pathIsRoot; // p.ej. /admin, /usuario/perfil, etc.
+    const needsFix = !hasHash && !pathIsRoot;
 
     if (needsFix) {
       const rest = window.location.pathname + window.location.search + window.location.hash;
-      // redirige a la versión hash sin recargar el estado del dev server
       window.location.replace('/#' + rest);
     }
   }, []);
   return null;
 }
 
+/**
+ * Puerta de acceso al Admin:
+ * Si el token en la URL coincide con ADMIN_URL_TOKEN, renderiza AdminHome.
+ * Si no coincide, redirige a inicio.
+ */
+function AdminGate() {
+  const { token } = useParams();
+  if (token === ADMIN_URL_TOKEN) {
+    return <AdminHome />;
+  }
+  return <Navigate to="/" replace />;
+}
+
 export default function AppRouter() {
   return (
     <>
-      {/* Ejecuta la corrección de hash si aplica */}
       <HashPathFix />
 
       <Routes>
@@ -87,9 +106,10 @@ export default function AppRouter() {
            ======================= */}
         <Route path="/" element={<App />} />
 
-        {/* Público: producto y tienda */}
+        {/* Público: producto, tienda, comprobante */}
         <Route path="/producto/:uuid" element={<PublicProducto />} />
         <Route path="/t/:slug" element={<SVKT />} />
+        <Route path="/comprobante/:token" element={<Comprobante />} />
 
         {/* Auth público */}
         <Route path="/login" element={<Login />} />
@@ -150,9 +170,10 @@ export default function AppRouter() {
         />
 
         {/* =======================
-            Admin (público; se valida adentro con SDKADMIN)
+            Admin (oculto por token)
            ======================= */}
-        <Route path="/admin" element={<AdminHome />} />
+        {import.meta.env.DEV && <Route path="/admin" element={<AdminHome />} />}
+        <Route path="/:token" element={<AdminGate />} />
 
         {/* =======================
             Vendedor (protegido)

@@ -62,6 +62,19 @@ async function tryJson(url, init) {
   } catch { return null; }
 }
 
+/* Construye la URL de comprobante con el token (hash o history según el proyecto) */
+function makeComprobanteUrl(token) {
+  const origin = window.location.origin;
+  const base = (import.meta.env.BASE_URL || '/').replace(/\/+$/, '');
+  const hashMode =
+    (import.meta.env.VITE_ROUTER_MODE === 'hash') ||
+    window.location.hash?.startsWith('#/');
+
+  // 👇 Aseguramos siempre "/#/" en modo hash
+  if (hashMode) return `${origin}${base}/#/comprobante/${token}`;
+  return `${origin}${base}/comprobante/${token}`;
+}
+
 /* ===================== Page ===================== */
 export default function PublicProducto() {
   const { id, uuid } = useParams();
@@ -71,6 +84,7 @@ export default function PublicProducto() {
   const [imgV] = useState({ portada: 0, logo: 0 });
 
   const [tienda, setTienda] = useState({
+    id: null,
     nombre: '', descripcion: '',
     portadaUrl: '', logoUrl: '',
     telefonoContacto: '', email: '',
@@ -87,6 +101,8 @@ export default function PublicProducto() {
   // variantes
   const [selectedOps, setSelectedOps] = useState({});
   const [showConfirm, setShowConfirm] = useState(false);
+  const [confirmBusy, setConfirmBusy] = useState(false);
+  const [confirmErr, setConfirmErr] = useState('');
 
   // Tema tokens globales
   useEffect(() => {
@@ -134,7 +150,7 @@ export default function PublicProducto() {
       if (embedded && (embedded.nombre || embedded.slug || embedded.publicUuid || embedded.id)) {
         const normalized = {
           ...embedded,
-          // no normalizamos aquí: resolvemos al render con toPublicSrc
+          id: embedded.id ?? null,
           portadaUrl: embedded.portada?.url || embedded.portadaUrl || '',
           logoUrl: embedded.logo?.url || embedded.logoUrl || '',
           redes: embedded.redes || { facebook: '', instagram: '', tiktok: '' },
@@ -162,10 +178,10 @@ export default function PublicProducto() {
         if (tiendaResp) break;
       }
 
-      // 2.3: si no hubo tienda, NO usar /me
       if (!cancelled && tiendaResp) {
         const normalized = {
           ...tiendaResp,
+          id: tiendaResp.id ?? tiendaId ?? null,
           portadaUrl: tiendaResp.portada?.url || tiendaResp.portadaUrl || '',
           logoUrl: tiendaResp.logo?.url || tiendaResp.logoUrl || '',
           redes: tiendaResp.redes || { facebook: '', instagram: '', tiktok: '' },
@@ -258,9 +274,10 @@ export default function PublicProducto() {
   const addQty = () => setQty(n => Math.max(1, (n || 1) + 1));
   const subQty = () => setQty(n => Math.max(1, (n || 1) - 1));
 
-  const buildWhatsAppText = () => {
+  /* ✅ Mensaje de WhatsApp pulido */
+  const buildWhatsAppText = (token, comprobanteUrl) => {
     const titulo = producto?.nombre || 'Producto';
-    const url = window.location.href;
+    const urlProducto = window.location.href;
     const varianteTxt = activeVar
       ? (activeVar.nombre || Object.values(activeVar.opciones || {}).join(' / '))
       : '';
@@ -269,27 +286,65 @@ export default function PublicProducto() {
 
     const lines = [
       `🛒 *Quiero comprar*: ${titulo}`,
-      varianteTxt ? `• Variante: ${varianteTxt}` : null,
+      varianteTxt && `• Variante: ${varianteTxt}`,
       `• Cantidad: ${qty}`,
       `• Precio: ${precioTxt}`,
       tiendaTxt,
       '',
-      `🔗 ${url}`
+      comprobanteUrl && `🔗 Comprobante: ${comprobanteUrl}`,
+      `🔗 Producto: ${urlProducto}`,
     ].filter(Boolean);
 
-    return lines.join('\n');
+    return lines.map(l => String(l).trim()).join('\n');
   };
 
   const handleWhatsAppClick = () => {
     if (!tienda?.telefonoContacto) return;
+    setConfirmErr('');
     setShowConfirm(true);
   };
-  const confirmWhatsApp = () => {
-    const phone = tienda?.telefonoContacto?.replace(/\D/g, '') || '';
-    const msg = encodeURIComponent(buildWhatsAppText());
-    const wa = phone ? `https://wa.me/${phone}?text=${msg}` : `https://wa.me/?text=${msg}`;
-    window.open(wa, '_blank', 'noopener,noreferrer');
-    setShowConfirm(false);
+
+  const confirmWhatsApp = async () => {
+    try {
+      setConfirmErr('');
+      if (tipoVariante && !activeVar) {
+        setConfirmErr('Selecciona una variante para continuar.');
+        return;
+      }
+      setConfirmBusy(true);
+
+      const body = {
+        tiendaId: tienda?.id ?? producto?.tiendaId,
+        productoId: producto?.id,
+        varianteId: activeVar?.id ?? null,
+        cantidad: Math.max(1, Number(qty || 1)),
+        channel: 'WHATSAPP',
+      };
+
+      const r = await fetch(`${API}/api/orders/intent`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await r.json().catch(() => null);
+      if (!r.ok || !data?.token) {
+        throw new Error(data?.error || 'No se pudo crear el intento');
+      }
+
+      const token = data.token;
+      const compUrl = makeComprobanteUrl(token);
+
+      const phone = tienda?.telefonoContacto?.replace(/\D/g, '') || '';
+      const msg = encodeURIComponent(buildWhatsAppText(token, compUrl));
+      const wa = phone ? `https://wa.me/${phone}?text=${msg}` : `https://wa.me/?text=${msg}`;
+
+      window.open(wa, '_blank', 'noopener,noreferrer');
+      setShowConfirm(false);
+    } catch (e) {
+      setConfirmErr(e?.message || 'Error al preparar el mensaje');
+    } finally {
+      setConfirmBusy(false);
+    }
   };
 
   /* ===================== Render ===================== */
@@ -487,7 +542,7 @@ export default function PublicProducto() {
 
             {/* Archivo digital */}
             {(producto?.digital?.url || producto?.digitalUrl) && (
-              <div className="pp-digital">
+              <div className="card pp-digital">
                 <a
                   href={toPublicSrc(producto?.digital?.url || producto?.digitalUrl)}
                   target="_blank"
@@ -575,7 +630,7 @@ export default function PublicProducto() {
             display: 'grid', placeItems: 'center',
             background: 'rgba(0,0,0,.45)'
           }}
-          onClick={() => setShowConfirm(false)}
+          onClick={() => !confirmBusy && setShowConfirm(false)}
         >
           <div
             className="card"
@@ -592,10 +647,11 @@ export default function PublicProducto() {
             <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'.5rem' }}>
               <h3 style={{ margin:0 }}>¿Confirmar compra por WhatsApp?</h3>
               <button
-                onClick={() => setShowConfirm(false)}
+                onClick={() => !confirmBusy && setShowConfirm(false)}
                 className="btn btn-ghost"
                 aria-label="Cerrar"
                 style={{ padding: '.4rem .6rem' }}
+                disabled={confirmBusy}
               >
                 <FiX />
               </button>
@@ -636,9 +692,27 @@ export default function PublicProducto() {
               </div>
             </div>
 
+            {/* Mensajes/errores */}
+            {tipoVariante && !activeVar && (
+              <div style={{ color: 'var(--danger, #dc2626)', marginBottom: '.5rem' }}>
+                Debes seleccionar una variante para continuar.
+              </div>
+            )}
+            {confirmErr && (
+              <div style={{ color: 'var(--danger, #dc2626)', marginBottom: '.5rem' }}>
+                {confirmErr}
+              </div>
+            )}
+
             <div style={{ display:'flex', gap:'.5rem', justifyContent:'flex-end' }}>
-              <button className="btn btn-ghost" onClick={() => setShowConfirm(false)}>Cancelar</button>
-              <button className="btn btn-primary" onClick={confirmWhatsApp}>Confirmar y abrir WhatsApp</button>
+              <button className="btn btn-ghost" onClick={() => setShowConfirm(false)} disabled={confirmBusy}>Cancelar</button>
+              <button
+                className="btn btn-primary"
+                onClick={confirmWhatsApp}
+                disabled={confirmBusy || (tipoVariante && !activeVar)}
+              >
+                {confirmBusy ? 'Preparando…' : 'Confirmar y abrir WhatsApp'}
+              </button>
             </div>
           </div>
         </div>

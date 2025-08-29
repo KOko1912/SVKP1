@@ -126,28 +126,31 @@ const authRoutes           = require('./modules/auth/routes');
 const usuariosRoutes       = require('./modules/usuarios/routes');
 const adminRoutes          = require('./modules/admin/routes');
 const sdkadminRoutes       = require('./modules/sdkadmin/routes');
-const tiendaRoutes         = require('./modules/tienda/routes');   // singular
-const tiendasRoutes        = require('./modules/tiendas/routes');  // plural (búsqueda pública)
+const tiendaRoutes         = require('./modules/tienda/routes');        // tienda (general)
+const tiendasRoutes        = require('./modules/tiendas/routes');       // plural (búsqueda pública)
 const productosRoutes      = require('./modules/productos/routes');
 const categoriasRoutes     = require('./modules/categorias/routes');
 const uploadProductoRoutes = require('./modules/productos/upload');
-const tiendaUploadsRoutes  = require('./modules/tienda/routes.uploads');
+const tiendaUploadsRoutes  = require('./modules/tienda/routes.uploads'); // subidas de tienda
 
 // 🔐 Alias directo para asegurar que /api/auth/login use el controller correcto
 // (lo definimos ANTES de montar el router genérico de /api/auth)
 const authCtrl = require('./modules/auth/controller');
 app.post('/api/auth/login', authCtrl.login);
 
-// Resto de routers
+// Routers principales
 app.use('/api/auth',          authRoutes);
 app.use('/api/usuarios',      usuariosRoutes);
 app.use('/api/admin',         adminRoutes);
 app.use('/api/sdkadmin',      sdkadminRoutes);
-app.use('/api/tienda',        tiendaRoutes);
-app.use('/api/tiendas',       tiendasRoutes);    // 🔎 /api/tiendas/search
+app.use('/api/tienda',        tiendaRoutes);              // ← solo el router general
+app.use('/api/tiendas',       tiendasRoutes);             // 🔎 /api/tiendas/search
 app.use('/api/v1/productos',  productosRoutes);
 app.use('/api/v1/categorias', categoriasRoutes);
-app.use('/api/tienda',      tiendaUploadsRoutes);
+
+// Subidas específicas de TIENDA en un subprefijo dedicado (evita doble mount)
+// Asegúrate de que dentro de routes.uploads uses rutas relativas: '/', '/banner', etc.
+app.use('/api/tienda/uploads', tiendaUploadsRoutes);
 
 // Fallback de SUBIDA LOCAL (disco):
 // - En producción queda DESACTIVADO por defecto para no usar el disco efímero de Render.
@@ -161,6 +164,10 @@ if (enableLocalUploads) {
     res.status(410).json({ error: 'Local uploads deshabilitado en producción. Usa /api/media (Supabase).' });
   });
 }
+
+/* Pedidos (WhatsApp checkout) */
+const ordersRoutes = require('./modules/pedidos/routes');
+app.use('/api/orders', ordersRoutes);
 
 /* =========================
    Utilidades

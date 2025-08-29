@@ -1,4 +1,3 @@
-// backend/prisma/schema.prisma
 generator client {
   provider = "prisma-client-js"
 }
@@ -50,6 +49,41 @@ enum StorageProvider {
 }
 
 /**
+ * --- NUEVOS ENUMS PARA PEDIDOS ---
+ */
+
+enum OrderStatus {
+  PENDIENTE
+  CONFIRMADA
+  EN_PROCESO
+  ENVIADA
+  ENTREGADA
+  CANCELADA
+}
+
+enum PaymentStatus {
+  PENDIENTE
+  VERIFICANDO
+  PAGADA
+  RECHAZADA
+  REEMBOLSADA
+}
+
+enum PaymentMethod {
+  TRANSFERENCIA
+  OXXO
+  TARJETA
+  CONTRA_ENTREGA
+}
+
+enum CheckoutChannel {
+  WEB
+  WHATSAPP
+  POS
+  API
+}
+
+/**
  * ===========================
  * MEDIA (ALMACENAJE EXTERNO)
  * ===========================
@@ -81,6 +115,9 @@ model Media {
   productoImagenes ProductoImagen[] @relation("ProductoImagenMedia")
   varianteImagenes VarianteImagen[] @relation("VarianteImagenMedia")
 
+  // NUEVO: comprobantes de pedidos
+  pedidoComprobantes Pedido[] @relation("PedidoComprobante")
+
   @@unique([provider, key], name: "uq_media_provider_key")
   @@index([url])
 }
@@ -111,6 +148,9 @@ model Usuario {
   solicitudes SolicitudVendedor[]
   tienda      Tienda?
   resenas     Resena[]
+
+  // NUEVO: pedidos donde este usuario fue el comprador (opcional)
+  pedidos Pedido[] @relation("UsuarioPedidos")
 }
 
 model PasswordResetToken {
@@ -244,6 +284,7 @@ model Tienda {
   // Backrefs
   productos  Producto[]
   categorias Categoria[]
+  pedidos    Pedido[]    @relation("TiendaPedidos")
 
   @@index([usuarioId])
   @@index([isPublished])
@@ -310,6 +351,9 @@ model Producto {
   resenas    Resena[]
   categorias ProductoCategoria[]
 
+  // NUEVO: líneas de pedidos que referencian este producto
+  lineas LineaPedido[] @relation("ProductoLineas")
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -362,6 +406,9 @@ model Variante {
 
   inventario Inventario?
   imagenes   VarianteImagen[]
+
+  // NUEVO: líneas de pedidos que referencian esta variante
+  lineas LineaPedido[] @relation("VarianteLineas")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -500,4 +547,84 @@ model Resena {
   @@index([productoId])
   @@index([usuarioId])
   @@index([estado])
+}
+
+/**
+ * ===========================
+ * PEDIDOS (NUEVO)
+ * ===========================
+ */
+
+model Pedido {
+  id          Int    @id @default(autoincrement())
+  publicToken String @unique @default(uuid())
+
+  tiendaId Int
+  tienda   Tienda @relation("TiendaPedidos", fields: [tiendaId], references: [id], onDelete: Cascade)
+
+  // Comprador (opcionalmente ligado a usuario)
+  buyerUserId  Int?
+  buyerUsuario Usuario? @relation("UsuarioPedidos", fields: [buyerUserId], references: [id], onDelete: SetNull)
+
+  buyerName  String
+  buyerPhone String
+  buyerEmail String?
+
+  // Envío / canal
+  shippingAddress Json?
+  channel         CheckoutChannel @default(WEB)
+
+  // Estados
+  status        OrderStatus   @default(PENDIENTE)
+  paymentStatus PaymentStatus @default(PENDIENTE)
+  paymentMethod PaymentMethod @default(TRANSFERENCIA)
+
+  // Montos (centavos)
+  subTotal     Int
+  shippingCost Int    @default(0)
+  total        Int
+  currency     String @default("MXN")
+
+  // Comprobante
+  proofMediaId Int?
+  proofMedia   Media? @relation("PedidoComprobante", fields: [proofMediaId], references: [id], onDelete: SetNull)
+
+  // Fila / solicitud
+  requested   Boolean   @default(false)
+  requestedAt DateTime?
+  decidedAt   DateTime?
+
+  items LineaPedido[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tiendaId, createdAt])
+  @@index([requested, requestedAt])
+  @@index([status, paymentStatus])
+}
+
+model LineaPedido {
+  id Int @id @default(autoincrement())
+
+  pedidoId Int
+  pedido   Pedido @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
+
+  productoId Int
+  producto   Producto @relation("ProductoLineas", fields: [productoId], references: [id], onDelete: Restrict)
+
+  varianteId Int?
+  variante   Variante? @relation("VarianteLineas", fields: [varianteId], references: [id], onDelete: SetNull)
+
+  nombre         String
+  opciones       Json?
+  precioUnitario Int // centavos
+  cantidad       Int
+  total          Int // centavos
+
+  createdAt DateTime @default(now())
+
+  @@index([pedidoId])
+  @@index([productoId])
+  @@index([varianteId])
 }

@@ -13,13 +13,31 @@ router.get('/hello', isAdmin, (_req, res) => {
 /** Lista solicitudes pendientes */
 router.get('/solicitudes-vendedor', isAdmin, async (_req, res, next) => {
   try {
-    const lista = await prisma.usuario.findMany({
+    const rows = await prisma.usuario.findMany({
       where: { vendedorSolicitado: true, vendedor: false },
-      select: { id: true, nombre: true, telefono: true, fotoUrl: true, fechaCreacion: true },
+      select: {
+        id: true,
+        nombre: true,
+        telefono: true,
+        fechaCreacion: true,      // <-- nombre real en el modelo
+        foto: { select: { url: true } }, // relación Media (si existe)
+      },
       orderBy: { id: 'asc' },
     });
+
+    // Normalizamos para el frontend
+    const lista = rows.map(u => ({
+      id: u.id,
+      nombre: u.nombre,
+      telefono: u.telefono,
+      fechaCreacion: u.fechaCreacion,
+      fotoUrl: u.foto?.url || null,
+    }));
+
     res.json({ ok: true, data: lista });
-  } catch (err) { next(err); }
+  } catch (err) {
+    next(err);
+  }
 });
 
 /** Aprobar solicitud */
@@ -37,7 +55,9 @@ router.post('/vendedores/:id/aprobar', isAdmin, async (req, res, next) => {
     });
 
     res.json({ ok: true });
-  } catch (err) { next(err); }
+  } catch (err) {
+    next(err);
+  }
 });
 
 /** Rechazar solicitud */
@@ -55,19 +75,38 @@ router.post('/vendedores/:id/rechazar', isAdmin, async (req, res, next) => {
     });
 
     res.json({ ok: true });
-  } catch (err) { next(err); }
+  } catch (err) {
+    next(err);
+  }
 });
 
 /** Vendedores activos */
 router.get('/vendedores-activos', isAdmin, async (_req, res, next) => {
   try {
-    const lista = await prisma.usuario.findMany({
+    const rows = await prisma.usuario.findMany({
       where: { vendedor: true },
-      select: { id: true, nombre: true, telefono: true, fotoUrl: true, fechaCreacion: true },
+      select: {
+        id: true,
+        nombre: true,
+        telefono: true,
+        fechaCreacion: true,                 // <-- nombre real
+        foto: { select: { url: true } },
+      },
       orderBy: { id: 'asc' },
     });
+
+    const lista = rows.map(u => ({
+      id: u.id,
+      nombre: u.nombre,
+      telefono: u.telefono,
+      fechaCreacion: u.fechaCreacion,
+      fotoUrl: u.foto?.url || null,
+    }));
+
     res.json({ ok: true, data: lista });
-  } catch (err) { next(err); }
+  } catch (err) {
+    next(err);
+  }
 });
 
 /** Cancelar modo vendedor */
@@ -85,7 +124,9 @@ router.post('/vendedores/:id/cancelar', isAdmin, async (req, res, next) => {
     });
 
     res.json({ ok: true });
-  } catch (err) { next(err); }
+  } catch (err) {
+    next(err);
+  }
 });
 
 module.exports = router;

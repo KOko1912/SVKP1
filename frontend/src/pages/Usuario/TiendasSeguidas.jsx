@@ -7,8 +7,12 @@ import './TiendasSeguidas.css';
 
 const RAW_API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const API = RAW_API.replace(/\/$/, '');
+
+// ✅ Habilitado por defecto; sólo se desactiva si pones explícitamente "false"
+const ENABLE_EXPLORE = String(import.meta.env.VITE_ENABLE_STORE_EXPLORE ?? 'true')
+  .toLowerCase() !== 'false';
+
 const FOLLOW_KEY = 'stores_following';
-const ENABLE_EXPLORE = String(import.meta.env.VITE_ENABLE_STORE_EXPLORE || '').toLowerCase() === 'true';
 
 /* ================= Helpers ================= */
 const tryJson = async (url, init) => {
@@ -19,6 +23,13 @@ const tryJson = async (url, init) => {
     if (!r.ok || (typeof data === 'object' && data?.error)) return null;
     return data;
   } catch { return null; }
+};
+
+// Normaliza posibles formatos de respuesta en endpoints de listado
+const toList = (d) => {
+  if (!d) return [];
+  if (Array.isArray(d)) return d;
+  return d.items || d.data || d.tiendas || d.results || [];
 };
 
 // Public URL (Supabase absoluta o ruta de backend)
@@ -52,13 +63,13 @@ const safeColorsFromGradient = (g) => {
 };
 const hashPick = (seed = 'svk') => {
   const pools = [
-    ['#6d28d9', '#c026d3'], // purple
-    ['#0369a1', '#0ea5e9'], // blue
-    ['#059669', '#10b981'], // green
-    ['#ea580c', '#f97316'], // orange
-    ['#be185d', '#ec4899'], // pink
-    ['#0e7490', '#06b6d4'], // cyan
-    ['#b91c1c', '#ef4444'], // red
+    ['#6d28d9', '#c026d3'],
+    ['#0369a1', '#0ea5e9'],
+    ['#059669', '#10b981'],
+    ['#ea580c', '#f97316'],
+    ['#be185d', '#ec4899'],
+    ['#0e7490', '#06b6d4'],
+    ['#b91c1c', '#ef4444'],
   ];
   let h = 0; for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
   const idx = h % pools.length;
@@ -76,14 +87,21 @@ const pickBrand = (t) => {
 async function fetchPublicStoreByKey(key) {
   if (!key) return null;
   const k = String(key).trim();
+
+  // slug
   let d = await tryJson(`${API}/api/tienda/public/${encodeURIComponent(k)}`);
   if (d && (d.slug || d.id)) return d;
+
+  // uuid
   d = await tryJson(`${API}/api/tienda/public/uuid/${encodeURIComponent(k)}`);
   if (d && (d.slug || d.id)) return d;
+
+  // id numérica
   if (/^\d+$/.test(k)) {
     d = await tryJson(`${API}/api/tienda/public/by-id/${k}`);
     if (d && (d.slug || d.id)) return d;
   }
+
   return null;
 }
 
@@ -203,31 +221,44 @@ export default function TiendasSeguidas() {
     const results = [];
     const term = q.trim();
 
+    // helper para empujar listas a results
+    const pushList = (list) => {
+      if (!Array.isArray(list)) return;
+      for (const t of list) results.push(t);
+    };
+
     if (term) {
+      // 1) Buscar por clave directa (slug/uuid/id)
       const resolved = await fetchPublicStoreByKey(term);
-      if (resolved) {
-        results.push(resolved);
-        setStores(results);
-        setLoading(false);
-        return;
+      if (resolved) results.push(resolved);
+
+      // 2) Búsqueda por endpoints comunes (intenta aunque no esté habilitado por ENV)
+      const searchUrls = [
+        `${API}/api/tiendas/search?q=${encodeURIComponent(term)}&page=${page}&limit=48`,
+        `${API}/api/tiendas/public?q=${encodeURIComponent(term)}&page=${page}&limit=48`,
+        `${API}/api/tiendas?q=${encodeURIComponent(term)}&page=${page}&limit=48`
+      ];
+      for (const url of searchUrls) {
+        const d = await tryJson(url, { signal });
+        const list = toList(d);
+        if (list.length) pushList(list);
       }
-      // Si tienes un buscador de texto completo, actívalo con VITE_ENABLE_STORE_EXPLORE=true
-      if (ENABLE_EXPLORE) {
-        const extra = await tryJson(`${API}/api/tiendas/search?q=${encodeURIComponent(term)}&page=${page}&limit=48`, { signal });
-        const list = extra?.items || extra?.data || extra?.tiendas || (Array.isArray(extra) ? extra : []);
-        if (Array.isArray(list) && list.length) {
-          setStores(list);
-          setLoading(false);
-          return;
-        }
+
+      // De-duplicar
+      const seen = new Set();
+      const uniq = [];
+      for (const t of results) {
+        const key = t?.slug || `id:${t?.id}`;
+        if (key && !seen.has(key)) { seen.add(key); uniq.push(t); }
       }
-      setStores([]);
-      setMsg('No se encontraron tiendas para esa clave.');
+
+      setStores(uniq);
+      setMsg(uniq.length ? '' : 'No se encontraron tiendas para esa clave.');
       setLoading(false);
       return;
     }
 
-    // sin término: seguidas + me
+    // sin término: seguidas + me + listados públicos
     const followArr = JSON.parse(localStorage.getItem(FOLLOW_KEY) || '[]');
     if (Array.isArray(followArr) && followArr.length) {
       const batch = await Promise.allSettled(followArr.map(k => fetchPublicStoreByKey(k)));
@@ -241,17 +272,15 @@ export default function TiendasSeguidas() {
       if (me && (me.isPublished || me.slug)) results.push(me);
     } catch {}
 
-    // si existe listado público, úsalo (opt-in)
-    if (ENABLE_EXPLORE) {
-      const opts = [
-        `${API}/api/tiendas/public?page=${page}&limit=48`,
-        `${API}/api/tiendas?page=${page}&limit=48`
-      ];
-      for (const url of opts) {
-        const d = await tryJson(url, { signal });
-        const list = d?.items || d?.data || d?.tiendas || (Array.isArray(d) ? d : null);
-        if (Array.isArray(list) && list.length) results.push(...list);
-      }
+    // Listados públicos (intenta varios endpoints siempre)
+    const listUrls = [
+      `${API}/api/tiendas/public?page=${page}&limit=48`,
+      `${API}/api/tiendas?page=${page}&limit=48`
+    ];
+    for (const url of listUrls) {
+      const d = await tryJson(url, { signal });
+      const list = toList(d);
+      if (list.length) pushList(list);
     }
 
     // De-duplicar (por slug o id)

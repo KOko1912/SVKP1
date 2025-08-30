@@ -9,14 +9,19 @@ import {
 } from 'react-icons/fi';
 import './Productos.css';
 
-const API   = import.meta.env.VITE_API_URL    || 'http://localhost:5000';
-const FILES = import.meta.env.VITE_FILES_BASE || API;
+// === Branding: usa mismas utilidades que Perfil para tomar los colores de la tienda ===
+import { bootBrandFromStorage, attachAutoBrandFromProfile } from '../../lib/brandTheme';
+
+const API   = (import.meta.env.VITE_API_URL    || 'http://localhost:5000').replace(/\/$/, '');
+const FILES = (import.meta.env.VITE_FILES_BASE || API).replace(/\/$/, '');
 
 // 🔗 Normaliza cualquier URL (absoluta de Supabase o relativa local)
 const toPublicSrc = (u) => {
   const v = typeof u === 'string' ? u : (u?.url || '');
   if (!v) return '';
-  return /^https?:\/\//i.test(v) ? v : `${FILES}${v.startsWith('/') ? '' : '/'}${v}`;
+  if (/^https?:\/\//i.test(v)) return v;
+  const p = v.startsWith('/') ? v : `/${v}`;
+  return `${FILES}${encodeURI(p)}`;
 };
 
 /* -------------------- Tipos de producto -------------------- */
@@ -28,17 +33,10 @@ const TIPOS = [
   { value: 'BUNDLE',   label: 'Bundle',   desc: 'Paquete de varios productos (combos).'},
 ];
 
-/* -------------------- helpers de tema -------------------- */
-const grad = (from, to) => `linear-gradient(135deg, ${from}, ${to})`;
-const hexToRgb = (hex) => { const m = hex?.match(/^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i); if (!m) return [0,0,0]; return [parseInt(m[1],16),parseInt(m[2],16),parseInt(m[3],16)]; };
-const luminance = ([r,g,b]) => { const a=[r,g,b].map(v=>{v/=255;return v<=0.03928?v/12.92:Math.pow((v+0.055)/1.055,2.4);}); return 0.2126*a[0]+0.7152*a[1]+0.0722*a[2]; };
-const bestTextOn = (hexA, hexB) => { const L=(luminance(hexToRgb(hexA))+luminance(hexToRgb(hexB)))/2; return L>0.45?'#111111':'#ffffff'; };
-const extractColors = (gradientString) => { const m = gradientString?.match(/#([0-9a-f]{6})/gi); return { from: m?.[0] || '#6d28d9', to: m?.[1] || '#c026d3' }; };
-
 /* -------------------- Normalizador numérico -------------------- */
 // Convierte Decimal|string|number|null -> number | ''
 const asNum = (x) => {
-  if (x === null || x === undefined) return '';
+  if (x == null) return '';
   if (typeof x === 'number') return x;
   if (typeof x === 'string') return x.trim() === '' ? '' : Number(x);
   if (typeof x === 'object') {
@@ -58,20 +56,21 @@ const ImageCarousel = ({ images, productName }) => {
   const nextImage = () => setCurrentIndex((p) => (p + 1) % images.length);
   const prevImage = () => setCurrentIndex((p) => (p - 1 + images.length) % images.length);
   return (
-    <div className="producto-media-carousel" aria-roledescription="carrusel" aria-label={`Imágenes de ${productName}`}>
-      <button className="carousel-btn prev" onClick={prevImage} aria-label="Imagen anterior"><FiChevronLeft /></button>
+    <div className="producto-media-carousel" aria-roledescription="carrusel" aria-label={`Imágenes de ${productName || 'Producto'}`}>
+      <button type="button" className="carousel-btn prev" onClick={prevImage} aria-label="Imagen anterior"><FiChevronLeft /></button>
       <img
         src={toPublicSrc(images[currentIndex])}
-        alt={`${productName} – imagen ${currentIndex + 1} de ${images.length}`}
+        alt={`${productName || 'Producto'} – imagen ${currentIndex + 1} de ${images.length}`}
         className="carousel-image"
         loading="lazy"
         decoding="async"
         sizes="(max-width: 480px) 100vw, (max-width: 1024px) 50vw, 33vw"
       />
-      <button className="carousel-btn next" onClick={nextImage} aria-label="Siguiente imagen"><FiChevronRight /></button>
+      <button type="button" className="carousel-btn next" onClick={nextImage} aria-label="Siguiente imagen"><FiChevronRight /></button>
       <div className="carousel-dots" role="tablist" aria-label="Selector de imagen">
         {images.map((_, i) => (
           <button
+            type="button"
             key={i}
             className={`dot ${i === currentIndex ? 'active' : ''}`}
             onClick={() => setCurrentIndex(i)}
@@ -131,11 +130,19 @@ export default function Productos() {
   /* -------------------- auth headers -------------------- */
   const usuario = (() => { try { return JSON.parse(localStorage.getItem('usuario') || '{}'); } catch { return {}; } })();
   const token = localStorage.getItem('token');
-  const baseHeaders = { ...(usuario?.id ? { 'x-user-id': usuario.id } : {}), ...(token ? { Authorization: `Bearer ${token}` } : {}), };
+  const baseHeaders = {
+    ...(usuario?.id ? { 'x-user-id': usuario.id } : {}),
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
 
-  /* -------------------- tema brand (solo variables CSS) -------------------- */
+  /* -------------------- tema brand -------------------- */
   useEffect(() => {
     document.body.classList.add('vendor-theme', 'has-topfixed', 'has-bottomnav');
+
+    // Aplica tema guardado y sincroniza desde /api/tienda/me (mismo comportamiento que Perfil)
+    bootBrandFromStorage();
+    attachAutoBrandFromProfile({ apiBase: API, headers: baseHeaders });
+
     (async () => {
       try {
         const r = await fetch(`${API}/api/tienda/me`, { headers: baseHeaders });
@@ -143,7 +150,11 @@ export default function Productos() {
         if (r.ok && d?.id) setTiendaId(Number(d.id));
       } catch {}
     })();
-    return () => document.body.classList.remove('vendor-theme', 'has-topfixed', 'has-bottomnav');
+
+    return () => {
+      document.body.classList.remove('vendor-theme', 'has-topfixed', 'has-bottomnav');
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   /* -------------------- cargar categorías -------------------- */
@@ -231,6 +242,7 @@ export default function Productos() {
   const crearProducto = () => {
     setMode('create'); setEditId(null); setForm(defaultForm()); setErrors({});
     setShowEditor(true);
+    setTimeout(() => refProdNombre.current?.focus(), 50);
   };
 
   const productToForm = (p) => {
@@ -256,13 +268,12 @@ export default function Productos() {
       imagenes: Array.isArray(p?.imagenes)
         ? p.imagenes.map((m, i) => ({ url: m.url, alt: m.alt || '', isPrincipal: !!m.isPrincipal, orden: typeof m.orden === 'number' ? m.orden : i }))
         : [],
-      // avanzados (normalizados donde aplica)
+      // avanzados
       sku: p?.sku || '', gtin: p?.gtin || '', marca: p?.marca || '', condicion: p?.condicion || '',
       pesoGramos: asNum(p?.pesoGramos),
       altoCm: asNum(p?.altoCm), anchoCm: asNum(p?.anchoCm), largoCm: asNum(p?.largoCm),
       claseEnvio: p?.claseEnvio || '', diasPreparacion: asNum(p?.diasPreparacion),
       politicaDevolucion: p?.politicaDevolucion || '',
-      // ⬇️ si el backend devuelve relación `digital`, úsala; si no, fallback a digitalUrl
       digitalUrl: p?.digital?.url || p?.digitalUrl || '',
       licOriginal: Boolean(p?.licenciamiento?.original),
       licNotas: typeof p?.licenciamiento?.notas === 'string' ? p.licenciamiento.notas : '',
@@ -271,6 +282,7 @@ export default function Productos() {
 
   const editarProducto = (p) => {
     setMode('edit'); setEditId(p.id); setForm(productToForm(p)); setErrors({}); setShowEditor(true);
+    setTimeout(() => refProdNombre.current?.focus(), 50);
   };
 
   const verPublico = (p) => {
@@ -540,7 +552,7 @@ export default function Productos() {
       claseEnvio: form.claseEnvio || null,
       diasPreparacion: form.diasPreparacion === '' ? null : Number(form.diasPreparacion),
       politicaDevolucion: form.politicaDevolucion || null,
-      // ⬇️ seguimos enviando digitalUrl; el backend lo mapea a digitalId
+      // digital/licenciamiento
       digitalUrl: form.tipo === 'DIGITAL' ? (form.digitalUrl || null) : null,
       licenciamiento: buildLicenciamiento(),
       // taxonomía e imágenes
@@ -716,15 +728,28 @@ export default function Productos() {
             <div className="productos-actions">
               <label className="buscar" aria-label="Buscar">
                 <FiSearch className="i" />
-                <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar por nombre, slug o SKU…" />
+                <input
+                  value={q}
+                  onChange={(e) => setQ(e.target.value)}
+                  placeholder="Buscar por nombre, slug o SKU…"
+                />
               </label>
 
-              <select value={categoriaSel} onChange={(e) => setCategoriaSel(e.target.value)} disabled={cargandoCats} title="Filtrar por categoría">
+              <select
+                value={categoriaSel}
+                onChange={(e) => setCategoriaSel(e.target.value)}
+                disabled={cargandoCats}
+                title="Filtrar por categoría"
+              >
                 <option value="todas">Todas las categorías</option>
                 {categorias.map((c) => (<option key={c.id} value={c.slug}>{c.nombre}</option>))}
               </select>
 
-              <select value={estadoSel} onChange={(e) => setEstadoSel(e.target.value)} title="Filtrar por estado">
+              <select
+                value={estadoSel}
+                onChange={(e) => setEstadoSel(e.target.value)}
+                title="Filtrar por estado"
+              >
                 <option value="">Todos</option>
                 <option value="ACTIVE">Activo</option>
                 <option value="DRAFT">Borrador</option>
@@ -732,9 +757,21 @@ export default function Productos() {
                 <option value="ARCHIVED">Archivado</option>
               </select>
 
-              <button className="btn btn-secondary" onClick={() => setShowCatModal(true)}><FiTag /> Categorías</button>
-              <button className="btn btn-primary" onClick={crearProducto}><FiPlus /> Nuevo producto</button>
-              <button className="btn btn-ghost" onClick={cargar} disabled={loading || !tiendaId}><FiRefreshCcw /> {loading ? 'Actualizando…' : 'Actualizar'}</button>
+              <button type="button" className="btn btn-secondary" onClick={() => setShowCatModal(true)}>
+                <FiTag /> Categorías
+              </button>
+              <button type="button" className="btn btn-primary" onClick={crearProducto}>
+                <FiPlus /> Nuevo producto
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={cargar}
+                disabled={loading || !tiendaId}
+                title="Actualizar productos"
+              >
+                <FiRefreshCcw /> {loading ? 'Actualizando…' : 'Actualizar'}
+              </button>
             </div>
           </div>
         </header>
@@ -747,7 +784,7 @@ export default function Productos() {
             <div className="emoji">👜</div>
             <h3>Aún no tienes productos</h3>
             <p>Crea tu primer producto para comenzar a vender.</p>
-            <button className="btn btn-primary" onClick={crearProducto}><FiPlus /> Crear producto</button>
+            <button type="button" className="btn btn-primary" onClick={crearProducto}><FiPlus /> Crear producto</button>
           </section>
         )}
 
@@ -817,22 +854,23 @@ export default function Productos() {
                           <div className="producto-footer">
                             <span className="producto-stock" data-stock={calcStock(p)}>{stockText(p)}</span>
                             <div className="producto-actions">
-                              <button className="icon" onClick={() => toggleEstado(p)} title={p.estado === 'ACTIVE' ? 'Pausar producto' : 'Activar producto'}>
+                              <button type="button" className="icon" onClick={() => toggleEstado(p)} title={p.estado === 'ACTIVE' ? 'Pausar producto' : 'Activar producto'}>
                                 {p.estado === 'ACTIVE' ? <FiPause /> : <FiPlay />}
                               </button>
-                              <button className="icon" onClick={() => toggleDestacado(p)} title={p.destacado ? 'Quitar destacado' : 'Marcar como destacado'}>
+                              <button type="button" className="icon" onClick={() => toggleDestacado(p)} title={p.destacado ? 'Quitar destacado' : 'Marcar como destacado'}>
                                 <FiStar />
                               </button>
-                              <button className="icon" onClick={() => verPublico(p)} title="Ver página pública del producto">
+                              <button type="button" className="icon" onClick={() => verPublico(p)} title="Ver página pública del producto">
                                 <FiEye />
                               </button>
-                              <button className="icon" onClick={() => editarProducto(p)} title="Editar producto">
+                              <button type="button" className="icon" onClick={() => editarProducto(p)} title="Editar producto">
                                 <FiEdit2 />
                               </button>
 
                               {/* Eliminar: lógico (normal) vs permanente (solo ARCHIVED) */}
                               {p.estado === 'ARCHIVED' ? (
                                 <button
+                                  type="button"
                                   className="icon danger"
                                   onClick={() => eliminarProductoPermanente(p)}
                                   title="Eliminar permanentemente (irrevocable)"
@@ -841,6 +879,7 @@ export default function Productos() {
                                 </button>
                               ) : (
                                 <button
+                                  type="button"
                                   className="icon danger"
                                   onClick={() => eliminarProducto(p)}
                                   title="Eliminar (archivar)"
@@ -867,14 +906,20 @@ export default function Productos() {
           <div className="panel-content" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Gestión de categorías">
             <header className="panel-head">
               <h3>Categorías</h3>
-              <button className="icon" onClick={() => setShowCatModal(false)} title="Cerrar"><FiX /></button>
+              <button type="button" className="icon" onClick={() => setShowCatModal(false)} title="Cerrar"><FiX /></button>
             </header>
 
             <p className="panel-subtitle">Crea y organiza categorías para tu catálogo.</p>
 
             <div className="categorias-new">
-              <input ref={refCatInput} value={newCatName} onChange={(e) => setNewCatName(e.target.value)} placeholder="Ej. Calzado, Postres, Electrónica…" onKeyDown={(e) => e.key === 'Enter' && agregarCategoria()} />
-              <button className="btn btn-primary" onClick={agregarCategoria}><FiPlus /> Agregar</button>
+              <input
+                ref={refCatInput}
+                value={newCatName}
+                onChange={(e) => setNewCatName(e.target.value)}
+                placeholder="Ej. Calzado, Postres, Electrónica…"
+                onKeyDown={(e) => e.key === 'Enter' && agregarCategoria()}
+              />
+              <button type="button" className="btn btn-primary" onClick={agregarCategoria}><FiPlus /> Agregar</button>
             </div>
 
             <ul className="categorias-lista">
@@ -882,18 +927,22 @@ export default function Productos() {
                 <li key={c.id}>
                   {editCatId === c.id ? (
                     <>
-                      <input value={editCatName} onChange={(e) => setEditCatName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && guardarEdicionCat()} />
+                      <input
+                        value={editCatName}
+                        onChange={(e) => setEditCatName(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && guardarEdicionCat()}
+                      />
                       <div className="cat-actions">
-                        <button className="btn btn-secondary" onClick={guardarEdicionCat}><FiCheck /> Guardar</button>
-                        <button className="btn btn-ghost" onClick={() => { setEditCatId(null); setEditCatName(''); }}><FiX /> Cancelar</button>
+                        <button type="button" className="btn btn-secondary" onClick={guardarEdicionCat}><FiCheck /> Guardar</button>
+                        <button type="button" className="btn btn-ghost" onClick={() => { setEditCatId(null); setEditCatName(''); }}><FiX /> Cancelar</button>
                       </div>
                     </>
                   ) : (
                     <>
                       <span className="cat-name">{c.nombre}</span>
                       <div className="cat-actions">
-                        <button className="btn btn-ghost" onClick={() => { setEditCatId(c.id); setEditCatName(c.nombre); }}><FiEdit2 /> Renombrar</button>
-                        <button className="btn btn-danger" onClick={() => eliminarCategoria(c.id)}><FiTrash2 /> Eliminar</button>
+                        <button type="button" className="btn btn-ghost" onClick={() => { setEditCatId(c.id); setEditCatName(c.nombre); }}><FiEdit2 /> Renombrar</button>
+                        <button type="button" className="btn btn-danger" onClick={() => eliminarCategoria(c.id)}><FiTrash2 /> Eliminar</button>
                       </div>
                     </>
                   )}
@@ -902,7 +951,7 @@ export default function Productos() {
             </ul>
 
             <footer className="panel-foot">
-              <button className="btn btn-ghost" onClick={() => setShowCatModal(false)}>Cerrar</button>
+              <button type="button" className="btn btn-ghost" onClick={() => setShowCatModal(false)}>Cerrar</button>
             </footer>
           </div>
         </section>
@@ -916,11 +965,17 @@ export default function Productos() {
             <header className="panel-head">
               <div style={{display:'flex',flexDirection:'column',gap:4}}>
                 <h3 style={{margin:0}}>{mode === 'edit' ? 'Editar producto' : 'Nuevo producto'}</h3>
-                <div style={{fontSize:'.85rem',color:'var(--text-muted)'}}>URL: <span className="producto-slug">/{computedSlug || 'nuevo-producto'}</span></div>
+                <div style={{fontSize:'.85rem',color:'var(--text-2)'}}>URL: <span className="producto-slug">/{computedSlug || 'nuevo-producto'}</span></div>
               </div>
               <div style={{display:'flex',gap:8,alignItems:'center', flexWrap:'wrap'}}>
-                <label className="check"><input type="checkbox" checked={form.visible} onChange={(e) => setForm({ ...form, visible: e.target.checked })} /><span>Visible</span></label>
-                <label className="check"><input type="checkbox" checked={form.destacado} onChange={(e) => setForm({ ...form, destacado: e.target.checked })} /><span>Destacado</span></label>
+                <label className="check">
+                  <input type="checkbox" checked={form.visible} onChange={(e) => setForm({ ...form, visible: e.target.checked })} />
+                  <span>Visible</span>
+                </label>
+                <label className="check">
+                  <input type="checkbox" checked={form.destacado} onChange={(e) => setForm({ ...form, destacado: e.target.checked })} />
+                  <span>Destacado</span>
+                </label>
                 <select value={form.estado} onChange={(e) => setForm({ ...form, estado: e.target.value })} aria-label="Estado" className="select">
                   <option value="DRAFT">Borrador</option>
                   <option value="ACTIVE">Activo</option>
@@ -968,7 +1023,7 @@ export default function Productos() {
                 <h4 className="subhead">Precios</h4>
                 <div className="crear-row">
                   <label className={`field ${errors.precio ? 'has-error':''}`}>
-                    <span>Precio actual{form.tipo==='SIMPLE' && ' *'}</span>
+                    <span>Precio actual{form.tipo==='SIMPLE' ? ' *' : ''}</span>
                     <input type="number" step="0.01" value={form.precio} onChange={(e) => setForm({ ...form, precio: e.target.value })} placeholder="Ej. 129.99" />
                     {errors.precio && <small className="error">{errors.precio}</small>}
                   </label>
@@ -1123,7 +1178,7 @@ export default function Productos() {
           <div className="panel-content" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Opciones avanzadas del producto">
             <header className="panel-head">
               <h3><FiSettings /> Opciones avanzadas</h3>
-              <button className="icon" onClick={() => setShowAdvanced(false)} title="Cerrar"><FiX /></button>
+              <button type="button" className="icon" onClick={() => setShowAdvanced(false)} title="Cerrar"><FiX /></button>
             </header>
 
             <div className="crear-grid" style={{alignItems:'start'}}>
@@ -1176,8 +1231,8 @@ export default function Productos() {
             </div>
 
             <footer className="panel-foot">
-              <button className="btn btn-ghost" onClick={() => setShowAdvanced(false)}>Cerrar</button>
-              <button className="btn btn-secondary" onClick={() => setShowAdvanced(false)}><FiCheck /> Listo</button>
+              <button type="button" className="btn btn-ghost" onClick={() => setShowAdvanced(false)}>Cerrar</button>
+              <button type="button" className="btn btn-secondary" onClick={() => setShowAdvanced(false)}><FiCheck /> Listo</button>
             </footer>
           </div>
         </section>
@@ -1192,7 +1247,7 @@ export default function Productos() {
                 <h3 style={{margin:0}}>Variantes de {form.nombre || 'Producto'}</h3>
                 <p className="panel-subtitle" style={{marginTop:4}}>Crea combinaciones (talla, color, etc.), precios y stock por variante.</p>
               </div>
-              <button className="icon" onClick={() => setShowVariantes(false)} title="Cerrar"><FiX /></button>
+              <button type="button" className="icon" onClick={() => setShowVariantes(false)} title="Cerrar"><FiX /></button>
             </header>
 
             <div className="variantes-grid">
@@ -1200,7 +1255,7 @@ export default function Productos() {
               <div className="variantes-list">
                 <div className="list-head">
                   <strong>Variantes</strong>
-                  <button className="btn btn-secondary" onClick={vStartCreate}><FiPlus /> Nueva variante</button>
+                  <button type="button" className="btn btn-secondary" onClick={vStartCreate}><FiPlus /> Nueva variante</button>
                 </div>
 
                 {vError && <div className="alert-error" role="alert">{vError}</div>}
@@ -1214,7 +1269,7 @@ export default function Productos() {
                         <th>Nombre / Opciones</th>
                         <th style={{textAlign:'right'}}>Precio</th>
                         <th style={{textAlign:'right'}}>Stock</th>
-                        <th style={{width:120}}></th>
+                        <th style={{width:120}} />
                       </tr>
                     </thead>
                     <tbody>
@@ -1231,8 +1286,8 @@ export default function Productos() {
                           <td style={{textAlign:'right'}}>{Number.isFinite(asNum(v?.inventario?.stock)) ? asNum(v?.inventario?.stock) : 0}</td>
                           <td>
                             <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
-                              <button className="btn btn-ghost" onClick={() => vStartEdit(v)}><FiEdit2 /> Editar</button>
-                              <button className="btn btn-danger" onClick={() => eliminarVariante(v)}><FiTrash2 /> Eliminar</button>
+                              <button type="button" className="btn btn-ghost" onClick={() => vStartEdit(v)}><FiEdit2 /> Editar</button>
+                              <button type="button" className="btn btn-danger" onClick={() => eliminarVariante(v)}><FiTrash2 /> Eliminar</button>
                             </div>
                           </td>
                         </tr>
@@ -1309,8 +1364,8 @@ export default function Productos() {
             </div>
 
             <footer className="panel-foot">
-              <button className="btn btn-ghost" onClick={() => setShowVariantes(false)}>Cerrar</button>
-              <button className="btn btn-secondary" onClick={refreshProductoLocal}><FiRefreshCcw /> Actualizar</button>
+              <button type="button" className="btn btn-ghost" onClick={() => setShowVariantes(false)}>Cerrar</button>
+              <button type="button" className="btn btn-secondary" onClick={refreshProductoLocal}><FiRefreshCcw /> Actualizar</button>
             </footer>
           </div>
         </section>

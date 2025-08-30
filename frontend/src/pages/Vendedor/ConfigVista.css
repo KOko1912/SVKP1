@@ -1,21 +1,79 @@
 /* frontend/src/pages/Vendedor/ConfigVista.css */
 /* ============================================ */
-/* Estilos para el editor de vista (6×20)       */
+/* Estilos del editor 6×20 – acordes a Vendedor */
 /* ============================================ */
 
-/* Contenedor del lienzo */
+/* ====== Layout principal ====== */
+/* En desktop, 3 columnas: izquierda (acciones), lienzo, derecha (props) */
+.config-panel.builder {
+  display: grid;
+  grid-template-columns: 280px 1fr 320px;
+  gap: 1.5rem;
+  padding: 0 1.5rem 2rem;
+  position: relative;
+}
+
+/* Sidebars heredan estilo base de Vendedor.css (.sidebar) */
+.pv-left {}
+.pv-props {}
+
+/* En desktop, props se quedan sticky al igual que la izquierda */
+@media (min-width: 1025px) {
+  .config-panel.builder .sidebar {
+    position: sticky;
+    top: 16px;
+    height: fit-content;
+  }
+}
+
+/* En móvil/tablet, convertir ambos sidebars en drawers */
+@media (max-width: 1024px) {
+  .config-panel.builder {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+    padding: 0 1rem 1.25rem;
+  }
+
+  .config-panel.builder .sidebar {
+    position: fixed;
+    inset: 0 auto 0 0;         /* anclar a la izquierda por defecto */
+    width: 78%;
+    max-width: 360px;
+    transform: translateX(-105%);
+    transition: transform .22s ease;
+    z-index: 99;
+    height: 100vh;
+    overflow: auto;
+    touch-action: pan-y;
+  }
+  .config-panel.builder .sidebar.open { transform: translateX(0); }
+  .config-panel.builder .sidebar .drawer-close {
+    display: inline-flex;
+  }
+
+  /* Drawer derecho (propiedades) entra desde la derecha */
+  .config-panel.builder .sidebar.pv-props {
+    left: auto;
+    right: 0;
+    transform: translateX(105%);
+  }
+  .config-panel.builder .sidebar.pv-props.open {
+    transform: translateX(0);
+  }
+}
+
+/* ====== Canvas y items ====== */
 .pv-canvas{ position: relative; }
 
-/* Item del grid */
-.pv-item{ transition: var(--transition); }
+.pv-item{ transition: var(--transition-base); }
 .pv-item.is-selected{ outline: 2px dashed var(--primary-color); outline-offset: 2px; }
 .pv-item .react-resizable-handle{ z-index: 10; }
 
 /* Tarjeta visual del bloque */
 .pv-item-content{
-  background: var(--bg-light);
-  border-radius: var(--border-radius);
-  box-shadow: var(--box-shadow);
+  background: var(--bg-card);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-1);
   height: 100%;
   display: flex;
   flex-direction: column;
@@ -25,20 +83,21 @@
 
 .pv-head{
   display:flex; align-items:center; justify-content:space-between;
-  padding:.5rem .75rem; background: rgba(0,0,0,.03);
+  padding:.6rem .75rem;
+  background: color-mix(in srgb, var(--bg-card) 90%, white 10%);
   border-bottom:1px solid var(--border-color);
 }
-.pv-handle{ display:flex; align-items:center; gap:.5rem; cursor: move; user-select:none; font-weight:600; }
+.pv-handle{ display:flex; align-items:center; gap:.5rem; cursor: move; user-select:none; font-weight:800; color: var(--text-1); }
 .pv-actions{ display:flex; gap:.25rem; }
-.pv-icon{ background: transparent; border: none; padding: .4rem; border-radius: 8px; cursor: pointer; transition: var(--transition); }
-.pv-icon:hover{ background: rgba(0,0,0,.06); }
+.pv-icon{ background: transparent; border: none; padding: .4rem; border-radius: 8px; cursor: pointer; transition: var(--transition-base); color: var(--text-1); }
+.pv-icon:hover{ background: color-mix(in srgb, var(--brand-from) 10%, transparent); }
 .pv-icon.danger:hover{ background: rgba(239,68,68,.15); color: #b91c1c; }
 
 .pv-body{ padding: .75rem; overflow: auto; }
 
-/* Hero */
+/* ====== Hero ====== */
 .pv-hero{
-  position:relative; border-radius: calc(var(--border-radius) - 2px);
+  position:relative; border-radius: calc(var(--radius-md) - 2px);
   background-size:cover; background-position:center; min-height:140px;
   display:flex; align-items:center; justify-content:center;
   color:#fff; text-align:center; text-shadow:0 1px 2px rgba(0,0,0,.35);
@@ -47,7 +106,7 @@
 .pv-hero-logo{
   position:relative; z-index:1; height:72px; width:72px; object-fit:contain;
   margin-right:.75rem; border-radius:12px; background:#fff; padding:.3rem;
-  box-shadow:var(--box-shadow); border:1px solid rgba(255,255,255,.8);
+  box-shadow:var(--shadow-1); border:1px solid rgba(255,255,255,.8);
 }
 .pv-hero .pv-hero-text{ position:relative; z-index:1; max-width: 780px; }
 .pv-hero h3{ margin:.25rem 0; font-size:1.6rem; }
@@ -55,38 +114,40 @@
 .pv-hero.align-left{ justify-content:flex-start; padding-left:1rem; }
 .pv-hero.align-right{ justify-content:flex-end; padding-right:1rem; }
 
-/* Grids de productos */
-.pv-section-title{ margin:.2rem 0 1rem; color: var(--primary-color); }
+/* ====== Grids de productos ====== */
+.pv-section-title{ margin:.2rem 0 1rem; color: var(--primary-color); font-weight:800; }
 .pv-grid{ display:grid; grid-template-columns: repeat(auto-fill, minmax(180px,1fr)); gap:.75rem; }
 .pv-grid.one{ grid-template-columns: 1fr; }
 .pv-empty{
-  padding:1rem; text-align:center; color: var(--text-muted);
-  background: var(--bg-subtle); border:1px dashed var(--border-color);
-  border-radius: var(--border-radius);
+  padding:1rem; text-align:center; color: var(--muted);
+  background: var(--surface);
+  border:1px dashed var(--border-color);
+  border-radius: var(--radius-sm);
 }
 
 .pv-card{
-  background:#fff; border:1px solid var(--border-color);
-  border-radius: 12px; overflow:hidden; box-shadow: var(--shadow-sm);
+  background: var(--bg-card);
+  border:1px solid var(--border-color);
+  border-radius: 12px; overflow:hidden; box-shadow: var(--shadow-1);
   display:flex; flex-direction:column;
 }
-.pv-card-cover{ height:140px; background:#f3f4f6; background-size:cover; background-position:center; }
+.pv-card-cover{ height:140px; background: #f3f4f6; background-size:cover; background-position:center; }
 .pv-card-info{ padding:.6rem .8rem; }
-.pv-card-title{ margin:.1rem 0; font-size:1rem; }
-.pv-card-price{ color:#111827; font-weight:700; }
-.pv-muted{ color: var(--text-muted); font-weight:500; }
+.pv-card-title{ margin:.1rem 0; font-size:1rem; color: var(--text-1); }
+.pv-card-price{ color: var(--text-1); font-weight:800; }
+.pv-muted{ color: var(--muted); font-weight:700; }
 
-/* Banner */
+/* ====== Banner ====== */
 .pv-banner{
   position:relative; min-height:120px; background:#f3f4f6;
   background-size:cover; background-position:center; border-radius:12px;
-  display:grid; place-items:center;
+  display:grid; place-items:center; overflow: hidden;
 }
 .pv-banner::after{ content:''; position:absolute; inset:0; background:rgba(0,0,0,.25); border-radius:12px; }
-.pv-banner-content{ position:relative; z-index:1; color:#fff; display:flex; gap:.75rem; align-items:center; font-size:1.25rem; }
+.pv-banner-content{ position:relative; z-index:1; color:#fff; display:flex; gap:.75rem; align-items:center; font-size:1.1rem; font-weight:800; }
 
-/* Logo */
-.pv-logo{ display:grid; place-items:center; height:100%; border:1px dashed var(--border-color); background:var(--bg-subtle); }
+/* ====== Logo ====== */
+.pv-logo{ display:grid; place-items:center; height:100%; border:1px dashed var(--border-color); background:var(--surface); }
 .pv-logo img{ max-width: 70%; max-height: 70%; object-fit:contain; filter: drop-shadow(0 4px 12px rgba(0,0,0,.15)); }
 .pv-circle img{ border-radius:999px; }
 .pv-square img{ border-radius:6px; }
@@ -95,26 +156,27 @@
 .pv-thick{ border:3px solid rgba(0,0,0,.15); }
 .pv-thin{ border:1px solid rgba(0,0,0,.12); }
 
-/* Toolbar y props */
+/* ====== Toolbar ====== */
 .pv-toolbar{ display:flex; align-items:center; justify-content:space-between; margin-bottom: .75rem; }
-.pv-props.closed{ display:none; }
-.pv-props.open{ display:block; }
-
-/* Util */
+.pv-props.closed{ display:block; } /* visible en desktop via grid; oculto solo como drawer */
 .pv-grow{ flex:1; }
 
-/* Notificación (fallback) */
+/* ====== Notificación (fallback) ====== */
 .notification{
   background: color-mix(in srgb, var(--primary-color) 20%, var(--bg-card));
   border: 1px solid color-mix(in srgb, var(--primary-color) 35%, var(--border-color));
   color: var(--text-1);
   padding: .5rem .75rem;
   border-radius: 10px;
-  box-shadow: var(--shadow-sm);
+  box-shadow: var(--shadow-1);
   opacity: 0;
   transform: translateY(6px);
-  transition: .2s ease;
+  transition: var(--transition-base);
 }
 .notification.show{ opacity: 1; transform: translateY(0); }
 
-/* Fin */ 
+/* Ajustes finos para XS */
+@media (max-width: 480px) {
+  .pv-grid{ grid-template-columns: repeat(auto-fill, minmax(150px,1fr)); }
+  .pv-card-cover{ height:120px; }
+}

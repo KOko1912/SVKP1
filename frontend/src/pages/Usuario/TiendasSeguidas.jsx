@@ -1,82 +1,85 @@
 import { useEffect, useRef, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import NavBarUsuario from './NavBarUsuario';
-import {
-  FiSearch, FiExternalLink, FiGlobe, FiMapPin, FiUsers, FiHeart
-} from 'react-icons/fi';
+import { FiSearch, FiExternalLink, FiGlobe, FiMapPin, FiUsers, FiHeart } from 'react-icons/fi';
 import './usuario.css';
+import './TiendasSeguidas.css';
 
 const RAW_API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const API = RAW_API.replace(/\/$/, '');
 const FOLLOW_KEY = 'stores_following';
+const ENABLE_EXPLORE = String(import.meta.env.VITE_ENABLE_STORE_EXPLORE || '').toLowerCase() === 'true';
 
-/* ================= Helpers de red y media ================= */
+/* ================= Helpers ================= */
 const tryJson = async (url, init) => {
   try {
     const r = await fetch(url, init);
-    const t = await r.text();
-    let d = null; try { d = JSON.parse(t); } catch {}
-    if (!r.ok || d?.error) return null;
-    return d;
+    const ct = r.headers.get('content-type') || '';
+    const data = ct.includes('application/json') ? await r.json() : await r.text();
+    if (!r.ok || (typeof data === 'object' && data?.error)) return null;
+    return data;
   } catch { return null; }
 };
 
-// URL pública (acepta absolutas - Supabase/Cloud -, o rutas del backend)
+// Public URL (Supabase absoluta o ruta de backend)
 const toPublicUrl = (u) => {
-  if (!u) return '';
-  if (typeof u !== 'string') return '';
+  if (!u || typeof u !== 'string') return '';
   const s = u.trim();
   if (!s) return '';
   if (/^https?:\/\//i.test(s)) return s;
   if (s.startsWith('/')) return `${API}${s}`;
   return `${API}/${s}`;
 };
-
 const withCacheBuster = (url, stamp = Date.now()) =>
   url ? `${url}${url.includes('?') ? '&' : '?'}t=${stamp}` : '';
 
-/* ----------------- normalizadores de logo/portada ----------------- */
-const pickStoreLogo = (t) => {
-  if (t?.logo?.url) return t.logo.url;
-  if (t?.branding?.logo?.url) return t.branding.logo.url;
-  if (typeof t?.logo === 'string') return t.logo;
-  if (t?.logoUrl) return t.logoUrl;
-  return '';
-};
-
-const pickStoreCover = (t) => {
-  if (t?.portada?.url) return t.portada.url;
-  if (t?.banner?.url) return t.banner.url;
-  if (t?.branding?.portada?.url) return t.branding.portada.url;
-  if (t?.branding?.banner?.url) return t.branding.banner.url;
-  if (t?.portadaUrl) return t.portadaUrl;
-  if (t?.banner) return t.banner;
-  return '';
-};
-
+// Imagen/branding
+const pickStoreLogo = (t) =>
+  t?.logo?.url || t?.branding?.logo?.url || t?.logoUrl || (typeof t?.logo === 'string' ? t.logo : '') || '';
+const pickStoreCover = (t) =>
+  t?.portada?.url || t?.banner?.url || t?.branding?.portada?.url || t?.branding?.banner?.url || t?.portadaUrl || t?.banner || '';
+const externalUrlForStore  = (t) => t?.urlPublica || t?.urlPrincipal || t?.web || t?.url || '';
 const storeKey = (t) => t?.slug || t?.publicUuid || String(t?.id || '');
-const internalPathForStore = (t) => {
-  if (t?.slug) return `/t/${encodeURIComponent(t.slug)}`;
-  if (t?.publicUuid) return `/s/${encodeURIComponent(t.publicUuid)}`;
-  return '';
-};
-const externalUrlForStore  = (t) =>
-  t?.urlPublica || t?.urlPrincipal || t?.web || t?.url || '';
+const internalPathForStore = (t) => t?.slug ? `/t/${encodeURIComponent(t.slug)}` : (t?.publicUuid ? `/s/${encodeURIComponent(t.publicUuid)}` : '');
 
-/* ========= intenta resolver una tienda por clave (slug/uuid/id) ========= */
+// Branding helpers
+const HEX_RE = /#([0-9a-f]{6})/ig;
+const safeColorsFromGradient = (g) => {
+  if (typeof g !== 'string') return null;
+  const m = g.match(HEX_RE);
+  if (!m || m.length < 2) return null;
+  return { from: m[0], to: m[1] };
+};
+const hashPick = (seed = 'svk') => {
+  const pools = [
+    ['#6d28d9', '#c026d3'], // purple
+    ['#0369a1', '#0ea5e9'], // blue
+    ['#059669', '#10b981'], // green
+    ['#ea580c', '#f97316'], // orange
+    ['#be185d', '#ec4899'], // pink
+    ['#0e7490', '#06b6d4'], // cyan
+    ['#b91c1c', '#ef4444'], // red
+  ];
+  let h = 0; for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
+  const idx = h % pools.length;
+  return { from: pools[idx][0], to: pools[idx][1] };
+};
+const pickBrand = (t) => {
+  const g = t?.colorPrincipal || t?.branding?.colorPrincipal;
+  const parsed = safeColorsFromGradient(g);
+  if (parsed) return parsed;
+  const seed = t?.slug || t?.publicUuid || String(t?.id || 'svk');
+  return hashPick(seed);
+};
+
+/* ========= resolver tienda por clave ========= */
 async function fetchPublicStoreByKey(key) {
   if (!key) return null;
   const k = String(key).trim();
-
-  // 1) slug
   let d = await tryJson(`${API}/api/tienda/public/${encodeURIComponent(k)}`);
   if (d && (d.slug || d.id)) return d;
-
-  // 2) uuid pública
   d = await tryJson(`${API}/api/tienda/public/uuid/${encodeURIComponent(k)}`);
   if (d && (d.slug || d.id)) return d;
-
-  // 3) by-id (numérico)
   if (/^\d+$/.test(k)) {
     d = await tryJson(`${API}/api/tienda/public/by-id/${k}`);
     if (d && (d.slug || d.id)) return d;
@@ -90,7 +93,7 @@ export default function TiendasSeguidas() {
 
   // UI
   const [q, setQ] = useState('');
-  const [sort, setSort] = useState('relevance'); // relevance | name | followers | city
+  const [sort, setSort] = useState('relevance');
   const [onlyFollowing, setOnlyFollowing] = useState(false);
 
   // Data
@@ -99,7 +102,7 @@ export default function TiendasSeguidas() {
   const [msg, setMsg] = useState('');
   const [page, setPage] = useState(1);
 
-  // Follow state (persistente)
+  // Follow state
   const [usuario, setUsuario] = useState(null);
   const [following, setFollowing] = useState(new Set());
   const persistTimer = useRef(null);
@@ -182,7 +185,6 @@ export default function TiendasSeguidas() {
     const k = storeKey(t);
     return k && following.has(String(k));
   };
-
   const toggleFollow = (t) => {
     const k = storeKey(t);
     if (!k) return;
@@ -198,11 +200,9 @@ export default function TiendasSeguidas() {
   const fetchStores = async (signal) => {
     setLoading(true);
     setMsg('');
-
     const results = [];
-
-    // 1) Si hay texto, intenta resolverlo como slug/uuid/id (endpoints públicos que existen)
     const term = q.trim();
+
     if (term) {
       const resolved = await fetchPublicStoreByKey(term);
       if (resolved) {
@@ -211,41 +211,48 @@ export default function TiendasSeguidas() {
         setLoading(false);
         return;
       }
-
-      // Como “bonus”, si tuvieras /api/tiendas/search con q (a veces existe),
-      // lo intentamos SOLO cuando hay término:
-      const extra = await tryJson(`${API}/api/tiendas/search?q=${encodeURIComponent(term)}&page=${page}&limit=24`);
-      const list = extra?.items || extra?.data || extra?.tiendas || (Array.isArray(extra) ? extra : []);
-      if (Array.isArray(list) && list.length) {
-        setStores(list);
-        setLoading(false);
-        return;
+      // Si tienes un buscador de texto completo, actívalo con VITE_ENABLE_STORE_EXPLORE=true
+      if (ENABLE_EXPLORE) {
+        const extra = await tryJson(`${API}/api/tiendas/search?q=${encodeURIComponent(term)}&page=${page}&limit=48`, { signal });
+        const list = extra?.items || extra?.data || extra?.tiendas || (Array.isArray(extra) ? extra : []);
+        if (Array.isArray(list) && list.length) {
+          setStores(list);
+          setLoading(false);
+          return;
+        }
       }
-
       setStores([]);
       setMsg('No se encontraron tiendas para esa clave.');
       setLoading(false);
       return;
     }
 
-    // 2) Sin término: carga seguidas del usuario (local/servidor) resolviendo cada clave
+    // sin término: seguidas + me
     const followArr = JSON.parse(localStorage.getItem(FOLLOW_KEY) || '[]');
     if (Array.isArray(followArr) && followArr.length) {
       const batch = await Promise.allSettled(followArr.map(k => fetchPublicStoreByKey(k)));
-      for (const it of batch) {
-        if (it.status === 'fulfilled' && it.value) results.push(it.value);
-      }
+      for (const it of batch) if (it.status === 'fulfilled' && it.value) results.push(it.value);
     }
 
-    // 3) Si estás logueado como vendedor, intenta incluir tu tienda “me”
     try {
       const uLS = JSON.parse(localStorage.getItem('usuario') || 'null');
       const headers = uLS?.id ? { 'x-user-id': uLS.id } : undefined;
       const me = await tryJson(`${API}/api/tienda/me`, { headers, signal });
-      if (me && (me.isPublished || me.slug)) {
-        results.push(me);
-      }
+      if (me && (me.isPublished || me.slug)) results.push(me);
     } catch {}
+
+    // si existe listado público, úsalo (opt-in)
+    if (ENABLE_EXPLORE) {
+      const opts = [
+        `${API}/api/tiendas/public?page=${page}&limit=48`,
+        `${API}/api/tiendas?page=${page}&limit=48`
+      ];
+      for (const url of opts) {
+        const d = await tryJson(url, { signal });
+        const list = d?.items || d?.data || d?.tiendas || (Array.isArray(d) ? d : null);
+        if (Array.isArray(list) && list.length) results.push(...list);
+      }
+    }
 
     // De-duplicar (por slug o id)
     const seen = new Set();
@@ -262,7 +269,7 @@ export default function TiendasSeguidas() {
 
   useEffect(() => {
     const ctrl = new AbortController();
-    const t = setTimeout(() => fetchStores(ctrl.signal), 250);
+    const t = setTimeout(() => fetchStores(ctrl.signal), 180);
     return () => { ctrl.abort(); clearTimeout(t); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [q, page]);
@@ -292,7 +299,7 @@ export default function TiendasSeguidas() {
       case 'city':
         list = [...list].sort((a, b) => (a?.ciudad || '').localeCompare(b?.ciudad || ''));
         break;
-      default: // relevance
+      default:
         break;
     }
     return list;
@@ -317,21 +324,20 @@ export default function TiendasSeguidas() {
   return (
     <>
       <NavBarUsuario />
-
       <div className="page page--dark-svk">
         <main className="container-svk">
           {/* Header + controles */}
-          <header className="card-svk" style={{ marginBottom: 16 }}>
+          <header className="ts-card card-svk" style={{ marginBottom: 16 }}>
             <div className="block-title" style={{ marginBottom: 10 }}>
               <span className="icon"><FiSearch /></span>
               <h2>Explorar / Tiendas seguidas</h2>
             </div>
             <p className="subtitle-svk" style={{ marginBottom: 14 }}>
-              Escribe el <strong>slug</strong> de una tienda para buscarla, o mira tus tiendas seguidas.
+              Escribe el <strong>slug</strong> de una tienda para buscarla, o descubre nuevas tiendas.
             </p>
 
-            <div className="shop-controls">
-              <div className="shop-searchbar dark">
+            <div className="ts-controls">
+              <div className="ts-searchbar">
                 <FiSearch />
                 <input
                   value={q}
@@ -341,8 +347,8 @@ export default function TiendasSeguidas() {
                 />
               </div>
 
-              <div className="shop-right-controls">
-                <label className="toggle small" title="Mostrar solo tiendas que sigues">
+              <div className="ts-right-controls">
+                <label className="ts-toggle" title="Mostrar solo tiendas que sigues">
                   <input
                     type="checkbox"
                     checked={onlyFollowing}
@@ -352,7 +358,7 @@ export default function TiendasSeguidas() {
                 </label>
 
                 <select
-                  className="select-svk"
+                  className="ts-select"
                   value={sort}
                   onChange={(e) => setSort(e.target.value)}
                   aria-label="Ordenar resultados"
@@ -368,68 +374,64 @@ export default function TiendasSeguidas() {
 
           {/* Resultados */}
           {loading ? (
-            <section className="shop-grid">
-              {Array.from({ length: 8 }).map((_, i) => (
-                <article key={i} className="shop-card skeleton" />
+            <section className="ts-grid">
+              {Array.from({ length: 12 }).map((_, i) => (
+                <article key={i} className="ts-card ts-skeleton" />
               ))}
             </section>
           ) : (
             <>
               {!visibleStores.length ? (
-                <div className="card-svk empty-state">
-                  <p className="subtitle-svk">
-                    {msg || (onlyFollowing
-                      ? 'No hay coincidencias entre tus tiendas seguidas.'
-                      : 'Sin resultados. Prueba buscando por el slug (ej. tiendasonline).')}
-                  </p>
+                <div className="ts-card empty-state">
+                  <p className="subtitle-svk">{msg}</p>
                 </div>
               ) : (
-                <section className="shop-grid">
+                <section className="ts-grid">
                   {visibleStores.map((t, i) => {
                     const logoRaw = pickStoreLogo(t);
                     const coverRaw = pickStoreCover(t);
                     const stamp = t?.updatedAt || Date.now();
-
                     const logo = withCacheBuster(toPublicUrl(logoRaw), stamp);
                     const hdr  = withCacheBuster(toPublicUrl(coverRaw), stamp);
-                    const external = externalUrlForStore(t);
                     const followed = isFollowing(t);
+                    const { from, to } = pickBrand(t);
 
                     return (
-                      <article key={`${storeKey(t) || i}`} className="shop-card card-svk shop-card--fx">
-                        {/* Portada 16:9 */}
-                        <div className="shop-cover" style={hdr ? { backgroundImage: `url(${hdr})` } : undefined} />
+                      <article
+                        key={`${storeKey(t) || i}`}
+                        className="ts-card ts-shop"
+                        style={{ '--from': from, '--to': to }}
+                      >
+                        <div className="ts-accent" />
+                        <div
+                          className="ts-cover"
+                          style={hdr ? { backgroundImage: `url(${hdr})` } : { backgroundImage: `linear-gradient(135deg, ${from}, ${to})` }}
+                        >
+                          <div className="ts-cover-overlay" />
+                        </div>
 
-                        <div className="shop-body">
-                          {/* Cabecera */}
-                          <div className="shop-head">
-                            <div className="shop-avatar">
-                              {logo ? <img src={logo} alt="" /> : <span className="shop-avatar-fallback">SVK</span>}
+                        <div className="ts-body">
+                          <div className="ts-head">
+                            <div className="ts-avatar">
+                              {logo ? <img src={logo} alt="" /> : <span className="ts-avatar-fallback">SVK</span>}
                             </div>
-                            <div className="shop-head-text">
-                              <h3 className="shop-name">{t?.nombre || 'Tienda sin nombre'}</h3>
-                              <p className="shop-desc">{t?.descripcion || '—'}</p>
+                            <div className="ts-head-text">
+                              <h3 className="ts-name">{t?.nombre || 'Tienda sin nombre'}</h3>
+                              <p className="ts-desc">{t?.descripcion || '—'}</p>
                             </div>
                           </div>
 
-                          {/* Meta */}
-                          <div className="shop-meta">
+                          <div className="ts-meta">
                             {t?.ciudad && (<span><FiMapPin /> {t.ciudad}</span>)}
                             {(t?.seguidores != null) && (<span><FiUsers /> {t.seguidores} seguidores</span>)}
-                            {t?.categoria && <span className="shop-tag">#{t.categoria}</span>}
-                            {followed && <span className="shop-badge">Siguiendo</span>}
+                            {t?.categoria && <span className="ts-tag">#{t.categoria}</span>}
+                            {followed && <span className="ts-badge">Siguiendo</span>}
                           </div>
 
-                          {/* Acciones */}
-                          <div className="shop-actions">
-                            <button
-                              className="btn btn-outline"
-                              onClick={() => visitStore(t)}
-                              title="Abrir sitio público de la tienda"
-                            >
-                              {external ? <FiExternalLink /> : <FiGlobe />} Visitar tienda
+                          <div className="ts-actions">
+                            <button className="btn btn-outline" onClick={() => visitStore(t)} title="Abrir sitio público de la tienda">
+                              {externalUrlForStore(t) ? <FiExternalLink /> : <FiGlobe />} Visitar tienda
                             </button>
-
                             <button
                               className={`btn btn-ghost ${followed ? 'active' : ''}`}
                               onClick={() => toggleFollow(t)}
@@ -446,13 +448,8 @@ export default function TiendasSeguidas() {
                 </section>
               )}
 
-              {/* Paginación simple (útil cuando exista listado real) */}
               <div className="pager">
-                <button
-                  className="btn btn-ghost"
-                  disabled={page <= 1}
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                >
+                <button className="btn btn-ghost" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>
                   Anterior
                 </button>
                 <span style={{ color: 'var(--svk-muted)' }}>Página {page}</span>

@@ -4,7 +4,7 @@ import Nabvendedor from './Nabvendedor';
 import {
   FiSettings, FiImage, FiInfo, FiCreditCard, FiShare2, FiTag,
   FiClock, FiPhone, FiTruck, FiRefreshCw, FiCheck,
-  FiFacebook, FiInstagram, FiYoutube, FiMenu, FiX, FiMoon, FiSun
+  FiFacebook, FiInstagram, FiYoutube, FiMenu, FiX, FiMoon, FiSun, FiPlus
 } from 'react-icons/fi';
 import './Vendedor.css';
 
@@ -28,15 +28,16 @@ const PALETA_NEON = [
   { id: 'neon-red',    name: 'Neon Red',    from: '#b91c1c', to: '#ef4444' },
 ];
 
+/* ===================== FLAGS / UTILS ===================== */
+const FEATURE_SEO = false; // deja oculto SEO hasta que lo quieras habilitar
+const overlayFor = (mode) => (mode === 'light' ? 0.55 : 0.35);
+
 /* ===================== Utils ===================== */
 const grad = (from, to) => `linear-gradient(135deg, ${from}, ${to})`;
 const withT = (url, t) => (url ? `${url}${url.includes('?') ? '&' : '?'}t=${t || 0}` : '');
-
 const isAbs = (u) => /^https?:\/\//i.test(String(u || ''));
 
-// PUBLIC: para mostrar imágenes en el navegador.
-// - Absolutas (Supabase): se dejan intactas.
-// - Relativas (backend local): se antepone API.
+// PUBLIC URL (absolutas o relativas al backend)
 const toPublicUrl = (u) => {
   if (!u) return '';
   const s = String(u).replace(/\\/g, '/');
@@ -66,7 +67,7 @@ const extractColors = (gradientString) => {
   return { from: m?.[0] || '#6d28d9', to: m?.[1] || '#c026d3' };
 };
 
-// Imagen de portada + tinte
+// Composición de header (imagen + tinte)
 const composeHeaderBg = (portadaUrl, from, to, ver) => {
   if (!portadaUrl) return `linear-gradient(135deg, ${from}, ${to})`;
   return `linear-gradient(135deg, ${from}cc, ${to}cc), url("${withT(toPublicUrl(portadaUrl), ver)}")`;
@@ -79,7 +80,7 @@ const normalizeUrl = (url) => {
   return u;
 };
 
-/* ===================== Componentes internos (reutilizables) ===================== */
+/* ===================== Building blocks ===================== */
 function Card({ as: As = 'section', children, title, subtitle, actions, footer, id }) {
   const TitleWrap = typeof title === 'string' ? 'h3' : 'div';
   return (
@@ -171,6 +172,58 @@ function Pill({ children }) {
   return <span className="pill">{children}</span>;
 }
 
+/** Input con botón + visible solo cuando hay texto. */
+function AddableInput({ placeholder, onAdd, ariaLabel = 'Agregar', buttonTitle = 'Agregar', autoFocus = false }) {
+  const [val, setVal] = useState('');
+  const add = () => {
+    const v = val.trim();
+    if (!v) return;
+    onAdd?.(v);
+    setVal('');
+  };
+  return (
+    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+      <input
+        className="form-input"
+        placeholder={placeholder}
+        value={val}
+        autoFocus={autoFocus}
+        onChange={(e) => setVal(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            add();
+          }
+        }}
+      />
+      {val.trim() && (
+        <button
+          type="button"
+          onClick={add}
+          aria-label={ariaLabel}
+          title={buttonTitle}
+          className="btn"
+          style={{
+            padding: '0 12px',
+            height: 44,
+            minWidth: 44,
+            borderRadius: 10,
+            background: 'var(--primary-color)',
+            color: '#fff',
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            boxShadow: 'var(--shadow-1)',
+            flex: '0 0 auto'
+          }}
+        >
+          <FiPlus />
+        </button>
+      )}
+    </div>
+  );
+}
+
 /* ===================== Página ===================== */
 export default function VendedorPerfil() {
   const prefersLight = window.matchMedia?.('(prefers-color-scheme: light)').matches;
@@ -198,6 +251,7 @@ export default function VendedorPerfil() {
   const [subiendo, setSubiendo] = useState({ portada: false, logo: false, banner: false });
   const [cargando, setCargando] = useState(true);
   const [notification, setNotification] = useState({ show: false, message: '' });
+  const [hasSeoTab, setHasSeoTab] = useState(FEATURE_SEO);
 
   const usuario = JSON.parse(localStorage.getItem('usuario') || '{}');
   const headers = { 'x-user-id': usuario?.id };
@@ -208,6 +262,7 @@ export default function VendedorPerfil() {
     return () => document.body.classList.remove('vendor-theme');
   }, []);
 
+  // Modo claro/oscuro en raíz
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', colorMode);
     localStorage.setItem('vk-color-mode', colorMode);
@@ -230,6 +285,7 @@ export default function VendedorPerfil() {
             subcategorias: d.subcategorias || [],
             metodosPago: d.metodosPago || [],
             seoKeywords: d.seoKeywords || [],
+            seoDescripcion: d.seoDescripcion || '',
             horario: d.horario || Object.fromEntries(DIAS_SEMANA.map(x => [x.id, ''])),
             redes: d.redes || { facebook: '', instagram: '', tiktok: '' },
             colorPrincipal: d.colorPrincipal || grad('#6d28d9', '#c026d3'),
@@ -237,6 +293,9 @@ export default function VendedorPerfil() {
           setTienda(t => ({ ...t, ...normal }));
           const { from, to } = extractColors(normal.colorPrincipal);
           setTheme({ from, to, contrast: bestTextOn(from, to) });
+
+          const seoPresent = Boolean(normal.seoDescripcion) || (normal.seoKeywords?.length ?? 0) > 0;
+          setHasSeoTab(FEATURE_SEO || seoPresent);
         }
       } catch (e) {
         console.error(e);
@@ -245,7 +304,7 @@ export default function VendedorPerfil() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Propaga tema a CSS
+  // Propaga tema + overlay seguro
   useEffect(() => {
     const root = document.documentElement.style;
     root.setProperty('--brand-from', theme.from);
@@ -254,12 +313,14 @@ export default function VendedorPerfil() {
     root.setProperty('--brand-gradient', grad(theme.from, theme.to));
     root.setProperty('--primary-color', theme.from);
     root.setProperty('--primary-hover', theme.from);
+    root.setProperty('--overlay', String(overlayFor(colorMode)));
+
     const softHalos = `radial-gradient(900px 600px at 0% -10%, ${theme.from}22, transparent 60%),
                        radial-gradient(900px 600px at 100% -10%, ${theme.to}22, transparent 60%)`;
     const pageBg = `${softHalos}, linear-gradient(135deg, ${theme.from}, ${theme.to})`;
     root.setProperty('--page-bg', pageBg);
     setTienda(t => ({ ...t, colorPrincipal: grad(theme.from, theme.to) }));
-  }, [theme]);
+  }, [theme, colorMode]);
 
   // Cierra drawer con ESC
   useEffect(() => {
@@ -267,6 +328,11 @@ export default function VendedorPerfil() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []);
+
+  // Si el tab actual es "seo" pero está oculto, regresa a "general"
+  useEffect(() => {
+    if (!hasSeoTab && tab === 'seo') setTab('general');
+  }, [hasSeoTab, tab]);
 
   /* ====== Helpers de UI ====== */
   const showNotification = (message) => {
@@ -296,7 +362,6 @@ export default function VendedorPerfil() {
         headers: { 'Content-Type': 'application/json', ...headers },
         body: JSON.stringify({
           ...tienda,
-          // Enviamos las URLs tal cual (Supabase absoluto o ruta local)
           portadaUrl: tienda.portadaUrl || '',
           logoUrl: tienda.logoUrl || '',
           bannerPromoUrl: tienda.bannerPromoUrl || '',
@@ -322,7 +387,6 @@ export default function VendedorPerfil() {
       const d = await r.json();
       if (!r.ok) throw new Error(d?.error || 'Error al subir imagen');
 
-      // Usamos exactamente la URL que devuelve el backend (Supabase o local)
       const webPath = d.url || '';
       const campo = tipo === 'portada' ? 'portadaUrl' : (tipo === 'logo' ? 'logoUrl' : 'bannerPromoUrl');
       setTienda(t => ({ ...t, [campo]: webPath }));
@@ -371,10 +435,13 @@ export default function VendedorPerfil() {
   const imageUrl = (p, v) => (p ? withT(toPublicUrl(p), v) : '');
 
   return (
-    <div className="vendedor-container">
+    <div
+      className="vendedor-container"
+      style={{ fontFamily: 'Arial, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, sans-serif' }}
+    >
       <Nabvendedor />
 
-      {/* Header */}
+      {/* Header (zIndex 0 para dejar los overlays del menú por encima) */}
       <div
         className="tienda-header"
         style={{
@@ -383,6 +450,7 @@ export default function VendedorPerfil() {
           backgroundPosition: 'center',
           backgroundRepeat: 'no-repeat',
           color: 'var(--brand-contrast)',
+          zIndex: 0
         }}
       >
         <div className="tienda-header-content">
@@ -478,13 +546,20 @@ export default function VendedorPerfil() {
           >
             <FiShare2 className="sidebar-icon" /> Redes Sociales
           </div>
-          <div
-            className={`sidebar-item ${tab === 'seo' ? 'active' : ''}`}
-            onClick={() => { setTab('seo'); setDrawerOpen(false); }}
-            role="button" tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && setTab('seo')}
-          >
-            <FiTag className="sidebar-icon" /> SEO & Marketing
-          </div>
+
+          {hasSeoTab ? (
+            <div
+              className={`sidebar-item ${tab === 'seo' ? 'active' : ''}`}
+              onClick={() => { setTab('seo'); setDrawerOpen(false); }}
+              role="button" tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && setTab('seo')}
+            >
+              <FiTag className="sidebar-icon" /> SEO & Marketing
+            </div>
+          ) : (
+            <div className="sidebar-item disabled" aria-disabled="true" title="Próximamente">
+              <FiTag className="sidebar-icon" /> SEO & Marketing
+            </div>
+          )}
 
           <button className="btn btn-primary sidebar-save" onClick={guardar}>
             <FiCheck /> Guardar Cambios
@@ -547,7 +622,7 @@ export default function VendedorPerfil() {
                   <FormField label="Categoría Principal" required error={errors.categoria}>
                     <select
                       className="form-select"
-                      value={tienda.categoria ?? ''}  // ← evita null
+                      value={tienda.categoria ?? ''}
                       aria-invalid={!!errors.categoria}
                       onChange={e => { setTienda({ ...tienda, categoria: e.target.value }); if (errors.categoria) validate(); }}
                     >
@@ -569,19 +644,12 @@ export default function VendedorPerfil() {
                   <div className="char-counter">{tienda.descripcion?.length || 0}/250</div>
                 </FormField>
 
-                <FormField label="Subcategorías" hint="Presiona Enter para agregar">
-                  <input
-                    className="form-input"
+                <FormField label="Subcategorías" hint="Usa Enter o el botón + para agregar">
+                  <AddableInput
                     placeholder="Ej: Ropa deportiva"
-                    onKeyDown={e => {
-                      if (e.key === 'Enter') {
-                        const v = e.currentTarget.value.trim();
-                        if (v) addArray('subcategorias', v);
-                        e.currentTarget.value = '';
-                      }
-                    }}
+                    onAdd={(v) => addArray('subcategorias', v)}
                   />
-                  <div className="chip-container">
+                  <div className="chip-container" style={{ marginTop: 8 }}>
                     {tienda.subcategorias.map((s, i) => (
                       <div key={i} className="chip">
                         {s}
@@ -821,22 +889,15 @@ export default function VendedorPerfil() {
             </div>
           )}
 
-          {tab === 'seo' && (
+          {tab === 'seo' && hasSeoTab && (
             <div>
               <Card title={<SectionTitle icon={FiTag}>Palabras Clave (SEO)</SectionTitle>} subtitle="Mejora tu visibilidad">
-                <input
-                  className="form-input"
-                  placeholder="Escribe una palabra clave y presiona Enter"
-                  onKeyDown={e => {
-                    if (e.key === 'Enter') {
-                      const v = e.currentTarget.value.trim();
-                      if (v) addArray('seoKeywords', v);
-                      e.currentTarget.value = '';
-                    }
-                  }}
+                <AddableInput
+                  placeholder="Escribe una palabra clave"
+                  onAdd={(v) => addArray('seoKeywords', v)}
                 />
-                <div className="chip-container">
-                  {tienda.seoKeywords.map((k, i) => (
+                <div className="chip-container" style={{ marginTop: 8 }}>
+                  {(tienda.seoKeywords || []).map((k, i) => (
                     <div key={i} className="chip">
                       {k}
                       <button className="chip-remove" onClick={() => removeFromArray('seoKeywords', i)} aria-label="Quitar">×</button>
@@ -850,12 +911,18 @@ export default function VendedorPerfil() {
                   className="form-textarea"
                   placeholder="Describe tu tienda con palabras clave importantes..."
                   maxLength={160}
-                  value={tienda.seoDescripcion}
+                  value={tienda.seoDescripcion || ''}
                   onChange={e => setTienda({ ...tienda, seoDescripcion: e.target.value })}
                 />
-                <div className="char-counter" data-ok={tienda.seoDescripcion.length >= 150 && tienda.seoDescripcion.length <= 160}>
-                  {tienda.seoDescripcion.length}/160 caracteres
-                </div>
+                {(() => {
+                  const len = (tienda.seoDescripcion || '').length;
+                  const ok = len >= 150 && len <= 160;
+                  return (
+                    <div className="char-counter" data-ok={ok}>
+                      {len}/160 caracteres
+                    </div>
+                  );
+                })()}
               </Card>
             </div>
           )}

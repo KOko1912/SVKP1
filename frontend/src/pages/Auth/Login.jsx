@@ -4,6 +4,7 @@ import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { FiEye, FiEyeOff, FiArrowLeft, FiUser, FiLock, FiPhone } from 'react-icons/fi';
 import * as API from '../../lib/api.js';
+import './Auth.css';
 
 export default function Login() {
   const [telefono, setTelefono] = useState('');
@@ -41,17 +42,20 @@ export default function Login() {
 
   return (
     <div className="auth-page">
-      <div className="auth-background"></div>
-      
-      <div className="auth-container">
-        <button 
-          onClick={() => navigate('/')} 
-          className="auth-back-button"
-        >
-          <FiArrowLeft /> Volver al inicio
-        </button>
+      <div className="auth-background" />
 
-        <motion.div 
+      <div className="auth-container">
+        {/* Rail superior alineado con el ancho del card */}
+        <div className="auth-header-rail">
+          <button
+            onClick={() => navigate('/')}
+            className="auth-back-button"
+          >
+            <FiArrowLeft /> Volver al inicio
+          </button>
+        </div>
+
+        <motion.div
           className="auth-card"
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -66,17 +70,18 @@ export default function Login() {
           </div>
 
           {error && (
-            <motion.div 
+            <motion.div
               className="auth-error-message"
+              role="alert"
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: 'auto' }}
               transition={{ duration: 0.3 }}
             >
-              <span>⚠️</span> {error}
+              <span aria-hidden="true">⚠️</span> {error}
             </motion.div>
           )}
 
-          <form onSubmit={handleLogin} className="auth-form">
+          <form onSubmit={handleLogin} className="auth-form" noValidate>
             <div className="form-group">
               <label htmlFor="telefono" className="form-label">
                 <FiPhone /> Número de teléfono
@@ -137,9 +142,9 @@ export default function Login() {
               </button>
             </div>
 
-            <button 
-              type="submit" 
-              className="auth-submit-button primary-button" 
+            <button
+              type="submit"
+              className="auth-submit-button primary-button"
               disabled={loading}
             >
               {loading ? (
@@ -156,8 +161,8 @@ export default function Login() {
 
           <div className="auth-footer">
             <p>¿No tienes una cuenta?</p>
-            <Link 
-              to="/registro" 
+            <Link
+              to="/registro"
               className="auth-link-button secondary-button"
               state={{ from: location.state?.from }}
             >

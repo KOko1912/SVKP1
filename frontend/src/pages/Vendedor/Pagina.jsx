@@ -9,20 +9,20 @@ import {
 import Swal from "sweetalert2";
 
 /* ===================== Bases ===================== */
-const API    = (import.meta.env.VITE_API_URL    || "http://localhost:5000").replace(/\/$/, "");
-const FILES  = (import.meta.env.VITE_FILES_BASE || API).replace(/\/$/, "");
+const API   = (import.meta.env.VITE_API_URL    || "http://localhost:5000").replace(/\/$/, "");
+const FILES = (import.meta.env.VITE_FILES_BASE || API).replace(/\/$/, "");
 
 /* ===================== Helpers ===================== */
 const grad = (from, to) => `linear-gradient(135deg, ${from}, ${to})`;
 
-/** Normaliza cualquier URL (acepta absoluta de Supabase o relativa local) */
 const toPublicSrc = (u) => {
-  const v =
-    typeof u === "string"
-      ? u
-      : (u?.url || u?.path || u?.src || u?.href || u?.filepath || u?.location || u?.image || u?.thumbnail || "");
+  const v = typeof u === "string"
+    ? u
+    : (u?.url || u?.path || u?.src || u?.href || u?.filepath || u?.location || u?.image || u?.thumbnail || "");
   if (!v) return "";
-  return /^https?:\/\//i.test(v) ? v : `${FILES}${v.startsWith("/") ? "" : "/"}${v}`;
+  if (/^https?:\/\//i.test(v)) return v;
+  const path = v.startsWith("/") ? v : `/${v}`;
+  return `${FILES}${path}`;
 };
 
 const slugify = (str = "") =>
@@ -35,9 +35,24 @@ const slugify = (str = "") =>
 
 const safeJsonParse = (t, fb=null) => { try { return JSON.parse(t); } catch { return fb; } };
 
+/* Media query hook para alternar grid/carrusel */
+function useMediaQuery(query) {
+  const [matches, setMatches] = useState(() =>
+    typeof window !== "undefined" ? window.matchMedia(query).matches : false
+  );
+  useEffect(() => {
+    const m = window.matchMedia(query);
+    const onChange = () => setMatches(m.matches);
+    onChange();
+    m.addEventListener?.("change", onChange);
+    return () => m.removeEventListener?.("change", onChange);
+  }, [query]);
+  return matches;
+}
+
 /* ===================== Página ===================== */
 export default function Pagina() {
-  const usuario = useMemo(() => safeJsonParse(localStorage.getItem("usuario") || "{}", {}), []);
+  const usuario = useMemo(() => safeJsonParse(localStorage.getItem("usuario") || "{}"), []);
   const headers = { "x-user-id": usuario?.id };
 
   const [tienda, setTienda] = useState(null);
@@ -174,68 +189,61 @@ export default function Pagina() {
   const orderedBlocks = useMemo(() => {
     const raw = tienda?.homeLayout ?? null;
     const blocks = Array.isArray(raw) ? raw : Array.isArray(raw?.blocks) ? raw.blocks : [];
-    // aplica defaults y orden por posición visual (y -> x -> z)
     const withDefaults = blocks.map(b => ({
       ...b,
       props: { ...(DEFAULT_PROPS[b.type] || {}), ...(b.props || {}) },
       gs: { ...(b.gs || {}) },
       z: Number.isFinite(+b.z) ? +b.z : 1,
     }));
-    return withDefaults
-      .sort((a, b) => {
-        const ay = a.gs?.y ?? 0, by = b.gs?.y ?? 0;
-        if (ay !== by) return ay - by;
-        const ax = a.gs?.x ?? 0, bx = b.gs?.x ?? 0;
-        if (ax !== bx) return ax - bx;
-        return (a.z||1) - (b.z||1);
-      });
+    return withDefaults.sort((a, b) => {
+      const ay = a.gs?.y ?? 0, by = b.gs?.y ?? 0;
+      if (ay !== by) return ay - by;
+      const ax = a.gs?.x ?? 0, bx = b.gs?.x ?? 0;
+      if (ax !== bx) return ax - bx;
+      return (a.z||1) - (b.z||1);
+    });
   }, [tienda?.homeLayout]);
 
   /* ===================== Render principal ===================== */
-  if (loading) return (
-    <div className="vendedor-container">
-      <Nabvendedor />
-      <div className="loading-screen">
-        <div className="loading-spinner" />
-        <div>Cargando tienda...</div>
+  if (loading) {
+    return (
+      <div className="vendedor-container">
+        <Nabvendedor />
+        <div className="loading-screen">
+          <div className="loading-spinner" />
+          <div>Cargando tienda...</div>
+        </div>
       </div>
-    </div>
-  );
+    );
+  }
 
-  if (error) return (
-    <div className="vendedor-container">
-      <Nabvendedor />
-      <div className="error-message">Error: {error}</div>
-    </div>
-  );
+  if (error) {
+    return (
+      <div className="vendedor-container">
+        <Nabvendedor />
+        <div className="error-message">Error: {error}</div>
+      </div>
+    );
+  }
 
   return (
     <div className="vendedor-container">
       <Nabvendedor />
 
-      {/* Barra de publicación / compartir */}
+      {/* Barra de publicación / compartir (solo en previa del vendedor) */}
       {tienda && (
-        <div style={{
-          display: "flex", gap: "12px", padding: "12px 16px",
-          background: "rgba(255,255,255,0.85)", backdropFilter: "blur(8px)",
-          borderBottom: "1px solid rgba(226,232,240,0.7)", position: "sticky",
-          top: "var(--vendor-safe-top, 0px)", zIndex: 9
-        }}>
+        <div className="publish-bar">
           <button
-            className="btn primary"
+            className="btn btn-primary"
             onClick={() => publishStore(tienda)}
             disabled={Boolean(tienda?.isPublished && tienda?.slug)}
             title={tienda?.isPublished ? "Ya publicada" : "Publicar tienda"}
           >
             {tienda?.isPublished ? "Ya publicada" : "Publicar tienda"}
           </button>
-          <button className="btn" onClick={() => openPublicView(tienda)}>
-            Ver vista pública
-          </button>
-          <button className="btn" onClick={() => copyPublicLink(tienda)}>
-            Copiar enlace público
-          </button>
-          <span style={{ marginLeft: "auto", alignSelf: "center", fontSize: 14, opacity: 0.8 }}>
+          <button className="btn" onClick={() => openPublicView(tienda)}>Ver vista pública</button>
+          <button className="btn" onClick={() => copyPublicLink(tienda)}>Copiar enlace público</button>
+          <span className="publish-url">
             {tienda?.isPublished && tienda?.slug
               ? `URL: ${window.location.origin}/#/t/${tienda.slug}`
               : "URL: Aún sin publicar"}
@@ -243,20 +251,15 @@ export default function Pagina() {
         </div>
       )}
 
-      {/* Si el layout no trae hero en la primera "fila", muestra uno por defecto arriba */}
+      {/* Si el layout no trae hero, muestra uno por defecto arriba */}
       {!(orderedBlocks || []).some(b => b.type === "hero") && <HeroPortada tienda={tienda} />}
 
       {/* Ficha + horario */}
       <VendorInfoSection tienda={tienda} />
 
-      {/* Render según layout configurado (respetando orden) */}
+      {/* Render según layout configurado */}
       {(orderedBlocks || []).length > 0 ? (
-        <RenderBlocks
-          layout={orderedBlocks}
-          productos={productos}
-          categorias={categorias}
-          tienda={tienda}
-        />
+        <RenderBlocks layout={orderedBlocks} productos={productos} categorias={categorias} tienda={tienda} />
       ) : (
         <>
           <RowSection title="Todos los productos" icon={<FiShoppingBag />} items={productos} />
@@ -265,17 +268,11 @@ export default function Pagina() {
           )}
           {categorias.map(cat => {
             const items = productos.filter(p =>
-              Array.isArray(p.categorias) &&
-              p.categorias.some(pc => pc.categoriaId === cat.id)
+              Array.isArray(p.categorias) && p.categorias.some(pc => pc.categoriaId === cat.id)
             );
             if (!items.length) return null;
             return (
-              <RowSection
-                key={cat.id}
-                title={cat.nombre}
-                icon={<FiShoppingBag />}
-                items={items}
-              />
+              <RowSection key={cat.id} title={cat.nombre} icon={<FiShoppingBag />} items={items} />
             );
           })}
         </>
@@ -291,13 +288,13 @@ export default function Pagina() {
 
 /* =================== Render de bloques =================== */
 const DEFAULT_PROPS = {
-  hero:     { showLogo: true, showDescripcion: true, align: 'center' },
-  featured: { title: 'Destacados', limit: 8 },
-  grid:     { title: 'Todos los productos', limit: 12, showFilter: true },
-  category: { title: '', categoriaId: null, limit: 12, showFilter: true },
+  hero:     { showLogo: true, showDescripcion: true, align: "center" },
+  featured: { title: "Destacados", limit: 8 },
+  grid:     { title: "Todos los productos", limit: 12, showFilter: true },
+  category: { title: "", categoriaId: null, limit: 12, showFilter: true },
   product:  { productoId: null },
-  banner:   { title: 'Promoción', ctaText: 'Ver más', ctaUrl: '' },
-  logo:     { shape: 'rounded', frame: 'thin' },
+  banner:   { title: "Promoción", ctaText: "Ver más", ctaUrl: "" },
+  logo:     { shape: "rounded", frame: "thin" },
 };
 
 function RenderBlocks({ layout = [], productos = [], categorias = [], tienda }) {
@@ -417,7 +414,7 @@ function HeroPortada({ tienda, align = "center", showLogo = true, showDescripcio
       className="tienda-hero"
       style={{
         backgroundImage: portada
-          ? `linear-gradient(rgba(0,0,0,0.35), rgba(0,0,0,0.35)), url(${portada})`
+          ? `linear-gradient(0deg, rgba(0,0,0,.48), rgba(0,0,0,.28)), url(${portada})`
           : grad(colors.from, colors.to),
         color: bestTextOn(colors.from, colors.to),
         justifyContent: justify
@@ -441,12 +438,7 @@ function VendorInfoSection({ tienda }) {
       <div className="store-info-card">
         <div className="store-info-header">
           {logo ? (
-            <img
-              src={logo}
-              alt="Logo"
-              className="store-logo"
-              loading="lazy"
-            />
+            <img src={logo} alt="Logo" className="store-logo" loading="lazy" />
           ) : (
             <div className="store-logo placeholder" />
           )}
@@ -454,9 +446,7 @@ function VendorInfoSection({ tienda }) {
             <h2>{tienda?.nombre || "Mi Tienda"}</h2>
             <div className="store-categories">
               {tienda?.categoria && <span>{tienda.categoria}</span>}
-              {(tienda?.subcategorias || []).map((cat, i) => (
-                <span key={i}>{cat}</span>
-              ))}
+              {(tienda?.subcategorias || []).map((cat, i) => <span key={i}>{cat}</span>)}
             </div>
           </div>
         </div>
@@ -466,7 +456,7 @@ function VendorInfoSection({ tienda }) {
 
           <div className="store-contact-buttons">
             {tienda?.telefonoContacto && (
-              <a href={`tel:${tienda.telefonoContacto}`} className="btn primary">
+              <a href={`tel:${tienda.telefonoContacto}`} className="btn btn-primary">
                 <FiPhone /> Llamar
               </a>
             )}
@@ -513,7 +503,7 @@ function StoreHours({ horario = {} }) {
         {dias.map(dia => (
           <Fragment key={dia.id}>
             <span>{dia.label}</span>
-            <span>{horario[dia.id] || "Cerrado"}</span>
+            <span>{horario?.[dia.id] || "Cerrado"}</span>
           </Fragment>
         ))}
       </div>
@@ -521,7 +511,9 @@ function StoreHours({ horario = {} }) {
   );
 }
 
+/* Sección de productos: carrusel (móvil) / grid (desktop) */
 function RowSection({ title, icon, items = [], enableSearch = false }) {
+  const isDesktop = useMediaQuery("(min-width: 1024px)");
   const ref = useRef(null);
   const [showControls, setShowControls] = useState(false);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
@@ -538,25 +530,24 @@ function RowSection({ title, icon, items = [], enableSearch = false }) {
   }, [items, enableSearch, q]);
 
   const checkScroll = () => {
-    if (ref.current) {
-      setCanScrollLeft(ref.current.scrollLeft > 0);
-      setCanScrollRight(ref.current.scrollLeft < ref.current.scrollWidth - ref.current.clientWidth);
-    }
+    if (!ref.current) return;
+    const el = ref.current;
+    setCanScrollLeft(el.scrollLeft > 0);
+    setCanScrollRight(el.scrollLeft < el.scrollWidth - el.clientWidth - 1);
   };
 
   useEffect(() => {
-    const current = ref.current;
-    if (current) {
-      current.addEventListener("scroll", checkScroll);
-      checkScroll();
-    }
-    return () => { if (current) current.removeEventListener("scroll", checkScroll); };
+    const el = ref.current;
+    if (!el) return;
+    el.addEventListener("scroll", checkScroll, { passive: true });
+    checkScroll();
+    return () => el.removeEventListener("scroll", checkScroll);
   }, []);
 
   const scrollBy = (dx) => {
     if (ref.current) {
       ref.current.scrollBy({ left: dx, behavior: "smooth" });
-      setTimeout(checkScroll, 300);
+      setTimeout(checkScroll, 320);
     }
   };
 
@@ -583,36 +574,49 @@ function RowSection({ title, icon, items = [], enableSearch = false }) {
               />
             </label>
           )}
-          {filtered.length > 0 && (
+          {!isDesktop && filtered.length > 0 && (
             <div className={`row-actions ${showControls ? "visible" : ""}`}>
-              <button type="button" className="btn-circle" onClick={() => scrollBy(-380)} disabled={!canScrollLeft} aria-label="Scroll left">◀</button>
-              <button type="button" className="btn-circle" onClick={() => scrollBy(380)} disabled={!canScrollRight} aria-label="Scroll right">▶</button>
+              <button type="button" className="btn-circle" onClick={() => scrollBy(-380)} disabled={!canScrollLeft} aria-label="Anterior">◀</button>
+              <button type="button" className="btn-circle" onClick={() => scrollBy(380)} disabled={!canScrollRight} aria-label="Siguiente">▶</button>
             </div>
           )}
         </div>
       </div>
 
-      <div ref={ref} className="row-scroll">
-        {filtered.length > 0 ? (
-          filtered.map((p) => <PosterCard key={p.id || `p-${p._id}`} p={p} />)
-        ) : (
-          <div className="empty-state">
-            <FiShoppingBag size={48} />
-            <p>No hay productos en esta sección</p>
-          </div>
-        )}
-      </div>
+      {/* Móvil: carrusel scroll-snap | Desktop: grilla responsiva */}
+      {isDesktop ? (
+        <div className="row-grid">
+          {filtered.length > 0 ? (
+            filtered.map((p) => <PosterCard key={p.id || `p-${p._id}`} p={p} />)
+          ) : (
+            <div className="empty-state">
+              <FiShoppingBag size={48} />
+              <p>No hay productos en esta sección</p>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div ref={ref} className="row-scroll">
+          {filtered.length > 0 ? (
+            filtered.map((p) => <PosterCard key={p.id || `p-${p._id}`} p={p} />)
+          ) : (
+            <div className="empty-state">
+              <FiShoppingBag size={48} />
+              <p>No hay productos en esta sección</p>
+            </div>
+          )}
+        </div>
+      )}
     </section>
   );
 }
 
+/* Card con estructura preparada para estilos “neón/glass” */
 function PosterCard({ p = {} }) {
   const pickImage = (prod) => {
     const candidates = [
-      // prioridad: principal -> primera
       prod?.imagenes?.find(x => x?.isPrincipal)?.url,
       prod?.imagenes?.[0]?.url,
-      // posibles alias
       prod?.imagen, prod?.thumb, prod?.foto, prod?.cover
     ].filter(Boolean);
     return toPublicSrc(candidates[0]);
@@ -623,14 +627,15 @@ function PosterCard({ p = {} }) {
     p?.categoria?.nombre ||
     p?.categoria ||
     (Array.isArray(p?.categorias) ? (p.categorias[0]?.nombre || p.categorias[0]?.categoria?.nombre) : "") ||
-    p?.category ||
-    "";
+    p?.category || "";
 
   const conPrecio = typeof p?.precio === "number" || (typeof p?.precio === "string" && p.precio.trim() !== "");
   const desc = (p?.descripcion || p?.detalle || p?.resumen || "").toString().trim();
 
   return (
-    <article className="poster-card">
+    <article className="poster-card" aria-label={p?.nombre || "Producto"}>
+      {/* Halo/shine para efecto neón (lo estilamos en CSS) */}
+      <span className="poster-glow" aria-hidden="true" />
       <div className="poster-media">
         {img ? (
           <img
@@ -643,7 +648,7 @@ function PosterCard({ p = {} }) {
                 "data:image/svg+xml;utf8," +
                 encodeURIComponent(
                   `<svg xmlns='http://www.w3.org/2000/svg' width='480' height='360'>
-                     <rect width='100%' height='100%' fill='#f3f4f6'/>
+                     <rect width='100%' height='100%' fill='#0f1119'/>
                      <text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' fill='#9ca3af' font-family='sans-serif' font-size='16'>Sin imagen</text>
                    </svg>`
                 );
@@ -652,32 +657,40 @@ function PosterCard({ p = {} }) {
         ) : (
           <div className="image-placeholder"><FiShoppingBag size={24} color="#9ca3af" /></div>
         )}
-        {p.destacado && <div className="featured-badge"><FiStar size={14} /></div>}
+
+        {p.destacado && <div className="featured-badge" title="Destacado"><FiStar size={14} /></div>}
       </div>
+
       <div className="poster-body">
-        <h4 className="poster-title" title={p?.nombre}>{p?.nombre || p?.title || "Producto"}</h4>
-        {categoria && <div className="poster-meta">{categoria}</div>}
-        {desc && <div className="poster-desc">{desc.length > 60 ? `${desc.substring(0, 60)}...` : desc}</div>}
-        {conPrecio ? (
-          <div className="poster-price">
-            <span className="price">
-              {(() => {
-                const n = Number(p.precio || 0);
-                return isFinite(n) ? `$${n.toFixed(2)}` : "$0.00";
-              })()}
-            </span>
-            {p.precioOriginal && (
-              <span className="original-price">
+        <div className="poster-header">
+          <h4 className="poster-title" title={p?.nombre}>{p?.nombre || p?.title || "Producto"}</h4>
+          {categoria && <div className="poster-chip">{categoria}</div>}
+        </div>
+
+        {desc && <p className="poster-desc">{desc.length > 72 ? `${desc.substring(0, 72)}…` : desc}</p>}
+
+        <div className="poster-footer">
+          {conPrecio ? (
+            <div className="poster-price">
+              <span className="price">
                 {(() => {
-                  const n = Number(p.precioOriginal);
-                  return isFinite(n) ? `$${n.toFixed(2)}` : "";
+                  const n = Number(p.precio || 0);
+                  return isFinite(n) ? `$${n.toFixed(2)}` : "$0.00";
                 })()}
               </span>
-            )}
-          </div>
-        ) : (
-          <div className="poster-price"><span className="badge">Ver variantes</span></div>
-        )}
+              {p.precioOriginal && (
+                <span className="original-price">
+                  {(() => {
+                    const n = Number(p.precioOriginal);
+                    return isFinite(n) ? `$${n.toFixed(2)}` : "";
+                  })()}
+                </span>
+              )}
+            </div>
+          ) : (
+            <span className="poster-badge">Con variantes</span>
+          )}
+        </div>
       </div>
     </article>
   );

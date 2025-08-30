@@ -1,5 +1,5 @@
 // frontend/src/pages/Vendedor/ConfiguracionVista.jsx
-// Plantilla 6x20 – versión pulida (historial mejorado, atajos, reset, copiar JSON)
+// Editor de vista 6x20 – responsive y con branding consistente con Perfil
 
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import Nabvendedor from './Nabvendedor';
@@ -10,16 +10,20 @@ import {
 import {
   FiPlus, FiSave, FiRefreshCcw, FiSettings, FiTrash2, FiCopy,
   FiImage, FiLayers, FiStar, FiGrid, FiPackage, FiList, FiLayout,
-  FiChevronLeft, FiChevronRight, FiMaximize2, FiMinimize2, FiMove
+  FiChevronLeft, FiChevronRight, FiMaximize2, FiMinimize2, FiMove,
+  FiX, FiSliders
 } from 'react-icons/fi';
 import 'react-grid-layout/css/styles.css';
 import 'react-resizable/css/styles.css';
 import './ConfigVista.css';
 
+// Branding util (mismos tokens que Perfil)
+import { applyBrandTheme, refreshOverlayForMode } from '../../lib/brandTheme';
+
 const ResponsiveGrid = WidthProvider(ResponsiveGridLayout);
 
-const API   = import.meta.env.VITE_API_URL    || 'http://localhost:5000';
-const FILES = import.meta.env.VITE_FILES_BASE || API;
+const API   = (import.meta.env.VITE_API_URL    || 'http://localhost:5000').replace(/\/$/, '');
+const FILES = (import.meta.env.VITE_FILES_BASE || API).replace(/\/$/, '');
 
 /* ========================= */
 /* Definición de bloques     */
@@ -52,13 +56,13 @@ const toPublicUrl = (u) => {
   if (!u) return '';
   if (Array.isArray(u)) return toPublicUrl(u.find(Boolean));
   if (typeof u === 'object') return toPublicUrl(u.url || u.path || u.src || u.image || u.filepath || '');
-  const s = String(u).trim();
+  const s = String(u).replace(/\\/g, '/').trim();
   if (!s) return '';
   if (/^https?:\/\//i.test(s)) return s;
   if (s.startsWith('/uploads') || s.startsWith('/TiendaUploads') || s.startsWith('/files')) return `${FILES}${s}`;
+  if (s.startsWith('/')) return `${API}${s}`;
   return s;
 };
-
 const labelBlock = (type) => ({
   hero: 'Portada (Hero)',
   featured: 'Productos destacados',
@@ -68,13 +72,20 @@ const labelBlock = (type) => ({
   banner: 'Banner',
   logo: 'Logo',
 }[type] || 'Bloque');
-
 const safeParse = (txt, fallback = null) => { try { return JSON.parse(txt); } catch { return fallback; } };
+const extractColors = (gradientString) => {
+  const m = String(gradientString||'').match(/#([0-9a-f]{6})/gi);
+  return { from: m?.[0] || '#6d28d9', to: m?.[1] || '#c026d3' };
+};
 
 /* ========================= */
 /* Componente principal      */
 /* ========================= */
 export default function ConfiguracionVista(){
+  // Modo de color coherente con Perfil
+  const prefersLight = window.matchMedia?.('(prefers-color-scheme: light)').matches;
+  const [colorMode, setColorMode] = useState(() => localStorage.getItem('vk-color-mode') || (prefersLight ? 'light' : 'dark'));
+
   // Auth y llaves
   const usuario = useMemo(() => { try { return JSON.parse(localStorage.getItem('usuario')||'{}'); } catch { return {}; } }, []);
   const token = localStorage.getItem('token');
@@ -92,18 +103,27 @@ export default function ConfiguracionVista(){
   const [selectedId, setSelectedId] = useState(null);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState('');
-  const [drawerOpen, setDrawerOpen] = useState(true);
+
+  // Drawers en móvil
+  const [leftOpen, setLeftOpen]   = useState(false); // Bloques/Acciones
+  const [propsOpen, setPropsOpen] = useState(false); // Propiedades
 
   const undoStack = useRef([]);   // array de snapshots (string)
   const redoStack = useRef([]);   // array de snapshots (string)
   const layoutRef = useRef([]);   // último layout de RGL
   const toastTimer = useRef(null);
 
-  /* ---------------- Carga inicial ---------------- */
+  /* ---------------- Carga inicial + branding ---------------- */
   useEffect(() => {
     document.body.classList.add('vendor-theme');
     return () => document.body.classList.remove('vendor-theme');
   }, []);
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', colorMode);
+    localStorage.setItem('vk-color-mode', colorMode);
+    refreshOverlayForMode(colorMode);
+  }, [colorMode]);
 
   useEffect(() => {
     const ac = new AbortController();
@@ -112,6 +132,8 @@ export default function ConfiguracionVista(){
         const rt = await fetch(`${API}/api/tienda/me`, { headers, signal: ac.signal });
         const dt = await rt.json().catch(()=> ({}));
         setTienda(dt || {});
+        // Aplica tema de marca (mismos tokens que Perfil)
+        applyBrandTheme(dt, { persist: false });
 
         const qs = dt?.id ? `?tiendaId=${dt.id}` : '';
         const rc = await fetch(`${API}/api/v1/categorias${qs}`, { headers, signal: ac.signal });
@@ -125,8 +147,8 @@ export default function ConfiguracionVista(){
         let rawStored = dt?.homeLayout ?? localStorage.getItem(localKey);
         let stored = typeof rawStored === 'string' ? safeParse(rawStored, null) : rawStored;
         let blocks = [];
-        if (Array.isArray(stored)) blocks = stored;                   // forma antigua: array directo
-        else if (stored?.blocks) blocks = stored.blocks;              // forma nueva: {blocks:[...]}
+        if (Array.isArray(stored)) blocks = stored;
+        else if (stored?.blocks) blocks = stored.blocks;
         if (!blocks.length) blocks = [ mk('grid', DEFAULT_PROPS.grid, { x:0,y:0,w:6,h:4 }) ];
         const prepared = assignIds(blocks).map(b => toRGLItem(b));
         setItems(prepared);
@@ -188,8 +210,12 @@ export default function ConfiguracionVista(){
         e.preventDefault();
         if (selectedId) handleDuplicate(selectedId);
       }
-      // Escape: deseleccionar
-      if (e.key === 'Escape') setSelectedId(null);
+      // Escape: deseleccionar y cerrar drawers
+      if (e.key === 'Escape') {
+        setSelectedId(null);
+        setLeftOpen(false);
+        setPropsOpen(false);
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -241,7 +267,8 @@ export default function ConfiguracionVista(){
       return next;
     });
     setSelectedId(base.i);
-    toast('Bloque agregado');
+    setMsg('Bloque agregado');
+    setTimeout(()=>setMsg(''), 1400);
   };
 
   const handleRemove = (id) => {
@@ -263,8 +290,8 @@ export default function ConfiguracionVista(){
       pushHistory(next);
       return next;
     });
-    setSelectedId(`${items.find(x=>x.i===id)?.type || 'blk'}-`); // se corrige al setItems siguiente
-    toast('Bloque duplicado');
+    setMsg('Bloque duplicado');
+    setTimeout(()=>setMsg(''), 1400);
   };
 
   const mapLayoutToItems = useCallback((layout, prev) => {
@@ -344,11 +371,6 @@ export default function ConfiguracionVista(){
   }, [items]);
 
   /* ---------------- Render previews ---------------- */
-  const extractColors = (gradientString) => {
-    const m = String(gradientString||'').match(/#([0-9a-f]{6})/gi);
-    return { from: m?.[0] || '#6d28d9', to: m?.[1] || '#c026d3' };
-  };
-
   const Card = ({p}) => {
     const src = toPublicUrl((p?.imagenes?.find(x=>x.isPrincipal)||p?.imagenes?.[0])?.url);
     return (
@@ -437,7 +459,6 @@ export default function ConfiguracionVista(){
   const updateProps = (patch) => {
     setItems(prev => {
       const next = prev.map(x => x.i===selectedId ? ({ ...x, props: { ...x.props, ...patch } }) : x);
-      // registrar al cambiar props también (de forma suave lo guardará local)
       pushHistory(next);
       return next;
     });
@@ -448,22 +469,54 @@ export default function ConfiguracionVista(){
     <div className="vendedor-container">
       <Nabvendedor/>
 
-      {/* Header visual opcional usando datos de tienda */}
-      <header className="tienda-header" style={{ backgroundImage: tienda?.portadaUrl? `url(${toPublicUrl(tienda.portadaUrl)})` : undefined }}>
+      {/* Header con overlay seguro y branding */}
+      <div
+        className="tienda-header"
+        style={{
+          backgroundImage: tienda?.portadaUrl
+            ? `linear-gradient(135deg, var(--brand-from)cc, var(--brand-to)cc), url("${toPublicUrl(tienda.portadaUrl)}")`
+            : 'var(--brand-gradient)',
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          color: 'var(--brand-contrast)'
+        }}
+      >
         <div className="tienda-header-content">
           <div className="tienda-header-info">
-            {tienda?.logoUrl ? (<img className="tienda-logo" src={toPublicUrl(tienda.logoUrl)} alt="logo"/>) : null}
+            {tienda?.logoUrl ? (
+              <img className="tienda-logo" src={toPublicUrl(tienda.logoUrl)} alt="logo" />
+            ) : null}
             <div>
               <h1 className="tienda-nombre">{tienda?.nombre || 'Mi tienda'}</h1>
               {tienda?.descripcion ? (<p className="tienda-descripcion">{tienda.descripcion}</p>) : null}
             </div>
           </div>
-        </div>
-      </header>
 
-      {/* Panel superior acciones */}
-      <div className="config-panel">
-        <aside className="sidebar">
+          {/* Acciones rápidas del header */}
+          <div className="header-actions">
+            <button
+              className="btn btn-ghost"
+              onClick={() => setColorMode(m => (m === 'light' ? 'dark' : 'light'))}
+              aria-label="Cambiar modo de color"
+              title="Claro/Oscuro"
+            >
+              <FiSliders/> {colorMode === 'light' ? 'Oscuro' : 'Claro'}
+            </button>
+            <button className="btn btn-primary" onClick={save} disabled={saving}>
+              <FiSave/>{saving? ' Guardando…' : ' Guardar'}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Panel principal (3 columnas en desktop; drawers en móvil) */}
+      <div className="config-panel builder">
+        {/* ----------- Sidebar izquierda: acciones/bloques ----------- */}
+        <aside className={`sidebar pv-left ${leftOpen ? 'open' : ''}`}>
+          <button className="drawer-close" onClick={() => setLeftOpen(false)} aria-label="Cerrar menú">
+            <FiX/>
+          </button>
+
           <div className="form-section">
             <h3><FiLayout/> Plantilla 6×20</h3>
             <div className="form-row">
@@ -502,12 +555,12 @@ export default function ConfiguracionVista(){
           </div>
         </aside>
 
+        {/* ----------- Lienzo ----------- */}
         <section className="content-area">
           <div className="pv-toolbar">
             <div className="pv-left">
-              <button className="btn" onClick={()=>setDrawerOpen(v=>!v)}>
-                {drawerOpen? <><FiMinimize2/> Ocultar props</> : <><FiMaximize2/> Mostrar props</>}
-              </button>
+              <button className="btn" onClick={()=>setLeftOpen(true)}><FiLayout/> Bloques</button>
+              <button className="btn" onClick={()=>setPropsOpen(true)}><FiSettings/> Propiedades</button>
             </div>
             <div className="pv-right">
               {msg ? <div className="notification show" role="status" aria-live="polite">{msg}</div> : null}
@@ -527,9 +580,9 @@ export default function ConfiguracionVista(){
               onDragStop={onDragStop}
               onResizeStop={onResizeStop}
               draggableHandle=".pv-handle"
-              breakpoints={{ xl: 1400, lg: 996, md: 768, sm: 480, xs: 0 }}
-              cols={{ xl: 6, lg: 6, md: 6, sm: 6, xs: 4 }}   // Siempre 6 columnas (4 en XS)
-              maxRows={20}                                   // Límite vertical 6×20
+              breakpoints={{ xl: 1400, lg: 1100, md: 900, sm: 600, xs: 0 }}
+              cols={{ xl: 6, lg: 6, md: 6, sm: 6, xs: 4 }}   // 6 cols (4 en XS)
+              maxRows={20}
               compactType="vertical"
             >
               {items.map(it => (
@@ -558,8 +611,12 @@ export default function ConfiguracionVista(){
           </div>
         </section>
 
-        {/* Panel de propiedades */}
-        <aside className={`sidebar pv-props ${drawerOpen? 'open':'closed'}`}>
+        {/* ----------- Sidebar derecha: propiedades ----------- */}
+        <aside className={`sidebar pv-props ${propsOpen? 'open':'closed'}`}>
+          <button className="drawer-close" onClick={() => setPropsOpen(false)} aria-label="Cerrar propiedades">
+            <FiX/>
+          </button>
+
           {sel ? (
             <div className="form-section">
               <h3><FiSettings/> Propiedades</h3>
@@ -687,6 +744,9 @@ export default function ConfiguracionVista(){
           )}
         </aside>
       </div>
+
+      {/* Scrim de drawers en móvil */}
+      {(leftOpen || propsOpen) && <div className="drawer-scrim" onClick={()=>{setLeftOpen(false); setPropsOpen(false);}} aria-hidden="true" />}
 
       {/* Notificación flotante (fallback) */}
       {msg ? <div className="notification show" role="status" aria-live="polite">{msg}</div> : null}

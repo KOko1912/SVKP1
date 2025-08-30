@@ -9,7 +9,79 @@ import {
 const API   = (import.meta.env.VITE_API_URL    || 'http://localhost:5000').replace(/\/$/, '');
 const FILES = (import.meta.env.VITE_FILES_BASE || API).replace(/\/$/, '');
 
-/* Helpers de URL/files */
+/* =========================
+   Helpers de dinero
+   ========================= */
+const money = (n, currency = 'MXN', locale = 'es-MX') =>
+  (n == null ? '' : new Intl.NumberFormat(locale, { style: 'currency', currency }).format(Number(n) || 0));
+
+const toMajor = (v) => {
+  // Si viene 18500 (centavos) => 185; si ya viene 185 => 185
+  if (v == null) return 0;
+  const n = Number(v);
+  if (!Number.isFinite(n)) return 0;
+  // Heurística conservadora: si hay campo ...Cents úsalo; si no, solo divide si parece centavos (entero grande)
+  return Number.isInteger(n) && Math.abs(n) >= 1000 ? n / 100 : n;
+};
+
+const numOrNull = (v) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+};
+
+// Devuelve { amount, currency } a partir de la respuesta del backend
+const pickTotal = (pedido) => {
+  const cur =
+    pedido?.totals?.currency ||
+    pedido?.currency ||
+    pedido?.moneda ||
+    'MXN';
+
+  // 1) Preferir centavos si existen
+  const cents =
+    numOrNull(pedido?.totals?.totalCents) ??
+    numOrNull(pedido?.totalCents) ??
+    null;
+
+  if (cents != null) return { amount: cents / 100, currency: cur };
+
+  // 2) Si no, usar total mayor (con heurística)
+  const major =
+    numOrNull(pedido?.totals?.total) ??
+    numOrNull(pedido?.total) ??
+    numOrNull(pedido?.monto) ??
+    null;
+
+  if (major != null) return { amount: toMajor(major), currency: cur };
+
+  // 3) Último recurso: sumar ítems
+  let sumCents = 0;
+  if (Array.isArray(pedido?.items)) {
+    for (const it of pedido.items) {
+      const qty = numOrNull(it?.cantidad ?? it?.qty ?? 1) || 1;
+      const itemCents =
+        numOrNull(it?.totalCents) ??
+        (numOrNull(it?.priceCents) != null ? numOrNull(it?.priceCents) * qty : null) ??
+        (numOrNull(it?.precioCents) != null ? numOrNull(it?.precioCents) * qty : null) ??
+        null;
+      if (itemCents != null) {
+        sumCents += itemCents;
+        continue;
+      }
+      const itemMajor =
+        numOrNull(it?.total) ??
+        numOrNull(it?.price) ??
+        numOrNull(it?.precio) ??
+        null;
+      if (itemMajor != null) sumCents += Math.round(toMajor(itemMajor) * 100) * qty;
+    }
+  }
+  return { amount: sumCents / 100, currency: cur };
+};
+
+/* =========================
+   Helpers de URL/files
+   ========================= */
 const toPublicSrc = (u) => {
   const v = typeof u === 'string'
     ? u
@@ -17,8 +89,6 @@ const toPublicSrc = (u) => {
   if (!v) return '';
   return /^https?:\/\//i.test(v) ? v : `${FILES}${v.startsWith('/') ? '' : '/'}${v}`;
 };
-const money = (n, currency='MXN') =>
-  (n == null ? '' : Number(n).toLocaleString('es-MX', { style:'currency', currency }));
 
 /* Fetch sin lanzar excepciones */
 async function tryJson(url, init) {
@@ -153,10 +223,12 @@ export default function Comprobante() {
   const tiendaPhone = pedido?.tienda?.telefonoContacto?.replace(/\D/g, '') || '';
 
   const mainItem = useMemo(() => (pedido?.items?.[0] || null), [pedido?.items]);
-  const totalFmt = useMemo(
-    () => money(pedido?.totals?.total, pedido?.totals?.currency || 'MXN'),
-    [pedido?.totals]
+
+  const { amount: totalAmount, currency: totalCurrency } = useMemo(
+    () => pickTotal(pedido || {}),
+    [pedido]
   );
+  const totalFmt = money(totalAmount, totalCurrency);
 
   const [producto, setProducto] = useState(null);
   const [principalImg, setPrincipalImg] = useState('');

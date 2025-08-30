@@ -22,7 +22,9 @@ const tryJson = async (url, init) => {
     const data = ct.includes('application/json') ? await r.json() : await r.text();
     if (!r.ok || (typeof data === 'object' && data?.error)) return null;
     return data;
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 };
 
 // Normaliza posibles formatos de respuesta en endpoints de listado
@@ -49,9 +51,10 @@ const pickStoreLogo = (t) =>
   t?.logo?.url || t?.branding?.logo?.url || t?.logoUrl || (typeof t?.logo === 'string' ? t.logo : '') || '';
 const pickStoreCover = (t) =>
   t?.portada?.url || t?.banner?.url || t?.branding?.portada?.url || t?.branding?.banner?.url || t?.portadaUrl || t?.banner || '';
-const externalUrlForStore  = (t) => t?.urlPublica || t?.urlPrincipal || t?.web || t?.url || '';
+const externalUrlForStore = (t) => t?.urlPublica || t?.urlPrincipal || t?.web || t?.url || '';
 const storeKey = (t) => t?.slug || t?.publicUuid || String(t?.id || '');
-const internalPathForStore = (t) => t?.slug ? `/t/${encodeURIComponent(t.slug)}` : (t?.publicUuid ? `/s/${encodeURIComponent(t.publicUuid)}` : '');
+const internalPathForStore = (t) =>
+  t?.slug ? `/t/${encodeURIComponent(t.slug)}` : (t?.publicUuid ? `/s/${encodeURIComponent(t.publicUuid)}` : '');
 
 // Branding helpers
 const HEX_RE = /#([0-9a-f]{6})/ig;
@@ -71,7 +74,8 @@ const hashPick = (seed = 'svk') => {
     ['#0e7490', '#06b6d4'],
     ['#b91c1c', '#ef4444'],
   ];
-  let h = 0; for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
+  let h = 0;
+  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
   const idx = h % pools.length;
   return { from: pools[idx][0], to: pools[idx][1] };
 };
@@ -83,24 +87,34 @@ const pickBrand = (t) => {
   return hashPick(seed);
 };
 
+// Detectores de clave
+const isNumericId = (s) => /^\d+$/.test(String(s || ''));
+const isProbablyUuid = (s) =>
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(s) ||
+  /^[0-9a-f-]{20,}$/i.test(s); // uuid-like
+
 /* ========= resolver tienda por clave ========= */
 async function fetchPublicStoreByKey(key) {
   if (!key) return null;
   const k = String(key).trim();
 
-  // slug
-  let d = await tryJson(`${API}/api/tienda/public/${encodeURIComponent(k)}`);
-  if (d && (d.slug || d.id)) return d;
-
-  // uuid
-  d = await tryJson(`${API}/api/tienda/public/uuid/${encodeURIComponent(k)}`);
-  if (d && (d.slug || d.id)) return d;
-
-  // id numérica
-  if (/^\d+$/.test(k)) {
-    d = await tryJson(`${API}/api/tienda/public/by-id/${k}`);
-    if (d && (d.slug || d.id)) return d;
+  // id numérica primero (rápido y evita 404 extra)
+  if (isNumericId(k)) {
+    const byId = await tryJson(`${API}/api/tienda/public/by-id/${k}`);
+    if (byId && (byId.slug || byId.id)) return byId;
+    return null;
   }
+
+  // UUID real
+  if (isProbablyUuid(k)) {
+    const byUuid = await tryJson(`${API}/api/tienda/public/uuid/${encodeURIComponent(k)}`);
+    if (byUuid && (byUuid.slug || byUuid.id)) return byUuid;
+    return null;
+  }
+
+  // Default: tratar como slug
+  const bySlug = await tryJson(`${API}/api/tienda/public/${encodeURIComponent(k)}`);
+  if (bySlug && (bySlug.slug || bySlug.id)) return bySlug;
 
   return null;
 }
@@ -155,7 +169,9 @@ export default function TiendasSeguidas() {
   function hydrateFollowingFromUser(u) {
     try {
       let src = u?.suscripciones;
-      if (typeof src === 'string') { try { src = JSON.parse(src); } catch {} }
+      if (typeof src === 'string') {
+        try { src = JSON.parse(src); } catch {}
+      }
       let arr = [];
       if (Array.isArray(src)) arr = src;
       else if (src && typeof src === 'object') arr = src.tiendas || src.following || src.stores || [];
@@ -179,13 +195,13 @@ export default function TiendasSeguidas() {
         let r = await fetch(`${API}/api/usuarios/${usuario.id}/suscripciones`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ suscripciones: arr })
+          body: JSON.stringify({ suscripciones: arr }),
         });
         if (!r.ok) {
           r = await fetch(`${API}/api/usuarios/${usuario.id}`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ suscripciones: arr })
+            body: JSON.stringify({ suscripciones: arr }),
           });
         }
         try {
@@ -236,7 +252,7 @@ export default function TiendasSeguidas() {
       const searchUrls = [
         `${API}/api/tiendas/search?q=${encodeURIComponent(term)}&page=${page}&limit=48`,
         `${API}/api/tiendas/public?q=${encodeURIComponent(term)}&page=${page}&limit=48`,
-        `${API}/api/tiendas?q=${encodeURIComponent(term)}&page=${page}&limit=48`
+        `${API}/api/tiendas?q=${encodeURIComponent(term)}&page=${page}&limit=48`,
       ];
       for (const url of searchUrls) {
         const d = await tryJson(url, { signal });
@@ -248,7 +264,7 @@ export default function TiendasSeguidas() {
       const seen = new Set();
       const uniq = [];
       for (const t of results) {
-        const key = t?.slug || `id:${t?.id}`;
+        const key = t?.slug || (t?.publicUuid ? `uuid:${t.publicUuid}` : '') || (t?.id ? `id:${t.id}` : '');
         if (key && !seen.has(key)) { seen.add(key); uniq.push(t); }
       }
 
@@ -261,8 +277,23 @@ export default function TiendasSeguidas() {
     // sin término: seguidas + me + listados públicos
     const followArr = JSON.parse(localStorage.getItem(FOLLOW_KEY) || '[]');
     if (Array.isArray(followArr) && followArr.length) {
-      const batch = await Promise.allSettled(followArr.map(k => fetchPublicStoreByKey(k)));
-      for (const it of batch) if (it.status === 'fulfilled' && it.value) results.push(it.value);
+      const batch = await Promise.allSettled(followArr.map((k) => fetchPublicStoreByKey(k)));
+
+      const okKeys = [];
+      batch.forEach((it, idx) => {
+        if (it.status === 'fulfilled' && it.value) {
+          results.push(it.value);
+          okKeys.push(String(followArr[idx]));
+        }
+      });
+
+      // limpiar claves muertas y persistir cambio
+      if (okKeys.length !== followArr.length) {
+        const next = new Set(okKeys);
+        setFollowing(next);
+        localStorage.setItem(FOLLOW_KEY, JSON.stringify(okKeys));
+        if (usuario?.id) persistFollowingDebounced(next);
+      }
     }
 
     try {
@@ -275,7 +306,7 @@ export default function TiendasSeguidas() {
     // Listados públicos (intenta varios endpoints siempre)
     const listUrls = [
       `${API}/api/tiendas/public?page=${page}&limit=48`,
-      `${API}/api/tiendas?page=${page}&limit=48`
+      `${API}/api/tiendas?page=${page}&limit=48`,
     ];
     for (const url of listUrls) {
       const d = await tryJson(url, { signal });
@@ -283,16 +314,16 @@ export default function TiendasSeguidas() {
       if (list.length) pushList(list);
     }
 
-    // De-duplicar (por slug o id)
-    const seen = new Set();
-    const uniq = [];
+    // De-duplicar (por slug / uuid / id)
+    const seen2 = new Set();
+    const uniq2 = [];
     for (const t of results) {
-      const key = t?.slug || `id:${t?.id}`;
-      if (key && !seen.has(key)) { seen.add(key); uniq.push(t); }
+      const key = t?.slug || (t?.publicUuid ? `uuid:${t.publicUuid}` : '') || (t?.id ? `id:${t.id}` : '');
+      if (key && !seen2.has(key)) { seen2.add(key); uniq2.push(t); }
     }
 
-    setStores(uniq);
-    setMsg(uniq.length ? '' : 'Aún no sigues tiendas. Busca por slug y pulsa “Seguir”.');
+    setStores(uniq2);
+    setMsg(uniq2.length ? '' : 'Aún no sigues tiendas. Busca por slug y pulsa “Seguir”.');
     setLoading(false);
   };
 
@@ -421,7 +452,7 @@ export default function TiendasSeguidas() {
                     const coverRaw = pickStoreCover(t);
                     const stamp = t?.updatedAt || Date.now();
                     const logo = withCacheBuster(toPublicUrl(logoRaw), stamp);
-                    const hdr  = withCacheBuster(toPublicUrl(coverRaw), stamp);
+                    const hdr = withCacheBuster(toPublicUrl(coverRaw), stamp);
                     const followed = isFollowing(t);
                     const { from, to } = pickBrand(t);
 

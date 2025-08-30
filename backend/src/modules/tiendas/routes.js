@@ -4,13 +4,68 @@ const prisma = require('../../config/db');
 
 const router = Router();
 
-/**
- * GET /api/tiendas/search?q=&page=&limit=
- * Devuelve tiendas PUBLICADAS que coincidan por:
- *  - nombre, descripcion, slug, publicUuid, skuRef (contains, insensitive)
- *  - seoKeywords, aliases (hasSome con tokens)
- * Mapea relaciones Media -> logoUrl/portadaUrl para el frontend.
- */
+function toInt(v, d) {
+  const n = parseInt(v, 10);
+  return Number.isFinite(n) && n > 0 ? n : d;
+}
+
+function mapRow(t) {
+  return {
+    id: t.id,
+    publicUuid: t.publicUuid,
+    slug: t.slug,
+    nombre: t.nombre,
+    descripcion: t.descripcion,
+    categoria: t.categoria,
+    ciudad: t.ciudad,
+    pais: t.pais,
+    // compat frontend:
+    logoUrl: t.logo?.url || null,
+    portadaUrl: t.portada?.url || null,
+  };
+}
+
+/** GET /api/tiendas/public  (listado público con filtro opcional q) */
+router.get(['/public', '/'], async (req, res) => {
+  try {
+    const q     = String(req.query.q || '').trim();
+    const page  = toInt(req.query.page, 1);
+    const limit = Math.min(100, toInt(req.query.limit, 48));
+    const skip  = (page - 1) * limit;
+
+    const where = { isPublished: true };
+    if (q) {
+      where.OR = [
+        { nombre:      { contains: q, mode: 'insensitive' } },
+        { descripcion: { contains: q, mode: 'insensitive' } },
+        { slug:        { contains: q, mode: 'insensitive' } },
+        { publicUuid:  { contains: q, mode: 'insensitive' } },
+        { categoria:   { contains: q, mode: 'insensitive' } },
+        { ciudad:      { contains: q, mode: 'insensitive' } },
+      ];
+    }
+
+    const [total, rows] = await Promise.all([
+      prisma.tienda.count({ where }),
+      prisma.tienda.findMany({
+        where, skip, take: limit,
+        orderBy: [{ seguidores: 'desc' }, { updatedAt: 'desc' }],
+        include: { logo: true, portada: true },
+        select: {
+          id: true, publicUuid: true, slug: true, nombre: true, descripcion: true,
+          categoria: true, ciudad: true, pais: true, logo: true, portada: true
+        },
+      }),
+    ]);
+
+    res.json({ page, limit, total, items: rows.map(mapRow) });
+  } catch (err) {
+    console.error('tiendas/public error:', err);
+    res.status(500).json({ error: 'Error listando tiendas públicas' });
+  }
+});
+
+/** GET /api/tiendas/search?q=... (ya lo tenías) */
 router.get('/search', async (req, res) => {
   try {
     const qRaw  = String(req.query.q || req.query.search || '').trim();
@@ -19,12 +74,11 @@ router.get('/search', async (req, res) => {
     const skip  = (page - 1) * limit;
 
     const baseWhere = { isPublished: true };
-
     let where = baseWhere;
+
     if (qRaw) {
       const txt    = qRaw.replace(/^@/, '');
       const tokens = txt.split(/\s+/).filter(Boolean).slice(0, 6);
-
       where = {
         ...baseWhere,
         OR: [
@@ -42,54 +96,17 @@ router.get('/search', async (req, res) => {
     const [total, rows] = await Promise.all([
       prisma.tienda.count({ where }),
       prisma.tienda.findMany({
-        where,
-        skip,
-        take: limit,
+        where, skip, take: limit,
         orderBy: [{ createdAt: 'desc' }],
         include: { logo: true, portada: true },
         select: {
-          id: true,
-          publicUuid: true,
-          slug: true,
-          nombre: true,
-          descripcion: true,
-          categoria: true,
-          seoKeywords: true,
-          skuRef: true,
-          aliases: true,
-          ciudad: true,
-          pais: true,
-          // relaciones
-          logo: true,
-          portada: true,
+          id: true, publicUuid: true, slug: true, nombre: true, descripcion: true,
+          categoria: true, ciudad: true, pais: true, logo: true, portada: true
         },
       }),
     ]);
 
-    const items = rows.map((t) => ({
-      id: t.id,
-      publicUuid: t.publicUuid,
-      slug: t.slug,
-      nombre: t.nombre,
-      descripcion: t.descripcion,
-      categoria: t.categoria,
-      seoKeywords: t.seoKeywords,
-      skuRef: t.skuRef,
-      aliases: t.aliases,
-      ciudad: t.ciudad,
-      pais: t.pais,
-      // compat para frontend:
-      logoUrl: t.logo?.url || null,
-      portadaUrl: t.portada?.url || null,
-    }));
-
-    res.json({
-      page,
-      limit,
-      total,
-      totalPages: Math.max(1, Math.ceil(total / limit)),
-      items,
-    });
+    res.json({ page, limit, total, totalPages: Math.max(1, Math.ceil(total / limit)), items: rows.map(mapRow) });
   } catch (err) {
     console.error('tiendas/search error:', err);
     res.status(500).json({ error: 'Error buscando tiendas' });

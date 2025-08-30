@@ -4,28 +4,29 @@ const prisma = require('../../config/db');
 
 const router = Router();
 
-function toInt(v, d) {
+const toInt = (v, d) => {
   const n = parseInt(v, 10);
   return Number.isFinite(n) && n > 0 ? n : d;
-}
+};
 
-function mapRow(t) {
-  return {
-    id: t.id,
-    publicUuid: t.publicUuid,
-    slug: t.slug,
-    nombre: t.nombre,
-    descripcion: t.descripcion,
-    categoria: t.categoria,
-    ciudad: t.ciudad,
-    pais: t.pais,
-    // compat frontend:
-    logoUrl: t.logo?.url || null,
-    portadaUrl: t.portada?.url || null,
-  };
-}
+const mapRow = (t) => ({
+  id: t.id,
+  publicUuid: t.publicUuid,
+  slug: t.slug,
+  nombre: t.nombre,
+  descripcion: t.descripcion,
+  categoria: t.categoria,
+  ciudad: t.ciudad,
+  pais: t.pais,
+  // compat con frontend
+  logoUrl: t.logo?.url || null,
+  portadaUrl: t.portada?.url || null,
+});
 
-/** GET /api/tiendas/public  (listado público con filtro opcional q) */
+/**
+ * GET /api/tiendas/public   (alias: GET /api/tiendas)
+ * Lista tiendas PUBLICADAS, con filtro opcional q
+ */
 router.get(['/public', '/'], async (req, res) => {
   try {
     const q     = String(req.query.q || '').trim();
@@ -48,12 +49,22 @@ router.get(['/public', '/'], async (req, res) => {
     const [total, rows] = await Promise.all([
       prisma.tienda.count({ where }),
       prisma.tienda.findMany({
-        where, skip, take: limit,
-        orderBy: [{ seguidores: 'desc' }, { updatedAt: 'desc' }],
-        include: { logo: true, portada: true },
+        where,
+        skip,
+        take: limit,
+        orderBy: [{ updatedAt: 'desc' }], // usa sólo campos que EXISTEN
+        // OJO: usar select con nested select; NUNCA include + select
         select: {
-          id: true, publicUuid: true, slug: true, nombre: true, descripcion: true,
-          categoria: true, ciudad: true, pais: true, logo: true, portada: true
+          id: true,
+          publicUuid: true,
+          slug: true,
+          nombre: true,
+          descripcion: true,
+          categoria: true,
+          ciudad: true,
+          pais: true,
+          logo: { select: { url: true } },
+          portada: { select: { url: true } },
         },
       }),
     ]);
@@ -65,7 +76,10 @@ router.get(['/public', '/'], async (req, res) => {
   }
 });
 
-/** GET /api/tiendas/search?q=... (ya lo tenías) */
+/**
+ * GET /api/tiendas/search?q=&page=&limit=
+ * Búsqueda de tiendas PUBLICADAS
+ */
 router.get('/search', async (req, res) => {
   try {
     const qRaw  = String(req.query.q || req.query.search || '').trim();
@@ -79,6 +93,7 @@ router.get('/search', async (req, res) => {
     if (qRaw) {
       const txt    = qRaw.replace(/^@/, '');
       const tokens = txt.split(/\s+/).filter(Boolean).slice(0, 6);
+
       where = {
         ...baseWhere,
         OR: [
@@ -96,17 +111,32 @@ router.get('/search', async (req, res) => {
     const [total, rows] = await Promise.all([
       prisma.tienda.count({ where }),
       prisma.tienda.findMany({
-        where, skip, take: limit,
+        where,
+        skip,
+        take: limit,
         orderBy: [{ createdAt: 'desc' }],
-        include: { logo: true, portada: true },
         select: {
-          id: true, publicUuid: true, slug: true, nombre: true, descripcion: true,
-          categoria: true, ciudad: true, pais: true, logo: true, portada: true
+          id: true,
+          publicUuid: true,
+          slug: true,
+          nombre: true,
+          descripcion: true,
+          categoria: true,
+          ciudad: true,
+          pais: true,
+          logo: { select: { url: true } },
+          portada: { select: { url: true } },
         },
       }),
     ]);
 
-    res.json({ page, limit, total, totalPages: Math.max(1, Math.ceil(total / limit)), items: rows.map(mapRow) });
+    res.json({
+      page,
+      limit,
+      total,
+      totalPages: Math.max(1, Math.ceil(total / limit)),
+      items: rows.map(mapRow),
+    });
   } catch (err) {
     console.error('tiendas/search error:', err);
     res.status(500).json({ error: 'Error buscando tiendas' });

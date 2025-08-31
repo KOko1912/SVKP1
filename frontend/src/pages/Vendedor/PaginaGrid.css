@@ -1176,3 +1176,75 @@ p {
   padding: 0.7rem 1.5rem !important;
   font-weight: 600 !important;
 }
+/* ==== FIX: carrusel móvil ancho y tarjetas consistentes ==== */
+
+/* Contenedor tipo carrusel en móvil */
+.row-scroll {
+  display: grid !important;           /* forzamos grid (algunas reglas viejas lo cambiaban) */
+  grid-auto-flow: column !important;
+  grid-auto-columns: 80% !important;  /* cada tarjeta ocupa ~80% del viewport */
+  gap: 16px !important;
+  overflow-x: auto !important;
+  scroll-snap-type: x mandatory !important;
+  padding: 4px 4px 10px !important;
+}
+
+/* Mejoras para breakpoints */
+@media (min-width: 480px) and (max-width: 1023.98px) {
+  .row-scroll {
+    grid-auto-columns: 60% !important;   /* tablets/landscape */
+  }
+}
+
+/* Cada card “llena” su columna del carrusel */
+.row-scroll > .poster-card {
+  width: 100% !important;                /* clave: ancho de la columna */
+  max-width: none !important;
+  scroll-snap-align: start;
+}
+
+/* Imagen con recorte elegante y relación consistente */
+.poster-media {
+  width: 100% !important;
+  aspect-ratio: 4 / 3 !important;
+  overflow: hidden !important;
+}
+.poster-media > img {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
+  display: block !important;
+}
+
+/* La card no se vuelve “flaquita” por anchos mínimos heredados */
+.poster-card {
+  min-width: 0 !important;
+}
+
+/* Título/desc controlados para que no empujen el footer */
+.poster-title {
+  display: -webkit-box !important;
+  -webkit-line-clamp: 2 !important;
+  -webkit-box-orient: vertical !important;
+  overflow: hidden !important;
+}
+.poster-desc {
+  display: -webkit-box !important;
+  -webkit-line-clamp: 3 !important;
+  -webkit-box-orient: vertical !important;
+  overflow: hidden !important;
+  min-height: 3.9em; /* reserva espacio estable */
+}
+
+/* Footer siempre pegado abajo (precio/botón no saltan) */
+.poster-body {
+  display: flex !important;
+  flex-direction: column !important;
+}
+.poster-footer {
+  margin-top: auto !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 10px !important;
+}

@@ -5,7 +5,8 @@ import "./Vendedor/Vendedor.css";
 import "./Vendedor/PaginaGrid.css";
 import {
   FiFacebook, FiInstagram, FiYoutube, FiPhone, FiMail, FiClock,
-  FiMapPin, FiExternalLink, FiMessageCircle, FiShoppingBag, FiStar, FiEye, FiSearch
+  FiMapPin, FiExternalLink, FiMessageCircle, FiShoppingBag, FiStar, 
+  FiEye, FiSearch, FiTruck, FiCreditCard, FiRefreshCw
 } from "react-icons/fi";
 import { useParams, Link } from "react-router-dom";
 import NavBarUsuario from "./Usuario/NavBarUsuario";
@@ -75,16 +76,24 @@ export default function SVKT() {
     const { from, to } = extractColors(tienda.colorPrincipal);
     const contrast = bestTextOn(from, to);
     const root = document.documentElement.style;
+    
     root.setProperty("--brand-from", from);
     root.setProperty("--brand-to", to);
     root.setProperty("--brand-contrast", contrast);
     root.setProperty("--brand-gradient", grad(from, to));
     root.setProperty("--primary-color", from);
     root.setProperty("--primary-hover", from);
+    
+    // Colores más sutiles para mejor contraste
+    root.setProperty("--brand-from-light", hexToRgba(from, 0.15));
+    root.setProperty("--brand-to-light", hexToRgba(to, 0.15));
+    root.setProperty("--brand-shadow", hexToRgba(from, 0.25));
+    
     const softHalos =
-      `radial-gradient(900px 600px at 0% -10%, ${from}22, transparent 60%),` +
-      `radial-gradient(900px 600px at 100% -10%, ${to}22, transparent 60%)`;
-    root.setProperty("--page-bg", `${softHalos}, linear-gradient(135deg, ${from}, ${to})`);
+      `radial-gradient(900px 600px at 0% -10%, ${hexToRgba(from, 0.2)}, transparent 60%),` +
+      `radial-gradient(900px 600px at 100% -10%, ${hexToRgba(to, 0.2)}, transparent 60%)`;
+    const pageBg = `${softHalos}, linear-gradient(135deg, ${from}, ${to})`;
+    root.setProperty("--page-bg", pageBg);
   }, [tienda?.colorPrincipal]);
 
   // Carga pública por slug
@@ -148,7 +157,11 @@ export default function SVKT() {
     return (
       <div className="vendedor-container">
         {usuario ? <NavBarUsuario /> : null}
-        <div className="error-message">Error: {error}</div>
+        <div className="error-message">
+          <h2>Tienda no encontrada</h2>
+          <p>{error}</p>
+          <Link to="/" className="btn btn-primary">Volver al inicio</Link>
+        </div>
       </div>
     );
   }
@@ -270,7 +283,7 @@ function RenderBlocks({ layout = [], productos = [], categorias = [], tienda }) 
                   <strong>{p.title || "Promoción"}</strong>
                   {p.ctaText ? (
                     p.ctaUrl
-                      ? <a href={p.ctaUrl} target="_blank" rel="noreferrer" style={{ color: "#fff", marginLeft: 8, textDecoration: "underline" }}>{p.ctaText}</a>
+                      ? <a href={p.ctaUrl} target="_blank" rel="noreferrer" className="banner-cta">{p.ctaText}</a>
                       : <em style={{ marginLeft: 8 }}>{p.ctaText}</em>
                   ) : null}
                 </div>
@@ -310,7 +323,7 @@ function HeroPortada({ tienda, align = "center", showLogo = true, showDescripcio
       className="tienda-hero"
       style={{
         backgroundImage: portada
-          ? `linear-gradient(rgba(0,0,0,0.35), rgba(0,0,0,0.35)), url(${portada})`
+          ? `linear-gradient(rgba(0,0,0,0.45), rgba(0,0,0,0.35)), url(${portada})`
           : grad(colors.from, colors.to),
         color: bestTextOn(colors.from, colors.to),
         justifyContent: justify
@@ -351,7 +364,7 @@ function VendorInfoSection({ tienda }) {
           <p>{tienda?.descripcion || "No hay descripción disponible"}</p>
           <div className="store-contact-buttons">
             {tienda?.telefonoContacto && (
-              <a href={`tel:${tienda.telefonoContacto}`} className="btn primary"><FiPhone /> Llamar</a>
+              <a href={`tel:${tienda.telefonoContacto}`} className="btn btn-primary"><FiPhone /> Llamar</a>
             )}
             {tienda?.telefonoContacto && (
               <a className="btn" href={`https://wa.me/${String(tienda.telefonoContacto).replace(/[^0-9]/g, "")}`} target="_blank" rel="noreferrer">
@@ -379,16 +392,23 @@ function StoreHours({ horario = {} }) {
     { id: "mie", label: "Miércoles" }, { id: "jue", label: "Jueves" },
     { id: "vie", label: "Viernes" }, { id: "sab", label: "Sábado" }, { id: "dom", label: "Domingo" },
   ];
+  
+  // Determinar día actual
+  const today = new Date().toLocaleDateString('es-ES', { weekday: 'short' }).toLowerCase().substring(0, 3);
+  
   return (
     <div className="store-hours">
       <h3><FiClock /> Horario de atención</h3>
       <div className="hours-grid">
-        {dias.map(dia => (
-          <Fragment key={dia.id}>
-            <span>{dia.label}</span>
-            <span>{horario[dia.id] || "Cerrado"}</span>
-          </Fragment>
-        ))}
+        {dias.map(dia => {
+          const isToday = dia.id === today;
+          return (
+            <Fragment key={dia.id}>
+              <span className={isToday ? "current-day" : ""}>{dia.label}{isToday ? " (Hoy)" : ""}</span>
+              <span className={isToday ? "current-day" : ""}>{horario[dia.id] || "Cerrado"}</span>
+            </Fragment>
+          );
+        })}
       </div>
     </div>
   );
@@ -521,6 +541,8 @@ function PosterCard({ p = {} }) {
 
   return (
     <article className="poster-card">
+      <span className="poster-glow" aria-hidden="true" />
+      
       <Media>
         {img ? (
           <img
@@ -549,18 +571,21 @@ function PosterCard({ p = {} }) {
       </Media>
 
       <div className="poster-body">
-        {publicHref ? (
-          <Link to={publicHref} className="poster-title" title={p?.nombre} style={{ textDecoration: "none" }}>
-            {p?.nombre || p?.title || "Producto"}
-          </Link>
-        ) : (
-          <h4 className="poster-title" title={p?.nombre}>{p?.nombre || p?.title || "Producto"}</h4>
-        )}
+        <div className="poster-header">
+          {publicHref ? (
+            <Link to={publicHref} className="poster-title" title={p?.nombre} style={{ textDecoration: "none" }}>
+              {p?.nombre || p?.title || "Producto"}
+            </Link>
+          ) : (
+            <h4 className="poster-title" title={p?.nombre}>{p?.nombre || p?.title || "Producto"}</h4>
+          )}
 
-        {categoria && <div className="poster-meta">{categoria}</div>}
-        {desc && <div className="poster-desc">{desc.length > 80 ? `${desc.substring(0, 80)}…` : desc}</div>}
+          {categoria && <div className="poster-chip">{categoria}</div>}
+        </div>
 
-        <div className="poster-actions-row">
+        {desc && <p className="poster-desc">{desc.length > 80 ? `${desc.substring(0, 80)}…` : desc}</p>}
+
+        <div className="poster-footer">
           {conPrecio ? (
             <div className="poster-price">
               <span className="price">
@@ -579,10 +604,11 @@ function PosterCard({ p = {} }) {
               )}
             </div>
           ) : (
-            <div className="poster-price"><span className="badge">Ver variantes</span></div>
+            <span className="poster-badge">Con variantes</span>
           )}
+          
           {publicHref && (
-            <Link to={publicHref} className="btn btn-secondary btn-sm">
+            <Link to={publicHref} className="btn btn-primary btn-sm">
               <FiEye /> Ver detalle
             </Link>
           )}
@@ -597,18 +623,27 @@ function StorePolicies({ tienda }) {
   return (
     <section className="store-section policies-section">
       <div className="policy-card">
+        <div className="policy-icon">
+          <FiTruck size={24} />
+        </div>
         <h3>Envíos</h3>
         <p>{tienda?.envioCobertura || "No especificado"}</p>
         <p>{tienda?.envioCosto || "Costo no especificado"}</p>
         <p>{tienda?.envioTiempo || "Tiempo no especificado"}</p>
       </div>
       <div className="policy-card">
+        <div className="policy-icon">
+          <FiCreditCard size={24} />
+        </div>
         <h3>Métodos de pago</h3>
         <div className="payment-methods">
           {(tienda?.metodosPago || []).map((metodo, i) => (<span key={i}>{metodo}</span>))}
         </div>
       </div>
       <div className="policy-card">
+        <div className="policy-icon">
+          <FiRefreshCw size={24} />
+        </div>
         <h3>Devoluciones</h3>
         <p>{tienda?.devoluciones || "Política no especificada"}</p>
       </div>
@@ -653,6 +688,9 @@ function ContactFooter({ tienda }) {
           {tel && <p><FiPhone /> {tel}</p>}
           {mail && <p><FiMail /> {mail}</p>}
         </div>
+        <div className="footer-credits">
+          <p>Tienda creada con SVKT</p>
+        </div>
       </div>
     </footer>
   );
@@ -663,11 +701,18 @@ function extractColors(gradientString) {
   const m = gradientString?.match(/#([0-9a-f]{6})/gi);
   return { from: m?.[0] || "#6d28d9", to: m?.[1] || "#c026d3" };
 }
+
 function hexToRgb(hex) {
   const m = hex?.match(/^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i);
   if (!m) return [0, 0, 0];
   return [parseInt(m[1], 16), parseInt(m[2], 16), parseInt(m[3], 16)];
 }
+
+function hexToRgba(hex, alpha) {
+  const [r, g, b] = hexToRgb(hex);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
 function luminance([r, g, b]) {
   const a = [r, g, b].map(v => {
     v /= 255;
@@ -675,7 +720,47 @@ function luminance([r, g, b]) {
   });
   return 0.2126 * a[0] + 0.7152 * a[1] + 0.0722 * a[2];
 }
+
 function bestTextOn(hexA, hexB) {
   const L = (luminance(hexToRgb(hexA)) + luminance(hexToRgb(hexB))) / 2;
   return L > 0.45 ? "#111111" : "#ffffff";
 }
+
+// Estilos adicionales para la página pública
+const additionalStyles = `
+  .banner-cta {
+    color: #fff;
+    margin-left: 12px;
+    text-decoration: underline;
+    font-weight: 600;
+    transition: opacity 0.2s;
+  }
+  
+  .banner-cta:hover {
+    opacity: 0.9;
+  }
+  
+  .current-day {
+    color: var(--brand-from);
+    font-weight: 600;
+  }
+  
+  .footer-credits {
+    margin-top: 2rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid rgba(255,255,255,0.1);
+    text-align: center;
+    color: var(--text-tertiary);
+    font-size: 0.9rem;
+  }
+  
+  .btn-sm {
+    padding: 0.5rem 1rem;
+    font-size: 0.9rem;
+  }
+`;
+
+// Inyectar estilos adicionales
+const styleSheet = document.createElement("style");
+styleSheet.innerText = additionalStyles;
+document.head.appendChild(styleSheet);

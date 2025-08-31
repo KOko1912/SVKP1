@@ -4,7 +4,8 @@ import "./Vendedor.css";
 import "./PaginaGrid.css";
 import {
   FiFacebook, FiInstagram, FiYoutube, FiPhone, FiMail, FiClock,
-  FiMapPin, FiExternalLink, FiMessageCircle, FiShoppingBag, FiStar, FiSearch
+  FiMapPin, FiExternalLink, FiMessageCircle, FiShoppingBag, FiStar, FiSearch,
+  FiTruck, FiCreditCard, FiRefreshCw
 } from "react-icons/fi";
 import Swal from "sweetalert2";
 
@@ -81,9 +82,14 @@ export default function Pagina() {
     root.setProperty("--primary-color", from);
     root.setProperty("--primary-hover", from);
 
+    // Colores más sutiles para mejor contraste
+    root.setProperty("--brand-from-light", hexToRgba(from, 0.15));
+    root.setProperty("--brand-to-light", hexToRgba(to, 0.15));
+    root.setProperty("--brand-shadow", hexToRgba(from, 0.25));
+
     const softHalos =
-      `radial-gradient(900px 600px at 0% -10%, ${from}22, transparent 60%),` +
-      `radial-gradient(900px 600px at 100% -10%, ${to}22, transparent 60%)`;
+      `radial-gradient(900px 600px at 0% -10%, ${hexToRgba(from, 0.2)}, transparent 60%),` +
+      `radial-gradient(900px 600px at 100% -10%, ${hexToRgba(to, 0.2)}, transparent 60%)`;
     const pageBg = `${softHalos}, linear-gradient(135deg, ${from}, ${to})`;
     root.setProperty("--page-bg", pageBg);
   }, [tienda?.colorPrincipal]);
@@ -133,7 +139,12 @@ export default function Pagina() {
         showCancelButton: true,
         confirmButtonText: "Publicar",
         cancelButtonText: "Cancelar",
-        allowOutsideClick: false
+        allowOutsideClick: false,
+        customClass: {
+          popup: 'swal-popup-theme',
+          confirmButton: 'swal-confirm-btn',
+          cancelButton: 'swal-cancel-btn'
+        }
       });
       if (desiredSlug === undefined) return; // cancelado
 
@@ -157,16 +168,40 @@ export default function Pagina() {
         publishedAt: data?.tienda?.publishedAt
       }));
 
-      await Swal.fire({ icon: "success", title: "¡Tienda publicada!", timer: 1400, showConfirmButton: false });
+      await Swal.fire({ 
+        icon: "success", 
+        title: "¡Tienda publicada!", 
+        timer: 1400, 
+        showConfirmButton: false,
+        customClass: {
+          popup: 'swal-popup-theme'
+        }
+      });
     } catch (e) {
-      Swal.fire({ icon: "error", title: "Error al publicar", text: e.message || String(e) });
+      Swal.fire({ 
+        icon: "error", 
+        title: "Error al publicar", 
+        text: e.message || String(e),
+        customClass: {
+          popup: 'swal-popup-theme',
+          confirmButton: 'swal-confirm-btn'
+        }
+      });
     }
   }
 
   function openPublicView(t) {
     if (!t) return;
     if (!t?.isPublished || !computePublicKey(t)) {
-      Swal.fire({ icon: "info", title: "Aún sin publicar", text: "Publica tu tienda para ver la URL pública." });
+      Swal.fire({ 
+        icon: "info", 
+        title: "Aún sin publicar", 
+        text: "Publica tu tienda para ver la URL pública.",
+        customClass: {
+          popup: 'swal-popup-theme',
+          confirmButton: 'swal-confirm-btn'
+        }
+      });
       return;
     }
     window.open(buildPublicUrl(t), "_blank", "noopener,noreferrer");
@@ -179,9 +214,26 @@ export default function Pagina() {
       }
       const url = buildPublicUrl(t);
       await navigator.clipboard.writeText(url);
-      Swal.fire({ icon: "success", title: "Enlace copiado", text: url, timer: 1500, showConfirmButton: false });
+      Swal.fire({ 
+        icon: "success", 
+        title: "Enlace copiado", 
+        text: url, 
+        timer: 1500, 
+        showConfirmButton: false,
+        customClass: {
+          popup: 'swal-popup-theme'
+        }
+      });
     } catch (e) {
-      Swal.fire({ icon: "error", title: "No se pudo copiar", text: e.message || String(e) });
+      Swal.fire({ 
+        icon: "error", 
+        title: "No se pudo copiar", 
+        text: e.message || String(e),
+        customClass: {
+          popup: 'swal-popup-theme',
+          confirmButton: 'swal-confirm-btn'
+        }
+      });
     }
   }
 
@@ -611,7 +663,7 @@ function RowSection({ title, icon, items = [], enableSearch = false }) {
   );
 }
 
-/* Card con estructura preparada para estilos “neón/glass” */
+/* Card con estructura preparada para estilos "neón/glass" */
 function PosterCard({ p = {} }) {
   const pickImage = (prod) => {
     const candidates = [
@@ -700,18 +752,27 @@ function StorePolicies({ tienda }) {
   return (
     <section className="store-section policies-section">
       <div className="policy-card">
+        <div className="policy-icon">
+          <FiTruck size={24} />
+        </div>
         <h3>Envíos</h3>
         <p>{tienda?.envioCobertura || "No especificado"}</p>
         <p>{tienda?.envioCosto || "Costo no especificado"}</p>
         <p>{tienda?.envioTiempo || "Tiempo no especificado"}</p>
       </div>
       <div className="policy-card">
+        <div className="policy-icon">
+          <FiCreditCard size={24} />
+        </div>
         <h3>Métodos de pago</h3>
         <div className="payment-methods">
           {(tienda?.metodosPago || []).map((metodo, i) => (<span key={i}>{metodo}</span>))}
         </div>
       </div>
       <div className="policy-card">
+        <div className="policy-icon">
+          <FiRefreshCw size={24} />
+        </div>
         <h3>Devoluciones</h3>
         <p>{tienda?.devoluciones || "Política no especificada"}</p>
       </div>
@@ -761,16 +822,23 @@ function ContactFooter({ tienda }) {
   );
 }
 
-/* ===================== Helpers color ===================== */
+/* ===================== Helpers color mejorados ===================== */
 function extractColors(gradientString) {
   const m = gradientString?.match(/#([0-9a-f]{6})/gi);
   return { from: m?.[0] || "#6d28d9", to: m?.[1] || "#c026d3" };
 }
+
 function hexToRgb(hex) {
   const m = hex?.match(/^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i);
   if (!m) return [0, 0, 0];
   return [parseInt(m[1], 16), parseInt(m[2], 16), parseInt(m[3], 16)];
 }
+
+function hexToRgba(hex, alpha) {
+  const [r, g, b] = hexToRgb(hex);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
 function luminance([r, g, b]) {
   const a = [r, g, b].map(v => {
     v /= 255;
@@ -778,6 +846,7 @@ function luminance([r, g, b]) {
   });
   return 0.2126 * a[0] + 0.7152 * a[1] + 0.0722 * a[2];
 }
+
 function bestTextOn(hexA, hexB) {
   const L = (luminance(hexToRgb(hexA)) + luminance(hexToRgb(hexB))) / 2;
   return L > 0.45 ? "#111111" : "#ffffff";

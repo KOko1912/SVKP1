@@ -3,58 +3,36 @@ import { useEffect, useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   FiChevronLeft, FiImage, FiUpload, FiCheckCircle, FiRefreshCw,
-  FiAlertTriangle, FiMessageCircle
+  FiAlertTriangle, FiMessageCircle, FiMaximize2, FiX
 } from 'react-icons/fi';
 
 const API   = (import.meta.env.VITE_API_URL    || 'http://localhost:5000').replace(/\/$/, '');
 const FILES = (import.meta.env.VITE_FILES_BASE || API).replace(/\/$/, '');
+// si tienes un endpoint para firmar, define en .env:
+// VITE_MEDIA_SIGNED_URL_TEMPLATE="/api/media/signed/{id}"
+// o por query: VITE_MEDIA_SIGNED_URL_TEMPLATE="/api/v1/upload/signed-url?id={id}"
+const SIGNED_URL_TPL = (import.meta.env.VITE_MEDIA_SIGNED_URL_TEMPLATE || '').trim();
 
-/* =========================
-   Helpers de dinero
-   ========================= */
+/* ===== Dinero ===== */
 const money = (n, currency = 'MXN', locale = 'es-MX') =>
   (n == null ? '' : new Intl.NumberFormat(locale, { style: 'currency', currency }).format(Number(n) || 0));
 
 const toMajor = (v) => {
-  // Si viene 18500 (centavos) => 185; si ya viene 185 => 185
   if (v == null) return 0;
   const n = Number(v);
   if (!Number.isFinite(n)) return 0;
-  // Heurística conservadora: si hay campo ...Cents úsalo; si no, solo divide si parece centavos (entero grande)
   return Number.isInteger(n) && Math.abs(n) >= 1000 ? n / 100 : n;
 };
-
 const numOrNull = (v) => {
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
 };
-
-// Devuelve { amount, currency } a partir de la respuesta del backend
 const pickTotal = (pedido) => {
-  const cur =
-    pedido?.totals?.currency ||
-    pedido?.currency ||
-    pedido?.moneda ||
-    'MXN';
-
-  // 1) Preferir centavos si existen
-  const cents =
-    numOrNull(pedido?.totals?.totalCents) ??
-    numOrNull(pedido?.totalCents) ??
-    null;
-
+  const cur = pedido?.totals?.currency || pedido?.currency || pedido?.moneda || 'MXN';
+  const cents = numOrNull(pedido?.totals?.totalCents) ?? numOrNull(pedido?.totalCents) ?? null;
   if (cents != null) return { amount: cents / 100, currency: cur };
-
-  // 2) Si no, usar total mayor (con heurística)
-  const major =
-    numOrNull(pedido?.totals?.total) ??
-    numOrNull(pedido?.total) ??
-    numOrNull(pedido?.monto) ??
-    null;
-
+  const major = numOrNull(pedido?.totals?.total) ?? numOrNull(pedido?.total) ?? numOrNull(pedido?.monto) ?? null;
   if (major != null) return { amount: toMajor(major), currency: cur };
-
-  // 3) Último recurso: sumar ítems
   let sumCents = 0;
   if (Array.isArray(pedido?.items)) {
     for (const it of pedido.items) {
@@ -64,24 +42,15 @@ const pickTotal = (pedido) => {
         (numOrNull(it?.priceCents) != null ? numOrNull(it?.priceCents) * qty : null) ??
         (numOrNull(it?.precioCents) != null ? numOrNull(it?.precioCents) * qty : null) ??
         null;
-      if (itemCents != null) {
-        sumCents += itemCents;
-        continue;
-      }
-      const itemMajor =
-        numOrNull(it?.total) ??
-        numOrNull(it?.price) ??
-        numOrNull(it?.precio) ??
-        null;
+      if (itemCents != null) { sumCents += itemCents; continue; }
+      const itemMajor = numOrNull(it?.total) ?? numOrNull(it?.price) ?? numOrNull(it?.precio) ?? null;
       if (itemMajor != null) sumCents += Math.round(toMajor(itemMajor) * 100) * qty;
     }
   }
   return { amount: sumCents / 100, currency: cur };
 };
 
-/* =========================
-   Helpers de URL/files
-   ========================= */
+/* ===== URL & fetch ===== */
 const toPublicSrc = (u) => {
   const v = typeof u === 'string'
     ? u
@@ -89,35 +58,27 @@ const toPublicSrc = (u) => {
   if (!v) return '';
   return /^https?:\/\//i.test(v) ? v : `${FILES}${v.startsWith('/') ? '' : '/'}${v}`;
 };
-
-/* Fetch sin lanzar excepciones */
 async function tryJson(url, init) {
   try {
     const r = await fetch(url, init);
+    if (!r.ok) return null;
     const t = await r.text();
     let d = null; try { d = JSON.parse(t); } catch {}
-    if (!r.ok || !d) return null;
-    return d;
+    return d || null;
   } catch { return null; }
 }
 
-/* ------------------------------
-   Upload a carpeta por tienda
-   ------------------------------ */
+/* ===== Upload ===== */
 async function uploadImage(file, { tiendaId, pedidoId }) {
-  const folder = tiendaId
-    ? `tiendas/${tiendaId}/comprobantes${pedidoId ? `/${pedidoId}` : ''}`
-    : 'misc';
-  // 1) Preferido: Supabase
+  const folder = tiendaId ? `tiendas/${tiendaId}/comprobantes${pedidoId ? `/${pedidoId}` : ''}` : 'misc';
   try {
     const fd = new FormData();
     fd.append('file', file);
     const qs = new URLSearchParams({ folder, visibility: 'private' });
     const r = await fetch(`${API}/api/media?${qs.toString()}`, { method: 'POST', body: fd });
     const data = await r.json();
-    if (r.ok && data) return data; // { ok, media:{ id, url, ... } }
+    if (r.ok && data) return data; // { ok, media:{ id, url? }, ... }
   } catch {}
-  // 2) Fallback local (solo DEV)
   try {
     const fd = new FormData();
     fd.append('file', file);
@@ -127,17 +88,10 @@ async function uploadImage(file, { tiendaId, pedidoId }) {
   } catch {}
   return null;
 }
+const extractMediaId  = (resp) => resp?.media?.id ?? resp?.mediaId ?? resp?.id ?? resp?.data?.id ?? null;
+const extractMediaUrl = (resp) => resp?.media?.url ?? resp?.url ?? resp?.data?.url ?? resp?.publicUrl ?? resp?.signedUrl ?? null;
 
-function extractMediaId(resp) {
-  if (!resp) return null;
-  return resp.media?.id ?? resp.mediaId ?? resp.id ?? resp?.data?.id ?? null;
-}
-function extractMediaUrl(resp) {
-  if (!resp) return null;
-  return resp.media?.url ?? resp.url ?? resp?.data?.url ?? resp?.publicUrl ?? null;
-}
-
-/* Armar URL canónica de esta página (hash / history) */
+/* ===== Self URL ===== */
 function makeComprobanteSelfUrl(token) {
   const origin = window.location.origin;
   const base = (import.meta.env.BASE_URL || '/').replace(/\/+$/, '');
@@ -145,27 +99,14 @@ function makeComprobanteSelfUrl(token) {
   return hashMode ? `${origin}${base}/#/comprobante/${token}` : `${origin}${base}/comprobante/${token}`;
 }
 
-/* Recoger galería de un producto (producto.imagenes o variantes[i].imagenes) */
-function pickGalleryFromProducto(p) {
+/* ===== Producto helpers ===== */
+const pickGalleryFromProducto = (p) => {
   const urls = [];
-  if (Array.isArray(p?.imagenes)) {
-    for (const it of p.imagenes) {
-      const u = it?.url || it?.media?.url || it?.path || it;
-      if (u) urls.push(u);
-    }
-  }
-  if (!urls.length && Array.isArray(p?.variantes)) {
-    for (const v of p.variantes) {
-      for (const it of (v?.imagenes || [])) {
-        const u = it?.url || it?.media?.url || it?.path || it;
-        if (u) urls.push(u);
-      }
-    }
-  }
+  if (Array.isArray(p?.imagenes)) for (const it of p.imagenes) urls.push(it?.url || it?.media?.url || it?.path || it);
+  if (!urls.length && Array.isArray(p?.variantes))
+    for (const v of p.variantes) for (const it of (v?.imagenes || [])) urls.push(it?.url || it?.media?.url || it?.path || it);
   return urls.map(toPublicSrc);
-}
-
-/* Obtener producto por ID (con fallback por compatibilidad) */
+};
 async function fetchProductoSeguro(id) {
   let p = await tryJson(`${API}/api/v1/productos/${encodeURIComponent(id)}`);
   if (p && !p.error) return p;
@@ -173,32 +114,49 @@ async function fetchProductoSeguro(id) {
   return p && !p.error ? p : null;
 }
 
-/* Resolver URL del comprobante con varios intentos */
+/* ===== Persistencia local del comprobante (para sobrevivir recargas) ===== */
+const keyByToken = (t) => `svkp:proof-url:token:${t}`;
+const keyByMedia = (id) => `svkp:proof-url:media:${id}`;
+function saveProofUrl(token, mediaId, url) {
+  if (!url) return;
+  try {
+    if (token)   localStorage.setItem(keyByToken(token), url);
+    if (mediaId) localStorage.setItem(keyByMedia(mediaId), url);
+  } catch {}
+}
+function loadProofUrl(token, mediaId) {
+  try {
+    return (token   && localStorage.getItem(keyByToken(token))) ||
+           (mediaId && localStorage.getItem(keyByMedia(mediaId))) || '';
+  } catch { return ''; }
+}
+const fillTpl = (tpl, id) => tpl.replace('{id}', encodeURIComponent(id));
+
+/* ===== Resolver URL del comprobante sin spamear 404 ===== */
 async function resolveProofUrl(pedido) {
-  // si ya viene embebida en el pedido
+  // 1) Directo del pedido
   const direct =
-    pedido?.proof?.url ||
-    pedido?.proofUrl ||
-    pedido?.proofMedia?.url ||
-    pedido?.comprobanteUrl ||
-    null;
+    pedido?.proof?.url || pedido?.proof?.publicUrl || pedido?.proof?.signedUrl ||
+    pedido?.proofUrl || pedido?.proofMedia?.url || pedido?.comprobanteUrl ||
+    pedido?.proof?.path || pedido?.proofPath || null;
   if (direct) return direct;
 
-  const id = pedido?.proofMediaId || pedido?.proof?.mediaId || null;
-  if (!id) return '';
+  // 2) LocalStorage (guardado al subir)
+  const mid =
+    pedido?.proofMediaId || pedido?.proof?.mediaId ||
+    pedido?.proofId || pedido?.comprobanteMediaId || null;
+  const cached = loadProofUrl(pedido?.token, mid);
+  if (cached) return cached;
 
-  // 1) GET /api/media/:id (si existe)
-  let d = await tryJson(`${API}/api/media/${id}`);
-  if (d?.media?.url || d?.url) return d.media?.url || d.url;
+  // 3) Endpoint configurable (si existe en tu backend)
+  if (SIGNED_URL_TPL && mid) {
+    const url = fillTpl(`${API}${SIGNED_URL_TPL.startsWith('/') ? '' : '/'}${SIGNED_URL_TPL}`, mid);
+    const d = await tryJson(url);
+    const out = d?.url || d?.signedUrl || d?.publicUrl || d?.media?.url || d?.data?.url || '';
+    if (out) return out;
+  }
 
-  // 2) GET /api/media/${id}/signed (si existe y es privado)
-  d = await tryJson(`${API}/api/media/${id}/signed`);
-  if (d?.url) return d.url;
-
-  // 3) GET /api/media/signed/${id} (nombres alternos)
-  d = await tryJson(`${API}/api/media/signed/${id}`);
-  if (d?.url) return d.url;
-
+  // 4) Nada
   return '';
 }
 
@@ -214,26 +172,20 @@ export default function Comprobante() {
   const [previewUrl, setPreviewUrl] = useState('');
   const [uploadBusy, setUploadBusy] = useState(false);
   const [uploadErr, setUploadErr] = useState('');
-  const [uploadedInfo, setUploadedInfo] = useState(null); // { mediaId, url }
-  const [proofUrl, setProofUrl] = useState('');            // persistente tras recarga
+  const [uploadedInfo, setUploadedInfo] = useState(null);
+  const [proofUrl, setProofUrl] = useState('');   // persistente tras recarga
 
   const [requestBusy, setRequestBusy] = useState(false);
   const [requestMsg, setRequestMsg] = useState('');
+  const [showModal, setShowModal] = useState(false);
 
   const tiendaPhone = pedido?.tienda?.telefonoContacto?.replace(/\D/g, '') || '';
-
   const mainItem = useMemo(() => (pedido?.items?.[0] || null), [pedido?.items]);
-
-  const { amount: totalAmount, currency: totalCurrency } = useMemo(
-    () => pickTotal(pedido || {}),
-    [pedido]
-  );
+  const { amount: totalAmount, currency: totalCurrency } = useMemo(() => pickTotal(pedido || {}), [pedido]);
   const totalFmt = money(totalAmount, totalCurrency);
 
-  const [producto, setProducto] = useState(null);
   const [principalImg, setPrincipalImg] = useState('');
 
-  // bloqueos cuando está en revisión
   const isInReview = useMemo(() => {
     const s = String(pedido?.status || '').toUpperCase();
     const p = String(pedido?.paymentStatus || '').toUpperCase();
@@ -241,7 +193,6 @@ export default function Comprobante() {
     return Boolean(pedido?.requested) || flags.has(s) || flags.has(p);
   }, [pedido]);
 
-  // 1) Cargar pedido + resolver imágenes
   useEffect(() => {
     let cancel = false;
     (async () => {
@@ -256,16 +207,15 @@ export default function Comprobante() {
       }
       setPedido(d);
 
-      // Resolver URL del comprobante persistido
+      // 1) URL del comprobante (directo / cache / endpoint configurado)
       const url = await resolveProofUrl(d);
       if (!cancel && url) setProofUrl(url);
 
-      // Cargar producto (miniatura del encabezado)
+      // 2) miniatura
       const pid = d?.items?.[0]?.productoId ?? d?.items?.[0]?.productId;
       if (pid != null) {
         const p = await fetchProductoSeguro(pid);
         if (!cancel && p) {
-          setProducto(p);
           const gal = pickGalleryFromProducto(p);
           setPrincipalImg(gal[0] || '');
         }
@@ -284,22 +234,19 @@ export default function Comprobante() {
   }
 
   async function onUpload() {
-    if (!file) {
-      setUploadErr('Selecciona una imagen primero.');
-      return;
-    }
+    if (!file) { setUploadErr('Selecciona una imagen primero.'); return; }
     setUploadBusy(true);
     setUploadErr('');
     try {
-      const tiendaId  = pedido?.tienda?.id ?? pedido?.tiendaId ?? null;
-      const pedidoId  = pedido?.id ?? null;
+      const tiendaId = pedido?.tienda?.id ?? pedido?.tiendaId ?? null;
+      const pedidoId = pedido?.id ?? null;
 
       const resp = await uploadImage(file, { tiendaId, pedidoId });
       const mediaId = extractMediaId(resp);
       const mediaUrl = extractMediaUrl(resp);
       if (!mediaId) throw new Error('No se pudo obtener el ID del archivo');
 
-      // Registrar comprobante en el pedido
+      // Registrar comprobante
       const r = await fetch(`${API}/api/orders/public/${encodeURIComponent(token)}/proof`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -308,15 +255,18 @@ export default function Comprobante() {
       const d = await r.json().catch(() => null);
       if (!r.ok || !d?.ok) throw new Error(d?.error || 'Error registrando comprobante');
 
+      // Mostrar y persistir (para siguientes recargas)
       setUploadedInfo({ mediaId, url: mediaUrl });
-      setProofUrl(mediaUrl || ''); // queda visible sin esperar refresh
+      if (mediaUrl) {
+        setProofUrl(mediaUrl);
+        saveProofUrl(token, mediaId, mediaUrl);
+      }
 
-      // Refrescar pedido
+      // refrescar pedido
       const d2 = await tryJson(`${API}/api/orders/public/${encodeURIComponent(token)}`);
       if (d2) setPedido(d2);
 
       setRequestMsg('Comprobante registrado. Ahora puedes solicitar revisión.');
-      // limpiar selección local
       setFile(null);
       if (previewUrl) URL.revokeObjectURL(previewUrl);
       setPreviewUrl('');
@@ -336,7 +286,6 @@ export default function Comprobante() {
       if (!r.ok || !d?.ok) throw new Error(d?.error || 'No se pudo solicitar la revisión.');
       const msg = d.positionMessage || (d.position ? `Tu número en la fila: ${d.position}` : 'Solicitud enviada.');
       setRequestMsg(msg);
-      // refrescar pedido (para que requested=true bloquee los controles)
       const d2 = await tryJson(`${API}/api/orders/public/${encodeURIComponent(token)}`);
       if (d2) setPedido(d2);
     } catch (e) {
@@ -347,26 +296,18 @@ export default function Comprobante() {
     }
   }
 
-  function openWhatsApp() {
-    const selfUrl = makeComprobanteSelfUrl(token);
-    const lines = [
-      'Hola 👋',
-      'Ya realicé el pago y subí el comprobante.',
-      'Por favor, revisa mi pedido 🙏',
-      `Comprobante: ${selfUrl}`,
-    ];
-    const msg = encodeURIComponent(lines.join('\n'));
-    const wa = tiendaPhone ? `https://wa.me/${tiendaPhone}?text=${msg}` : `https://wa.me/?text=${msg}`;
-    window.open(wa, '_blank', 'noopener,noreferrer');
+  async function regenerateLink() {
+    if (!pedido) return;
+    const url = await resolveProofUrl(pedido);
+    if (url) {
+      setProofUrl(url);
+      const mid = pedido?.proofMediaId || pedido?.proof?.mediaId || null;
+      saveProofUrl(token, mid, url);
+    }
   }
 
   if (loading) {
-    return (
-      <div className="pp-loading">
-        <div className="pp-spinner" />
-        <p>Cargando pedido…</p>
-      </div>
-    );
+    return (<div className="pp-loading"><div className="pp-spinner" /><p>Cargando pedido…</p></div>);
   }
 
   if (err || !pedido) {
@@ -378,8 +319,10 @@ export default function Comprobante() {
     );
   }
 
-  const hasProof = Boolean(pedido.proofMediaId || uploadedInfo?.mediaId || proofUrl);
-  const tiendaLogo = toPublicSrc(pedido?.tienda?.logo?.url || pedido?.tienda?.logoUrl);
+  const hasProofId  = Boolean(pedido?.proofMediaId || pedido?.proof?.mediaId);
+  const hasProofUrl = Boolean(proofUrl);
+  const hasProof    = Boolean(hasProofId || uploadedInfo?.mediaId || proofUrl);
+  const tiendaLogo  = toPublicSrc(pedido?.tienda?.logo?.url || pedido?.tienda?.logoUrl);
 
   return (
     <div className="pp-container" style={{ padding: '1rem' }}>
@@ -391,15 +334,14 @@ export default function Comprobante() {
         {/* Resumen */}
         <div className="card" style={{ padding: '1rem', marginBottom: '1rem' }}>
           <div style={{ display:'grid', gridTemplateColumns:'100px 1fr', gap:'1rem', alignItems:'center' }}>
-            <div className="pp-thumb-frame" style={{ width:100, height:100, position:'relative' }}>
+            <div style={{ width:100, height:100 }}>
               {principalImg ? (
                 <img src={principalImg} alt="Producto" style={{ width:'100%', height:'100%', objectFit:'cover', borderRadius:5 }} />
               ) : tiendaLogo ? (
                 <img src={tiendaLogo} alt="Tienda" style={{ width:'100%', height:'100%', objectFit:'cover', borderRadius:5 }} />
               ) : (
-                <div className="pp-main-placeholder" style={{ height:100, display:'grid', placeItems:'center' }}>
-                  <FiImage />
-                  <div><small>Sin imagen</small></div>
+                <div style={{ height:100, display:'grid', placeItems:'center' }}>
+                  <FiImage /><div><small>Sin imagen</small></div>
                 </div>
               )}
             </div>
@@ -417,30 +359,17 @@ export default function Comprobante() {
           </div>
         </div>
 
-        {/* Estado actual */}
+        {/* Estado */}
         <div className="card" style={{ padding:'1rem', marginBottom:'1rem' }}>
           <div style={{ display:'grid', gap:'.35rem' }}>
             <div><strong>Estado pedido:</strong> {pedido.status}</div>
             <div><strong>Estado de pago:</strong> {pedido.paymentStatus}</div>
-            {pedido.requested && (
-              <div style={{ display:'flex', alignItems:'center', gap:'.5rem' }}>
-                <FiCheckCircle /> <strong>Solicitud enviada</strong>
-              </div>
-            )}
-            {pedido.position && (
-              <div style={{ display:'flex', alignItems:'center', gap:'.5rem' }}>
-                <FiRefreshCw /> {pedido.positionMessage || `Tu número en la fila: ${pedido.position}`}
-              </div>
-            )}
-            {isInReview && (
-              <div style={{ display:'flex', alignItems:'center', gap:'.5rem', color:'var(--text-2)' }}>
-                <FiRefreshCw /> El comprobante está en revisión.
-              </div>
-            )}
+            {pedido.requested && (<div style={{ display:'flex', alignItems:'center', gap:'.5rem' }}><FiCheckCircle /><strong>Solicitud enviada</strong></div>)}
+            {pedido.position && (<div style={{ display:'flex', alignItems:'center', gap:'.5rem' }}><FiRefreshCw /> {pedido.positionMessage || `Tu número en la fila: ${pedido.position}`}</div>)}
           </div>
         </div>
 
-        {/* Subida de comprobante */}
+        {/* Subida/visualización */}
         <div className="card" style={{ padding:'1rem', marginBottom:'1rem' }}>
           <h3 style={{ marginTop: 0 }}>1) Sube tu comprobante</h3>
           <p style={{ marginTop: 0, color:'var(--text-2)' }}>
@@ -449,10 +378,15 @@ export default function Comprobante() {
           </p>
 
           <div style={{ display:'grid', gridTemplateColumns:'160px 1fr', gap:'1rem', alignItems:'center' }}>
-            <div style={{
-              width:160, height:160, border:'1px dashed var(--border-color)', borderRadius:8,
-              overflow:'hidden', display:'grid', placeItems:'center', background:'rgba(255,255,255,.04)'
-            }}>
+            <div
+              style={{
+                width:160, height:160, border:'1px dashed var(--border-color)', borderRadius:8,
+                overflow:'hidden', display:'grid', placeItems:'center', background:'rgba(255,255,255,.04)',
+                cursor: (proofUrl || previewUrl) ? 'zoom-in' : 'default'
+              }}
+              onClick={() => { if (proofUrl || previewUrl) setShowModal(true); }}
+              title={(proofUrl || previewUrl) ? 'Ver en grande' : undefined}
+            >
               {previewUrl ? (
                 <img src={previewUrl} alt="Previsualización" style={{ width:'100%', height:'100%', objectFit:'cover' }} />
               ) : proofUrl ? (
@@ -471,47 +405,24 @@ export default function Comprobante() {
             </div>
 
             <div style={{ display:'grid', gap:'.5rem' }}>
-              <input
-                type="file"
-                accept="image/*"
-                onChange={onFileChange}
-                disabled={uploadBusy || isInReview}
-              />
-              {uploadErr && (
-                <div style={{ color:'var(--danger, #dc2626)' }}>
-                  <FiAlertTriangle /> {uploadErr}
-                </div>
-              )}
-              <div style={{ display:'flex', gap:'.5rem' }}>
-                <button
-                  className="btn btn-primary"
-                  onClick={onUpload}
-                  disabled={uploadBusy || !file || isInReview}
-                  title={isInReview ? 'Comprobante en revisión' : 'Subir y registrar comprobante'}
-                >
+              <input type="file" accept="image/*" onChange={onFileChange} disabled={uploadBusy || isInReview} />
+              {uploadErr && (<div style={{ color:'var(--danger, #dc2626)' }}><FiAlertTriangle /> {uploadErr}</div>)}
+              <div style={{ display:'flex', gap:'.5rem', flexWrap:'wrap' }}>
+                <button className="btn btn-primary" onClick={onUpload} disabled={uploadBusy || !file || isInReview}>
                   {uploadBusy ? 'Subiendo…' : (<><FiUpload /> Subir comprobante</>)}
                 </button>
-                <button
-                  className="btn btn-ghost"
-                  onClick={() => {
-                    if (previewUrl) URL.revokeObjectURL(previewUrl);
-                    setFile(null); setPreviewUrl(''); setUploadErr('');
-                  }}
-                  disabled={uploadBusy || isInReview}
-                >
+                <button className="btn btn-ghost" onClick={() => { if (previewUrl) URL.revokeObjectURL(previewUrl); setFile(null); setPreviewUrl(''); setUploadErr(''); }} disabled={uploadBusy || isInReview}>
                   Limpiar
                 </button>
+                {hasProofId && !hasProofUrl && (
+                  <button className="btn" onClick={regenerateLink} title="Generar enlace para ver el comprobante">
+                    <FiRefreshCw /> Generar enlace
+                  </button>
+                )}
+                {hasProofUrl && (
+                  <a href={toPublicSrc(proofUrl)} target="_blank" rel="noreferrer" className="btn btn-ghost"><FiMaximize2 /> Ver comprobante</a>
+                )}
               </div>
-              {(proofUrl) && (
-                <a
-                  href={toPublicSrc(proofUrl)}
-                  target="_blank"
-                  rel="noreferrer"
-                  style={{ textDecoration:'underline' }}
-                >
-                  Ver comprobante
-                </a>
-              )}
             </div>
           </div>
         </div>
@@ -519,17 +430,9 @@ export default function Comprobante() {
         {/* Solicitar revisión */}
         <div className="card" style={{ padding:'1rem', marginBottom:'1rem' }}>
           <h3 style={{ marginTop: 0 }}>2) Solicitar revisión</h3>
-          <p style={{ marginTop: 0, color:'var(--text-2)' }}>
-            Cuando envíes la solicitud, entrarás a la fila de la tienda. Te mostraremos tu turno aquí.
-          </p>
-
-          <div style={{ display:'flex', gap:'.5rem', alignItems:'center' }}>
-            <button
-              className="btn btn-primary"
-              onClick={onRequest}
-              disabled={requestBusy || pedido.requested}
-              title="Enviar solicitud al vendedor"
-            >
+          <p style={{ marginTop: 0, color:'var(--text-2)' }}>Cuando envíes la solicitud, entrarás a la fila de la tienda. Te mostraremos tu turno aquí.</p>
+          <div style={{ display:'flex', gap:'.5rem', alignItems:'center', flexWrap:'wrap' }}>
+            <button className="btn btn-primary" onClick={onRequest} disabled={requestBusy || pedido.requested}>
               {requestBusy ? 'Enviando…' : 'Solicitar revisión'}
             </button>
             <button
@@ -539,10 +442,9 @@ export default function Comprobante() {
                 if (d) {
                   setPedido(d);
                   const u = await resolveProofUrl(d);
-                  if (u) setProofUrl(u);
+                  if (u) { setProofUrl(u); saveProofUrl(token, d?.proofMediaId || d?.proof?.mediaId, u); }
                 }
               }}
-              title="Actualizar estado"
             >
               <FiRefreshCw /> Actualizar
             </button>
@@ -550,17 +452,32 @@ export default function Comprobante() {
           </div>
         </div>
 
-        {/* Contacto por WhatsApp */}
+        {/* WhatsApp */}
         <div className="card" style={{ padding:'1rem' }}>
           <h3 style={{ marginTop: 0 }}>¿Dudas? Contacta al vendedor</h3>
           <div style={{ display:'flex', gap:'.5rem', alignItems:'center' }}>
-            <button className="btn" onClick={openWhatsApp} disabled={!tiendaPhone}>
+            <button className="btn" onClick={() => {
+              const selfUrl = makeComprobanteSelfUrl(token);
+              const msg = encodeURIComponent(['Hola 👋','Ya realicé el pago y subí el comprobante.','Por favor, revisa mi pedido 🙏',`Comprobante: ${selfUrl}`].join('\n'));
+              const wa = tiendaPhone ? `https://wa.me/${tiendaPhone}?text=${msg}` : `https://wa.me/?text=${msg}`;
+              window.open(wa, '_blank', 'noopener,noreferrer');
+            }} disabled={!tiendaPhone}>
               <FiMessageCircle /> Abrir WhatsApp
             </button>
             {!tiendaPhone && <small style={{ color:'var(--text-3)' }}>Esta tienda no tiene WhatsApp configurado.</small>}
           </div>
         </div>
       </div>
+
+      {/* Modal imagen grande */}
+      {showModal && (previewUrl || proofUrl) && (
+        <div onClick={() => setShowModal(false)} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.8)', display:'grid', placeItems:'center', zIndex:1000, padding:'2rem' }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ position:'relative', maxWidth:'min(95vw, 1000px)', maxHeight:'85vh' }}>
+            <button className="btn btn-ghost" style={{ position:'absolute', top:8, right:8 }} onClick={() => setShowModal(false)}><FiX /></button>
+            <img src={previewUrl || toPublicSrc(proofUrl)} alt="Comprobante" style={{ width:'100%', height:'100%', objectFit:'contain', borderRadius:8 }} />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

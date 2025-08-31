@@ -1227,12 +1227,15 @@ p {
   -webkit-line-clamp: 2 !important;
   -webkit-box-orient: vertical !important;
   overflow: hidden !important;
+  line-clamp: 2 !important; /* estándar */
 }
+
 .poster-desc {
   display: -webkit-box !important;
   -webkit-line-clamp: 3 !important;
   -webkit-box-orient: vertical !important;
   overflow: hidden !important;
+  line-clamp: 3 !important; /* estándar */
   min-height: 3.9em; /* reserva espacio estable */
 }
 

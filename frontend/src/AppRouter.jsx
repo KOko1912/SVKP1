@@ -37,6 +37,9 @@ import Pagina from './pages/Vendedor/Pagina';
 import ConfiguracionVista from './pages/Vendedor/ConfiguracionVista';
 import Productos from './pages/Vendedor/Productos';
 
+// === NUEVO: Finanzas del Vendedor ===
+import FinanzasInicio from './pages/Vendedor/Finanzas/Inicio';
+
 // ------------------------------------------------------------------
 // Token de URL para acceder al panel admin
 // Colócalo en .env del frontend: VITE_ADMIN_URL_TOKEN="<tu hash>"
@@ -57,9 +60,41 @@ const getUsuario = () => {
   }
 };
 
+const hasVendorRole = (u) => {
+  if (!u) return false;
+
+  // Soporte a varias convenciones que podrías estar usando:
+  if (u.esVendedor === true) return true;
+  if (u.isVendedor === true) return true;
+  if (u.vendedor === true) return true;
+  if (u.vendor === true) return true;
+
+  // Si guardas una tienda ligada al usuario:
+  if (u.tiendaId || (u.tienda && u.tienda.id)) return true;
+
+  // Roles tipo array o string:
+  if (Array.isArray(u.roles) && u.roles.some(r => String(r).toUpperCase() === 'VENDEDOR')) return true;
+  if (typeof u.role === 'string' && u.role.toUpperCase() === 'VENDEDOR') return true;
+
+  return false;
+};
+
 const RequireAuth = ({ children }) => {
   const user = getUsuario();
   if (!user) return <Navigate to="/login" replace />;
+  return children;
+};
+
+// Extra: requiere que el usuario sea vendedor activo
+const RequireVendor = ({ children }) => {
+  const user = getUsuario();
+  if (!user) return <Navigate to="/login" replace />;
+
+  if (!hasVendorRole(user)) {
+    // Si quieres mostrar un aviso, puedes enviar a una landing de activación del modo vendedor
+    // return <Navigate to="/vendedor/activar" replace />;
+    return <Navigate to="/usuario/home" replace />;
+  }
   return children;
 };
 
@@ -176,13 +211,15 @@ export default function AppRouter() {
         <Route path="/:token" element={<AdminGate />} />
 
         {/* =======================
-            Vendedor (protegido)
+            Vendedor (protegido y requiere vendedor activo)
            ======================= */}
         <Route
           path="/vendedor/perfil"
           element={
             <RequireAuth>
-              <VendedorPerfil />
+              <RequireVendor>
+                <VendedorPerfil />
+              </RequireVendor>
             </RequireAuth>
           }
         />
@@ -190,7 +227,9 @@ export default function AppRouter() {
           path="/vendedor/pagina"
           element={
             <RequireAuth>
-              <Pagina />
+              <RequireVendor>
+                <Pagina />
+              </RequireVendor>
             </RequireAuth>
           }
         />
@@ -198,7 +237,9 @@ export default function AppRouter() {
           path="/vendedor/configuracion"
           element={
             <RequireAuth>
-              <ConfiguracionVista />
+              <RequireVendor>
+                <ConfiguracionVista />
+              </RequireVendor>
             </RequireAuth>
           }
         />
@@ -206,7 +247,21 @@ export default function AppRouter() {
           path="/vendedor/productos"
           element={
             <RequireAuth>
-              <Productos />
+              <RequireVendor>
+                <Productos />
+              </RequireVendor>
+            </RequireAuth>
+          }
+        />
+
+        {/* === NUEVO: Finanzas (solo si vendedor activo) === */}
+        <Route
+          path="/vendedor/finanzas"
+          element={
+            <RequireAuth>
+              <RequireVendor>
+                <FinanzasInicio />
+              </RequireVendor>
             </RequireAuth>
           }
         />

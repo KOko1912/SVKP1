@@ -2,15 +2,39 @@
 import { useEffect, useMemo, useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import {
-  FiSettings, FiUser, FiHome, FiEye, FiShoppingBag, FiLogOut, FiMenu, FiX
+  FiSettings, FiUser, FiHome, FiEye, FiShoppingBag, FiLogOut, FiMenu, FiX, FiDollarSign
 } from 'react-icons/fi';
 import { motion, AnimatePresence } from 'framer-motion';
 import './Vendedor.css';
 
+function getUsuario() {
+  try {
+    const raw = localStorage.getItem('usuario') || localStorage.getItem('svk_user') || localStorage.getItem('ventasvk_user') || localStorage.getItem('user');
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function hasVendorRole(u) {
+  if (!u) return false;
+  if (u.esVendedor === true || u.isVendedor === true || u.vendedor === true || u.vendor === true) return true;
+  if (u.tiendaId || (u.tienda && u.tienda.id)) return true;
+  if (Array.isArray(u.roles) && u.roles.some(r => String(r).toUpperCase() === 'VENDEDOR')) return true;
+  if (typeof u.role === 'string' && u.role.toUpperCase() === 'VENDEDOR') return true;
+  return false;
+}
+
 export default function Nabvendedor() {
   const navigate = useNavigate();
-  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' ? window.innerWidth < 768 : false);
   const [menuOpen, setMenuOpen] = useState(false);
+
+  const user = getUsuario();
+  const isVendor = hasVendorRole(user);
+
+  // si NO es vendedor, no mostramos la barra (como pediste)
+  if (!isVendor) return null;
 
   // reduce motion
   const reduceMotion = useMemo(
@@ -40,6 +64,7 @@ export default function Nabvendedor() {
   const menuItems = [
     { path: '/vendedor/pagina', icon: <FiHome />, text: 'Mi Tienda' },
     { path: '/vendedor/productos', icon: <FiShoppingBag />, text: 'Productos' },
+    { path: '/vendedor/finanzas', icon: <FiDollarSign />, text: 'Finanzas' },   // ← NUEVO
     { path: '/vendedor/perfil', icon: <FiUser />, text: 'Perfil' },
     { path: '/vendedor/configuracion', icon: <FiSettings />, text: 'Configuración' },
   ];

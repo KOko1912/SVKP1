@@ -199,5 +199,41 @@ router.post('/variantes/:id/imagenes', upload.single('file'), async (req, res) =
     res.status(500).json({ error: 'Variante imagen upload failed', detail: String(e.message || e) });
   }
 });
+const { createClient } = require('@supabase/supabase-js');
+
+const supa = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE,
+  { auth: { persistSession: false } }
+);
+
+// GET /api/media/:id
+router.get('/:id', async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!id) return res.status(400).json({ error: 'id inválido' });
+
+    const media = await prisma.media.findUnique({ where: { id } });
+    if (!media) return res.status(404).json({ error: 'Media not found' });
+
+    // si ya tienes guardado media.url y es público
+    if (media.url) {
+      return res.redirect(media.url); // o res.json({ url: media.url })
+    }
+
+    // si guardas key (path en supabase) y bucket
+    const bucket = process.env.SUPABASE_BUCKET || 'media';
+    const { data, error } = await supa
+      .storage
+      .from(bucket)
+      .createSignedUrl(media.key, 60 * 10); // 10 min
+
+    if (error) return res.status(500).json({ error: error.message });
+    return res.redirect(data.signedUrl);
+  } catch (e) {
+    console.error('GET /api/media/:id error:', e);
+    res.status(500).json({ error: 'media fetch failed', detail: String(e.message || e) });
+  }
+});
 
 module.exports = router;

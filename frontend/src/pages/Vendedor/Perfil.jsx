@@ -710,7 +710,7 @@ export default function VendedorPerfil() {
 
           {tab === 'apariencia' && (
             <div>
-              <Card title={<SectionTitle icon={FiImage}>Banner Promocional</SectionTitle>} subtitle="Destaca promociones (recomendado 1200×300 px)">
+              <Card title={<SectionTitle icon={FiImage}>Banner Promocional</SectionTitle>} subtitle="Destaca promociones (recomendado 1102×181 px)">
                 <ImageUploader
                   label="Banner"
                   value={tienda.bannerPromoUrl ? imageUrl(tienda.bannerPromoUrl, imgV.banner) : ''}

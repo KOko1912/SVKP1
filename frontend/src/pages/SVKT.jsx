@@ -5,7 +5,7 @@ import "./Vendedor/Vendedor.css";
 import "./Vendedor/PaginaGrid.css";
 import {
   FiFacebook, FiInstagram, FiYoutube, FiPhone, FiMail, FiClock,
-  FiMapPin, FiExternalLink, FiMessageCircle, FiShoppingBag, FiStar, 
+  FiMapPin, FiExternalLink, FiMessageCircle, FiShoppingBag, FiStar,
   FiEye, FiSearch, FiTruck, FiCreditCard, FiRefreshCw
 } from "react-icons/fi";
 import { useParams, Link } from "react-router-dom";
@@ -52,6 +52,21 @@ const DEFAULT_PROPS = {
   logo:     { shape: 'rounded', frame: 'thin' },
 };
 
+/* ================= Hook: media query (para alternar grid/carrusel) ================= */
+function useMediaQuery(query) {
+  const [matches, setMatches] = useState(() =>
+    typeof window !== "undefined" ? window.matchMedia(query).matches : false
+  );
+  useEffect(() => {
+    const m = window.matchMedia(query);
+    const onChange = () => setMatches(m.matches);
+    onChange();
+    m.addEventListener?.("change", onChange);
+    return () => m.removeEventListener?.("change", onChange);
+  }, [query]);
+  return matches;
+}
+
 /* ================= Página pública ================= */
 export default function SVKT() {
   const { slug } = useParams();
@@ -76,19 +91,19 @@ export default function SVKT() {
     const { from, to } = extractColors(tienda.colorPrincipal);
     const contrast = bestTextOn(from, to);
     const root = document.documentElement.style;
-    
+
     root.setProperty("--brand-from", from);
     root.setProperty("--brand-to", to);
     root.setProperty("--brand-contrast", contrast);
     root.setProperty("--brand-gradient", grad(from, to));
     root.setProperty("--primary-color", from);
     root.setProperty("--primary-hover", from);
-    
+
     // Colores más sutiles para mejor contraste
     root.setProperty("--brand-from-light", hexToRgba(from, 0.15));
     root.setProperty("--brand-to-light", hexToRgba(to, 0.15));
     root.setProperty("--brand-shadow", hexToRgba(from, 0.25));
-    
+
     const softHalos =
       `radial-gradient(900px 600px at 0% -10%, ${hexToRgba(from, 0.2)}, transparent 60%),` +
       `radial-gradient(900px 600px at 100% -10%, ${hexToRgba(to, 0.2)}, transparent 60%)`;
@@ -140,6 +155,109 @@ export default function SVKT() {
       return (a.z||1) - (b.z||1);
     });
   }, [tienda?.homeLayout]);
+
+  /* ===== Inyectar estilos adicionales (arregla cards en desktop/móvil) ===== */
+  useEffect(() => {
+    const css = `
+@media (min-width: 1024px) {
+  .row-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 24px;
+  }
+}
+.poster-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  border-radius: 18px;
+  background: rgba(0,0,0,0.18);
+  box-shadow: 0 14px 28px var(--brand-shadow, rgba(0,0,0,.25));
+  overflow: hidden;
+  min-height: 420px;
+}
+.poster-media {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
+}
+.poster-media > img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.poster-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px 16px;
+  flex: 1;
+}
+.poster-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.poster-title {
+  font-weight: 800;
+  line-height: 1.15;
+  color: var(--text-primary, #fff);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.poster-desc {
+  color: var(--text-secondary, #e5e7eb);
+  font-size: .92rem;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  min-height: 3.9em;
+}
+.poster-footer {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.poster-price .price { font-weight: 900; font-size: 1.15rem; }
+.poster-price .original-price { margin-left: 8px; text-decoration: line-through; opacity: .7; }
+
+.row-scroll {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 76%;
+  gap: 16px;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  padding-bottom: 6px;
+}
+@media (min-width: 480px) and (max-width: 1023.98px) {
+  .row-scroll { grid-auto-columns: 58%; }
+}
+.row-scroll > .poster-card { scroll-snap-align: start; }
+
+/* extras que ya tenías */
+.banner-cta { color:#fff; margin-left:12px; text-decoration:underline; font-weight:600; transition:opacity .2s; }
+.banner-cta:hover { opacity:.9; }
+.current-day { color: var(--brand-from); font-weight:600; }
+.footer-credits { margin-top:2rem; padding-top:1.5rem; border-top:1px solid rgba(255,255,255,.1); text-align:center; color:var(--text-tertiary); font-size:.9rem; }
+.btn-sm { padding:.5rem 1rem; font-size:.9rem; }
+    `.trim();
+    const id = "svkt-inline-fixes";
+    if (!document.getElementById(id)) {
+      const el = document.createElement("style");
+      el.id = id;
+      el.innerText = css;
+      document.head.appendChild(el);
+    }
+  }, []);
 
   if (loading) {
     return (
@@ -392,10 +510,10 @@ function StoreHours({ horario = {} }) {
     { id: "mie", label: "Miércoles" }, { id: "jue", label: "Jueves" },
     { id: "vie", label: "Viernes" }, { id: "sab", label: "Sábado" }, { id: "dom", label: "Domingo" },
   ];
-  
+
   // Determinar día actual
   const today = new Date().toLocaleDateString('es-ES', { weekday: 'short' }).toLowerCase().substring(0, 3);
-  
+
   return (
     <div className="store-hours">
       <h3><FiClock /> Horario de atención</h3>
@@ -415,6 +533,7 @@ function StoreHours({ horario = {} }) {
 }
 
 function RowSection({ title, icon, items = [], enableSearch = false }) {
+  const isDesktop = useMediaQuery("(min-width: 1024px)");
   const ref = useRef(null);
   const [showControls, setShowControls] = useState(false);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
@@ -431,25 +550,24 @@ function RowSection({ title, icon, items = [], enableSearch = false }) {
   }, [items, enableSearch, q]);
 
   const checkScroll = () => {
-    if (ref.current) {
-      setCanScrollLeft(ref.current.scrollLeft > 0);
-      setCanScrollRight(ref.current.scrollLeft < ref.current.scrollWidth - ref.current.clientWidth);
-    }
+    if (!ref.current) return;
+    const el = ref.current;
+    setCanScrollLeft(el.scrollLeft > 0);
+    setCanScrollRight(el.scrollLeft < el.scrollWidth - el.clientWidth - 1);
   };
 
   useEffect(() => {
-    const current = ref.current;
-    if (current) {
-      current.addEventListener("scroll", checkScroll);
-      checkScroll();
-    }
-    return () => { if (current) current.removeEventListener("scroll", checkScroll); };
+    const el = ref.current;
+    if (!el) return;
+    el.addEventListener("scroll", checkScroll, { passive: true });
+    checkScroll();
+    return () => el.removeEventListener("scroll", checkScroll);
   }, []);
 
   const scrollBy = (dx) => {
     if (ref.current) {
       ref.current.scrollBy({ left: dx, behavior: "smooth" });
-      setTimeout(checkScroll, 300);
+      setTimeout(checkScroll, 320);
     }
   };
 
@@ -476,25 +594,38 @@ function RowSection({ title, icon, items = [], enableSearch = false }) {
               />
             </label>
           )}
-          {filtered.length > 0 && (
+          {!isDesktop && filtered.length > 0 && (
             <div className={`row-actions ${showControls ? "visible" : ""}`}>
-              <button type="button" className="btn-circle" onClick={() => scrollBy(-380)} disabled={!canScrollLeft} aria-label="Scroll left">◀</button>
-              <button type="button" className="btn-circle" onClick={() => scrollBy(380)} disabled={!canScrollRight} aria-label="Scroll right">▶</button>
+              <button type="button" className="btn-circle" onClick={() => scrollBy(-380)} disabled={!canScrollLeft} aria-label="Anterior">◀</button>
+              <button type="button" className="btn-circle" onClick={() => scrollBy(380)} disabled={!canScrollRight} aria-label="Siguiente">▶</button>
             </div>
           )}
         </div>
       </div>
 
-      <div ref={ref} className="row-scroll">
-        {filtered.length > 0 ? (
-          filtered.map((p) => <PosterCard key={p.id || `p-${p._id}`} p={p} />)
-        ) : (
-          <div className="empty-state">
-            <FiShoppingBag size={48} />
-            <p>No hay productos en esta sección</p>
-          </div>
-        )}
-      </div>
+      {isDesktop ? (
+        <div className="row-grid">
+          {filtered.length > 0 ? (
+            filtered.map((p) => <PosterCard key={p.id || `p-${p._id}`} p={p} />)
+          ) : (
+            <div className="empty-state">
+              <FiShoppingBag size={48} />
+              <p>No hay productos en esta sección</p>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div ref={ref} className="row-scroll">
+          {filtered.length > 0 ? (
+            filtered.map((p) => <PosterCard key={p.id || `p-${p._id}`} p={p} />)
+          ) : (
+            <div className="empty-state">
+              <FiShoppingBag size={48} />
+              <p>No hay productos en esta sección</p>
+            </div>
+          )}
+        </div>
+      )}
     </section>
   );
 }
@@ -542,7 +673,7 @@ function PosterCard({ p = {} }) {
   return (
     <article className="poster-card">
       <span className="poster-glow" aria-hidden="true" />
-      
+
       <Media>
         {img ? (
           <img
@@ -606,7 +737,7 @@ function PosterCard({ p = {} }) {
           ) : (
             <span className="poster-badge">Con variantes</span>
           )}
-          
+
           {publicHref && (
             <Link to={publicHref} className="btn btn-primary btn-sm">
               <FiEye /> Ver detalle
@@ -725,42 +856,3 @@ function bestTextOn(hexA, hexB) {
   const L = (luminance(hexToRgb(hexA)) + luminance(hexToRgb(hexB))) / 2;
   return L > 0.45 ? "#111111" : "#ffffff";
 }
-
-// Estilos adicionales para la página pública
-const additionalStyles = `
-  .banner-cta {
-    color: #fff;
-    margin-left: 12px;
-    text-decoration: underline;
-    font-weight: 600;
-    transition: opacity 0.2s;
-  }
-  
-  .banner-cta:hover {
-    opacity: 0.9;
-  }
-  
-  .current-day {
-    color: var(--brand-from);
-    font-weight: 600;
-  }
-  
-  .footer-credits {
-    margin-top: 2rem;
-    padding-top: 1.5rem;
-    border-top: 1px solid rgba(255,255,255,0.1);
-    text-align: center;
-    color: var(--text-tertiary);
-    font-size: 0.9rem;
-  }
-  
-  .btn-sm {
-    padding: 0.5rem 1rem;
-    font-size: 0.9rem;
-  }
-`;
-
-// Inyectar estilos adicionales
-const styleSheet = document.createElement("style");
-styleSheet.innerText = additionalStyles;
-document.head.appendChild(styleSheet);

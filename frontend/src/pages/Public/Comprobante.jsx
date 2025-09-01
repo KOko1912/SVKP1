@@ -3,8 +3,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   FiChevronLeft, FiImage, FiUpload, FiCheckCircle, FiRefreshCw,
-  FiAlertTriangle, FiMessageCircle, FiMaximize2, FiX
+  FiAlertTriangle, FiMessageCircle, FiMaximize2, FiX, FiUser, FiPhone
 } from 'react-icons/fi';
+import NavBarUsuario from '../Usuario/NavBarUsuario.jsx';
 
 const API   = (import.meta.env.VITE_API_URL    || 'http://localhost:5000').replace(/\/$/, '');
 const FILES = (import.meta.env.VITE_FILES_BASE || API).replace(/\/$/, '');
@@ -29,25 +30,17 @@ const numOrNull = (v) => {
 };
 const pickTotal = (pedido) => {
   const cur = pedido?.totals?.currency || pedido?.currency || pedido?.moneda || 'MXN';
-  const cents = numOrNull(pedido?.totals?.totalCents) ?? numOrNull(pedido?.totalCents) ?? null;
-  if (cents != null) return { amount: cents / 100, currency: cur };
-  const major = numOrNull(pedido?.totals?.total) ?? numOrNull(pedido?.total) ?? numOrNull(pedido?.monto) ?? null;
-  if (major != null) return { amount: toMajor(major), currency: cur };
+  const cents = numOrNull(pedido?.totals?.total) ?? numOrNull(pedido?.total) ?? null;
+  if (cents != null) return { amount: toMajor(cents), currency: cur };
   let sumCents = 0;
   if (Array.isArray(pedido?.items)) {
     for (const it of pedido.items) {
-      const qty = numOrNull(it?.cantidad ?? it?.qty ?? 1) || 1;
-      const itemCents =
-        numOrNull(it?.totalCents) ??
-        (numOrNull(it?.priceCents) != null ? numOrNull(it?.priceCents) * qty : null) ??
-        (numOrNull(it?.precioCents) != null ? numOrNull(it?.precioCents) * qty : null) ??
-        null;
+      const qty = numOrNull(it?.cantidad ?? 1) || 1;
+      const itemCents = numOrNull(it?.total);
       if (itemCents != null) { sumCents += itemCents; continue; }
-      const itemMajor = numOrNull(it?.total) ?? numOrNull(it?.price) ?? numOrNull(it?.precio) ?? null;
-      if (itemMajor != null) sumCents += Math.round(toMajor(itemMajor) * 100) * qty;
     }
   }
-  return { amount: sumCents / 100, currency: cur };
+  return { amount: toMajor(sumCents), currency: cur };
 };
 
 /* ===== URL & fetch ===== */
@@ -61,11 +54,40 @@ const toPublicSrc = (u) => {
 async function tryJson(url, init) {
   try {
     const r = await fetch(url, init);
-    if (!r.ok) return null;
     const t = await r.text();
     let d = null; try { d = JSON.parse(t); } catch {}
-    return d || null;
+    if (!r.ok || !d || d.error) return null;
+    return d;
   } catch { return null; }
+}
+
+/* ===== Usuario (leer de localStorage) ===== */
+function readCurrentUser() {
+  try {
+    return (
+      JSON.parse(localStorage.getItem('usuario') || 'null') ||
+      JSON.parse(localStorage.getItem('svk_user') || 'null') ||
+      JSON.parse(localStorage.getItem('ventasvk_user') || 'null') ||
+      JSON.parse(localStorage.getItem('user') || 'null') ||
+      null
+    );
+  } catch { return null; }
+}
+function userIdFromStorage() {
+  try {
+    const u =
+      JSON.parse(localStorage.getItem('usuario') || 'null') ||
+      JSON.parse(localStorage.getItem('svk_user') || 'null') ||
+      JSON.parse(localStorage.getItem('ventasvk_user') || 'null') ||
+      JSON.parse(localStorage.getItem('user') || 'null') ||
+      null;
+    if (u?.id) return Number(u.id);
+  } catch {}
+  const ids = [
+    localStorage.getItem('svk_user_id'),
+    localStorage.getItem('user_id')
+  ].map(x => Number(x)).filter(n => Number.isFinite(n) && n > 0);
+  return ids[0] || null;
 }
 
 /* ===== Upload ===== */
@@ -179,6 +201,14 @@ export default function Comprobante() {
   const [requestMsg, setRequestMsg] = useState('');
   const [showModal, setShowModal] = useState(false);
 
+  const [attachBusy, setAttachBusy] = useState(false);
+  const [phone, setPhone] = useState('');
+  const [phoneErr, setPhoneErr] = useState('');
+
+  const user = useMemo(() => readCurrentUser(), []);
+  const userId = useMemo(() => userIdFromStorage(), []);
+  const isLogged = Boolean(userId);
+
   const tiendaPhone = pedido?.tienda?.telefonoContacto?.replace(/\D/g, '') || '';
   const mainItem = useMemo(() => (pedido?.items?.[0] || null), [pedido?.items]);
   const { amount: totalAmount, currency: totalCurrency } = useMemo(() => pickTotal(pedido || {}), [pedido]);
@@ -186,12 +216,43 @@ export default function Comprobante() {
 
   const [principalImg, setPrincipalImg] = useState('');
 
-  const isInReview = useMemo(() => {
-    const s = String(pedido?.status || '').toUpperCase();
-    const p = String(pedido?.paymentStatus || '').toUpperCase();
-    const flags = new Set(['EN_REVISION', 'REVISION', 'REVIEW', 'IN_REVIEW', 'PENDIENTE_REVISION']);
-    return Boolean(pedido?.requested) || flags.has(s) || flags.has(p);
-  }, [pedido]);
+  const isInReview = useMemo(() => Boolean(pedido?.requested), [pedido]);
+
+  // Headers para endpoints protegidos de attach-user
+  const vendorHeaders = useMemo(() => {
+    const h = { 'Content-Type': 'application/json' };
+    if (userId) h['x-user-id'] = String(userId);
+    return h;
+  }, [userId]);
+
+  // Adjunta usuario si está logueado (y opcionalmente el teléfono)
+  async function attachUserIfPossible(extraPhone = '') {
+    try {
+      setAttachBusy(true);
+      setPhoneErr('');
+      const body = {};
+      if (userId) body.userId = userId;
+      if (extraPhone) body.phone = extraPhone.replace(/\D/g, '');
+
+      const r = await fetch(`${API}/api/orders/public/${encodeURIComponent(token)}/attach-user`, {
+        method: 'POST',
+        headers: vendorHeaders,
+        credentials: 'include',
+        body: JSON.stringify(body),
+      });
+      const d = await r.json().catch(() => null);
+      if (!r.ok || !d) throw new Error(d?.error || 'No se pudo adjuntar el usuario');
+      // refrescar pedido
+      const fresh = await tryJson(`${API}/api/orders/public/${encodeURIComponent(token)}`);
+      if (fresh) setPedido(fresh);
+      return true;
+    } catch (e) {
+      console.error(e);
+      return false;
+    } finally {
+      setAttachBusy(false);
+    }
+  }
 
   useEffect(() => {
     let cancel = false;
@@ -199,8 +260,8 @@ export default function Comprobante() {
       setLoading(true); setErr('');
       const d = await tryJson(`${API}/api/orders/public/${encodeURIComponent(token)}`);
       if (cancel) return;
-      if (!d || d.error) {
-        setErr(d?.error || 'No se encontró el pedido.');
+      if (!d) {
+        setErr('No se encontró el pedido.');
         setPedido(null);
         setLoading(false);
         return;
@@ -220,10 +281,16 @@ export default function Comprobante() {
           setPrincipalImg(gal[0] || '');
         }
       }
+
+      // 3) si está logueado, intentar adjuntar de inmediato
+      if (!cancel && userId) {
+        await attachUserIfPossible('');
+      }
+
       setLoading(false);
     })();
     return () => { cancel = true; };
-  }, [token]);
+  }, [token, userId]);
 
   function onFileChange(e) {
     const f = e.target.files?.[0] || null;
@@ -277,15 +344,38 @@ export default function Comprobante() {
     }
   }
 
+  // Validación simple de teléfono (8+ dígitos)
+  const phoneOk = useMemo(() => (phone.replace(/\D/g, '').length >= 8), [phone]);
+
   async function onRequest() {
-    setRequestBusy(true);
-    setRequestMsg('');
     try {
+      setErr('');
+      setRequestBusy(true);
+      setRequestMsg('');
+
+      // Si el pedido no tiene buyerPhone, obligar a capturar antes
+      const needsPhone = !((pedido?.buyerPhone || '').replace(/\D/g, '').length >= 8);
+      if (needsPhone) {
+        if (!phoneOk) {
+          setPhoneErr('Ingresa un número de teléfono válido (mín. 8 dígitos).');
+          setRequestBusy(false);
+          return;
+        }
+        // Adjuntar usuario (si hay) y/o teléfono capturado
+        const ok = await attachUserIfPossible(phone);
+        if (!ok) {
+          setErr('No se pudo guardar tu teléfono. Intenta otra vez.');
+          setRequestBusy(false);
+          return;
+        }
+      }
+
       const r = await fetch(`${API}/api/orders/public/${encodeURIComponent(token)}/request`, { method: 'POST' });
       const d = await r.json().catch(() => null);
       if (!r.ok || !d?.ok) throw new Error(d?.error || 'No se pudo solicitar la revisión.');
-      const msg = d.positionMessage || (d.position ? `Tu número en la fila: ${d.position}` : 'Solicitud enviada.');
+      const msg = d.positionMessage || 'Solicitud enviada.';
       setRequestMsg(msg);
+
       const d2 = await tryJson(`${API}/api/orders/public/${encodeURIComponent(token)}`);
       if (d2) setPedido(d2);
     } catch (e) {
@@ -324,160 +414,217 @@ export default function Comprobante() {
   const hasProof    = Boolean(hasProofId || uploadedInfo?.mediaId || proofUrl);
   const tiendaLogo  = toPublicSrc(pedido?.tienda?.logo?.url || pedido?.tienda?.logoUrl);
 
+  const needsBuyerPhone = !((pedido?.buyerPhone || '').replace(/\D/g, '').length >= 8);
+
   return (
-    <div className="pp-container" style={{ padding: '1rem' }}>
-      <button className="btn btn-ghost" onClick={() => navigate(-1)}><FiChevronLeft /> Volver</button>
+    <div>
+      {/* NavBarUsuario visible si hay usuario */}
+      {isLogged && <NavBarUsuario />}
 
-      <div className="card" style={{ marginTop: '1rem', padding: '1rem' }}>
-        <h2 style={{ marginTop: 0 }}>Comprobante de pago</h2>
+      <div className="pp-container" style={{ padding: '1rem', marginTop: isLogged ? 60 : 0 }}>
+        <button className="btn btn-ghost" onClick={() => navigate(-1)}><FiChevronLeft /> Volver</button>
 
-        {/* Resumen */}
-        <div className="card" style={{ padding: '1rem', marginBottom: '1rem' }}>
-          <div style={{ display:'grid', gridTemplateColumns:'100px 1fr', gap:'1rem', alignItems:'center' }}>
-            <div style={{ width:100, height:100 }}>
-              {principalImg ? (
-                <img src={principalImg} alt="Producto" style={{ width:'100%', height:'100%', objectFit:'cover', borderRadius:5 }} />
-              ) : tiendaLogo ? (
-                <img src={tiendaLogo} alt="Tienda" style={{ width:'100%', height:'100%', objectFit:'cover', borderRadius:5 }} />
-              ) : (
-                <div style={{ height:100, display:'grid', placeItems:'center' }}>
-                  <FiImage /><div><small>Sin imagen</small></div>
-                </div>
-              )}
-            </div>
-            <div>
-              <div><strong>Tienda:</strong> {pedido?.tienda?.nombre || '-'}</div>
-              <div><strong>Pedido:</strong> {mainItem?.nombre || 'Producto'}</div>
-              <div><strong>Cantidad:</strong> {mainItem?.cantidad || 1}</div>
-              <div><strong>Total:</strong> {totalFmt || '-'}</div>
-              {pedido?.token && (
-                <div style={{ marginTop: '.25rem', wordBreak:'break-all' }}>
-                  <small>Comprobante: {makeComprobanteSelfUrl(pedido.token)}</small>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
+        <div className="card" style={{ marginTop: '1rem', padding: '1rem' }}>
+          <h2 style={{ marginTop: 0 }}>Comprobante de pago</h2>
 
-        {/* Estado */}
-        <div className="card" style={{ padding:'1rem', marginBottom:'1rem' }}>
-          <div style={{ display:'grid', gap:'.35rem' }}>
-            <div><strong>Estado pedido:</strong> {pedido.status}</div>
-            <div><strong>Estado de pago:</strong> {pedido.paymentStatus}</div>
-            {pedido.requested && (<div style={{ display:'flex', alignItems:'center', gap:'.5rem' }}><FiCheckCircle /><strong>Solicitud enviada</strong></div>)}
-            {pedido.position && (<div style={{ display:'flex', alignItems:'center', gap:'.5rem' }}><FiRefreshCw /> {pedido.positionMessage || `Tu número en la fila: ${pedido.position}`}</div>)}
-          </div>
-        </div>
-
-        {/* Subida/visualización */}
-        <div className="card" style={{ padding:'1rem', marginBottom:'1rem' }}>
-          <h3 style={{ marginTop: 0 }}>1) Sube tu comprobante</h3>
-          <p style={{ marginTop: 0, color:'var(--text-2)' }}>
-            Imagen del recibo/transferencia (JPG/PNG).
-            {isInReview && <><br /><em>Está en revisión: no puedes cambiar el archivo por ahora.</em></>}
-          </p>
-
-          <div style={{ display:'grid', gridTemplateColumns:'160px 1fr', gap:'1rem', alignItems:'center' }}>
-            <div
-              style={{
-                width:160, height:160, border:'1px dashed var(--border-color)', borderRadius:8,
-                overflow:'hidden', display:'grid', placeItems:'center', background:'rgba(255,255,255,.04)',
-                cursor: (proofUrl || previewUrl) ? 'zoom-in' : 'default'
-              }}
-              onClick={() => { if (proofUrl || previewUrl) setShowModal(true); }}
-              title={(proofUrl || previewUrl) ? 'Ver en grande' : undefined}
-            >
-              {previewUrl ? (
-                <img src={previewUrl} alt="Previsualización" style={{ width:'100%', height:'100%', objectFit:'cover' }} />
-              ) : proofUrl ? (
-                <img src={toPublicSrc(proofUrl)} alt="Comprobante" style={{ width:'100%', height:'100%', objectFit:'cover' }} />
-              ) : hasProof ? (
-                <div style={{ textAlign:'center', padding:'1rem' }}>
-                  <FiCheckCircle />
-                  <div style={{ marginTop:'.25rem' }}><small>Comprobante registrado</small></div>
-                </div>
-              ) : (
-                <div style={{ textAlign:'center', padding:'1rem' }}>
-                  <FiImage />
-                  <div style={{ marginTop:'.25rem' }}><small>Sin imagen</small></div>
-                </div>
-              )}
-            </div>
-
-            <div style={{ display:'grid', gap:'.5rem' }}>
-              <input type="file" accept="image/*" onChange={onFileChange} disabled={uploadBusy || isInReview} />
-              {uploadErr && (<div style={{ color:'var(--danger, #dc2626)' }}><FiAlertTriangle /> {uploadErr}</div>)}
-              <div style={{ display:'flex', gap:'.5rem', flexWrap:'wrap' }}>
-                <button className="btn btn-primary" onClick={onUpload} disabled={uploadBusy || !file || isInReview}>
-                  {uploadBusy ? 'Subiendo…' : (<><FiUpload /> Subir comprobante</>)}
-                </button>
-                <button className="btn btn-ghost" onClick={() => { if (previewUrl) URL.revokeObjectURL(previewUrl); setFile(null); setPreviewUrl(''); setUploadErr(''); }} disabled={uploadBusy || isInReview}>
-                  Limpiar
-                </button>
-                {hasProofId && !hasProofUrl && (
-                  <button className="btn" onClick={regenerateLink} title="Generar enlace para ver el comprobante">
-                    <FiRefreshCw /> Generar enlace
-                  </button>
+          {/* Resumen */}
+          <div className="card" style={{ padding: '1rem', marginBottom: '1rem' }}>
+            <div style={{ display:'grid', gridTemplateColumns:'100px 1fr', gap:'1rem', alignItems:'center' }}>
+              <div style={{ width:100, height:100 }}>
+                {principalImg ? (
+                  <img src={principalImg} alt="Producto" style={{ width:'100%', height:'100%', objectFit:'cover', borderRadius:5 }} />
+                ) : tiendaLogo ? (
+                  <img src={tiendaLogo} alt="Tienda" style={{ width:'100%', height:'100%', objectFit:'cover', borderRadius:5 }} />
+                ) : (
+                  <div style={{ height:100, display:'grid', placeItems:'center' }}>
+                    <FiImage /><div><small>Sin imagen</small></div>
+                  </div>
                 )}
-                {hasProofUrl && (
-                  <a href={toPublicSrc(proofUrl)} target="_blank" rel="noreferrer" className="btn btn-ghost"><FiMaximize2 /> Ver comprobante</a>
+              </div>
+              <div>
+                <div><strong>Tienda:</strong> {pedido?.tienda?.nombre || '-'}</div>
+                <div><strong>Pedido:</strong> {mainItem?.nombre || 'Producto'}</div>
+                <div><strong>Cantidad:</strong> {mainItem?.cantidad || 1}</div>
+                <div><strong>Total:</strong> {totalFmt || '-'}</div>
+                {pedido?.token && (
+                  <div style={{ marginTop: '.25rem', wordBreak:'break-all' }}>
+                    <small>Comprobante: {makeComprobanteSelfUrl(pedido.token)}</small>
+                  </div>
                 )}
               </div>
             </div>
           </div>
-        </div>
 
-        {/* Solicitar revisión */}
-        <div className="card" style={{ padding:'1rem', marginBottom:'1rem' }}>
-          <h3 style={{ marginTop: 0 }}>2) Solicitar revisión</h3>
-          <p style={{ marginTop: 0, color:'var(--text-2)' }}>Cuando envíes la solicitud, entrarás a la fila de la tienda. Te mostraremos tu turno aquí.</p>
-          <div style={{ display:'flex', gap:'.5rem', alignItems:'center', flexWrap:'wrap' }}>
-            <button className="btn btn-primary" onClick={onRequest} disabled={requestBusy || pedido.requested}>
-              {requestBusy ? 'Enviando…' : 'Solicitar revisión'}
-            </button>
-            <button
-              className="btn btn-ghost"
-              onClick={async () => {
-                const d = await tryJson(`${API}/api/orders/public/${encodeURIComponent(token)}`);
-                if (d) {
-                  setPedido(d);
-                  const u = await resolveProofUrl(d);
-                  if (u) { setProofUrl(u); saveProofUrl(token, d?.proofMediaId || d?.proof?.mediaId, u); }
-                }
-              }}
-            >
-              <FiRefreshCw /> Actualizar
-            </button>
-            {requestMsg && <span style={{ marginLeft:'.5rem' }}>{requestMsg}</span>}
+          {/* Estado */}
+          <div className="card" style={{ padding:'1rem', marginBottom:'1rem' }}>
+            <div style={{ display:'grid', gap:'.35rem' }}>
+              <div><strong>Estado pedido:</strong> {pedido.status}</div>
+              <div><strong>Estado de pago:</strong> {pedido.paymentStatus}</div>
+              {pedido.requested && (<div style={{ display:'flex', alignItems:'center', gap:'.5rem' }}><FiCheckCircle /><strong>Solicitud enviada</strong></div>)}
+              {/* position y message son null a propósito (no existen en schema) */}
+            </div>
+          </div>
+
+          {/* Datos de comprador (auto-adjuntar usuario + teléfono) */}
+          <div className="card" style={{ padding:'1rem', marginBottom:'1rem' }}>
+            <h3 style={{ marginTop: 0 }}><FiUser /> Tus datos</h3>
+            {isLogged ? (
+              <div style={{ color:'var(--text-2)', marginBottom:'.5rem' }}>
+                Estás logueado. Adjuntamos tu cuenta al pedido automáticamente.
+              </div>
+            ) : (
+              <div style={{ color:'var(--text-2)', marginBottom:'.5rem' }}>
+                No has iniciado sesión. Puedes continuar dejando un teléfono para que la tienda te contacte.
+              </div>
+            )}
+
+            <div style={{ display:'grid', gap:'.5rem', maxWidth: 420 }}>
+              <label style={{ display:'grid', gap:6 }}>
+                <span><FiPhone /> Teléfono de contacto {needsBuyerPhone && <span style={{color:'var(--danger,#dc2626)'}}>*</span>}</span>
+                <input
+                  type="tel"
+                  placeholder="Ej. 55 1234 5678"
+                  value={phone}
+                  onChange={(e)=>{ setPhone(e.target.value); setPhoneErr(''); }}
+                  disabled={attachBusy}
+                />
+              </label>
+              {phoneErr && (<div style={{ color:'var(--danger, #dc2626)' }}><FiAlertTriangle /> {phoneErr}</div>)}
+              <div>
+                <button
+                  className="btn"
+                  onClick={() => attachUserIfPossible(phone)}
+                  disabled={attachBusy || (!phone && !isLogged)}
+                  title="Guardar datos de comprador en este pedido"
+                >
+                  {attachBusy ? 'Guardando…' : 'Guardar datos'}
+                </button>
+              </div>
+              {pedido?.buyerUserId && (
+                <small style={{ color:'var(--text-3)' }}>
+                  Pedido ligado al usuario #{pedido.buyerUserId}{pedido?.buyerName ? ` · ${pedido.buyerName}` : ''}
+                </small>
+              )}
+              {pedido?.buyerPhone && (
+                <small style={{ color:'var(--text-3)' }}>
+                  Teléfono guardado: {pedido.buyerPhone}
+                </small>
+              )}
+            </div>
+          </div>
+
+          {/* Subida/visualización */}
+          <div className="card" style={{ padding:'1rem', marginBottom:'1rem' }}>
+            <h3 style={{ marginTop: 0 }}>1) Sube tu comprobante</h3>
+            <p style={{ marginTop: 0, color:'var(--text-2)' }}>
+              Imagen del recibo/transferencia (JPG/PNG).
+              {isInReview && <><br /><em>Está en revisión: no puedes cambiar el archivo por ahora.</em></>}
+            </p>
+
+            <div style={{ display:'grid', gridTemplateColumns:'160px 1fr', gap:'1rem', alignItems:'center' }}>
+              <div
+                style={{
+                  width:160, height:160, border:'1px dashed var(--border-color)', borderRadius:8,
+                  overflow:'hidden', display:'grid', placeItems:'center', background:'rgba(255,255,255,.04)',
+                  cursor: (proofUrl || previewUrl) ? 'zoom-in' : 'default'
+                }}
+                onClick={() => { if (proofUrl || previewUrl) setShowModal(true); }}
+                title={(proofUrl || previewUrl) ? 'Ver en grande' : undefined}
+              >
+                {previewUrl ? (
+                  <img src={previewUrl} alt="Previsualización" style={{ width:'100%', height:'100%', objectFit:'cover' }} />
+                ) : proofUrl ? (
+                  <img src={toPublicSrc(proofUrl)} alt="Comprobante" style={{ width:'100%', height:'100%', objectFit:'cover' }} />
+                ) : hasProof ? (
+                  <div style={{ textAlign:'center', padding:'1rem' }}>
+                    <FiCheckCircle />
+                    <div style={{ marginTop:'.25rem' }}><small>Comprobante registrado</small></div>
+                  </div>
+                ) : (
+                  <div style={{ textAlign:'center', padding:'1rem' }}>
+                    <FiImage />
+                    <div style={{ marginTop:'.25rem' }}><small>Sin imagen</small></div>
+                  </div>
+                )}
+              </div>
+
+              <div style={{ display:'grid', gap:'.5rem' }}>
+                <input type="file" accept="image/*" onChange={onFileChange} disabled={uploadBusy || isInReview} />
+                {uploadErr && (<div style={{ color:'var(--danger, #dc2626)' }}><FiAlertTriangle /> {uploadErr}</div>)}
+                <div style={{ display:'flex', gap:'.5rem', flexWrap:'wrap' }}>
+                  <button className="btn btn-primary" onClick={onUpload} disabled={uploadBusy || !file || isInReview}>
+                    {uploadBusy ? 'Subiendo…' : (<><FiUpload /> Subir comprobante</>)}
+                  </button>
+                  <button className="btn btn-ghost" onClick={() => { if (previewUrl) URL.revokeObjectURL(previewUrl); setFile(null); setPreviewUrl(''); setUploadErr(''); }} disabled={uploadBusy || isInReview}>
+                    Limpiar
+                  </button>
+                  {hasProofId && !hasProofUrl && (
+                    <button className="btn" onClick={regenerateLink} title="Generar enlace para ver el comprobante">
+                      <FiRefreshCw /> Generar enlace
+                    </button>
+                  )}
+                  {hasProofUrl && (
+                    <a href={toPublicSrc(proofUrl)} target="_blank" rel="noreferrer" className="btn btn-ghost"><FiMaximize2 /> Ver comprobante</a>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Solicitar revisión */}
+          <div className="card" style={{ padding:'1rem', marginBottom:'1rem' }}>
+            <h3 style={{ marginTop: 0 }}>2) Solicitar revisión</h3>
+            <p style={{ marginTop: 0, color:'var(--text-2)' }}>
+              Para entrar a la fila de revisión, necesitamos un teléfono válido para que la tienda te contacte si hace falta.
+            </p>
+            <div style={{ display:'flex', gap:'.5rem', alignItems:'center', flexWrap:'wrap' }}>
+              <button className="btn btn-primary" onClick={onRequest} disabled={requestBusy || pedido.requested}>
+                {requestBusy ? 'Enviando…' : 'Solicitar revisión'}
+              </button>
+              <button
+                className="btn btn-ghost"
+                onClick={async () => {
+                  const d = await tryJson(`${API}/api/orders/public/${encodeURIComponent(token)}`);
+                  if (d) {
+                    setPedido(d);
+                    const u = await resolveProofUrl(d);
+                    if (u) { setProofUrl(u); saveProofUrl(token, d?.proofMediaId || d?.proof?.mediaId, u); }
+                  }
+                }}
+              >
+                <FiRefreshCw /> Actualizar
+              </button>
+              {requestMsg && <span style={{ marginLeft:'.5rem' }}>{requestMsg}</span>}
+            </div>
+          </div>
+
+          {/* WhatsApp */}
+          <div className="card" style={{ padding:'1rem' }}>
+            <h3 style={{ marginTop: 0 }}>¿Dudas? Contacta al vendedor</h3>
+            <div style={{ display:'flex', gap:'.5rem', alignItems:'center' }}>
+              <button className="btn" onClick={() => {
+                const selfUrl = makeComprobanteSelfUrl(token);
+                const msg = encodeURIComponent(['Hola 👋','Ya realicé el pago y subí el comprobante.','Por favor, revisa mi pedido 🙏',`Comprobante: ${selfUrl}`].join('\n'));
+                const wa = tiendaPhone ? `https://wa.me/${tiendaPhone}?text=${msg}` : `https://wa.me/?text=${msg}`;
+                window.open(wa, '_blank', 'noopener,noreferrer');
+              }} disabled={!tiendaPhone}>
+                <FiMessageCircle /> Abrir WhatsApp
+              </button>
+              {!tiendaPhone && <small style={{ color:'var(--text-3)' }}>Esta tienda no tiene WhatsApp configurado.</small>}
+            </div>
           </div>
         </div>
 
-        {/* WhatsApp */}
-        <div className="card" style={{ padding:'1rem' }}>
-          <h3 style={{ marginTop: 0 }}>¿Dudas? Contacta al vendedor</h3>
-          <div style={{ display:'flex', gap:'.5rem', alignItems:'center' }}>
-            <button className="btn" onClick={() => {
-              const selfUrl = makeComprobanteSelfUrl(token);
-              const msg = encodeURIComponent(['Hola 👋','Ya realicé el pago y subí el comprobante.','Por favor, revisa mi pedido 🙏',`Comprobante: ${selfUrl}`].join('\n'));
-              const wa = tiendaPhone ? `https://wa.me/${tiendaPhone}?text=${msg}` : `https://wa.me/?text=${msg}`;
-              window.open(wa, '_blank', 'noopener,noreferrer');
-            }} disabled={!tiendaPhone}>
-              <FiMessageCircle /> Abrir WhatsApp
-            </button>
-            {!tiendaPhone && <small style={{ color:'var(--text-3)' }}>Esta tienda no tiene WhatsApp configurado.</small>}
+        {/* Modal imagen grande */}
+        {showModal && (previewUrl || proofUrl) && (
+          <div onClick={() => setShowModal(false)} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.8)', display:'grid', placeItems:'center', zIndex:1000, padding:'2rem' }}>
+            <div onClick={(e) => e.stopPropagation()} style={{ position:'relative', maxWidth:'min(95vw, 1000px)', maxHeight:'85vh' }}>
+              <button className="btn btn-ghost" style={{ position:'absolute', top:8, right:8 }} onClick={() => setShowModal(false)}><FiX /></button>
+              <img src={previewUrl || toPublicSrc(proofUrl)} alt="Comprobante" style={{ width:'100%', height:'100%', objectFit:'contain', borderRadius:8 }} />
+            </div>
           </div>
-        </div>
+        )}
       </div>
-
-      {/* Modal imagen grande */}
-      {showModal && (previewUrl || proofUrl) && (
-        <div onClick={() => setShowModal(false)} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.8)', display:'grid', placeItems:'center', zIndex:1000, padding:'2rem' }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ position:'relative', maxWidth:'min(95vw, 1000px)', maxHeight:'85vh' }}>
-            <button className="btn btn-ghost" style={{ position:'absolute', top:8, right:8 }} onClick={() => setShowModal(false)}><FiX /></button>
-            <img src={previewUrl || toPublicSrc(proofUrl)} alt="Comprobante" style={{ width:'100%', height:'100%', objectFit:'contain', borderRadius:8 }} />
-          </div>
-        </div>
-      )}
     </div>
   );
 }

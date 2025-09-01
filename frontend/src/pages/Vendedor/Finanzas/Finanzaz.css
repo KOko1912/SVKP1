@@ -245,3 +245,31 @@
 .u-center { align-items: center; }
 .u-gap-sm { gap: .5rem; }
 .u-gap-md { gap: .9rem; }
+/* ===== Navbar Finanzas ===== */
+.finz-navbar{
+  position: sticky; top: 0;
+  z-index: 40;
+  display:flex; gap:.5rem;
+  background: rgba(17,17,17,.7);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid rgba(255,255,255,.06);
+  padding:.5rem var(--gutter);
+}
+.finz-tab{
+  display:inline-flex; align-items:center; gap:.5rem;
+  padding:.55rem .85rem;
+  border-radius: var(--radius-full);
+  color: var(--gray-200);
+  border:1px solid transparent;
+  transition: background .2s ease, color .2s ease, transform .2s ease, border-color .2s ease;
+}
+.finz-tab:hover{ background: rgba(255,255,255,.06); transform: translateY(-1px); }
+.finz-tab.is-active{
+  color:#fff;
+  background: linear-gradient(135deg, var(--primary), var(--secondary));
+  border-color: rgba(255,255,255,.15);
+}
+@media (max-width: 768px){
+  .finz-navbar{ padding-left:1rem; padding-right:1rem; overflow:auto; }
+  .finz-tab span{ display:none; } /* solo iconos en móviles */
+}

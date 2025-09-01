@@ -1,364 +1,590 @@
 // backend/src/modules/pedidos/routes.js
 const express = require('express');
-let prisma;
-try {
-  prisma = require('../../config/db'); // usa tu singleton si existe
-} catch {
-  const { PrismaClient } = require('@prisma/client');
-  prisma = new PrismaClient();         // fallback
-}
-
+const { randomUUID } = require('crypto');
+const prisma = require('../../config/db');
 const router = express.Router();
 
-const toCents = (n) => Math.round(Number(n || 0) * 100);
-const validQueueStatuses = ['PENDIENTE', 'EN_PROCESO'];
-const queueMessage = (pos) => {
-  if (pos == null) return null;
-  if (pos === 1) return 'Pronto serás atendido';
-  if (pos === 2) return 'Eres el segundo en la fila, ¡ya casi!';
-  if (pos === 3) return 'Tercer turno, en breve te toca';
-  return `Tu número en la fila: ${pos}`;
+/* ========================== Helpers ========================== */
+const num = (n, d = 0) => {
+  const x = Number(n);
+  return Number.isFinite(x) ? x : d;
 };
+const toTitle = (s) => (s || '').toString().trim();
+const safePhone = (s) => (s || '').toString().replace(/\D/g, '').slice(0, 20) || null;
 
-// 1) INTENTO: se crea el pedido con token antes de abrir WhatsApp
+async function buildBuyerFromUser(userId) {
+  if (!userId) return {};
+  const u = await prisma.usuario.findUnique({
+    where: { id: Number(userId) },
+    select: { id: true, nombre: true, telefono: true },
+  });
+  if (!u) return {};
+  return {
+    buyerUserId: u.id,
+    buyerName: u.nombre || '',
+    buyerPhone: u.telefono || '',
+    buyerEmail: null,
+  };
+}
+
+function normalizeOrderForVendor(p) {
+  const items = (p.items || []).map((it) => ({
+    id: it.id,
+    productoId: it.productoId,
+    varianteId: it.varianteId,
+    nombre: it.nombre,
+    cantidad: it.cantidad,
+    total: it.total ?? 0,
+    opciones: it.opciones,
+  }));
+
+  const totals = {
+    subTotal: p.subTotal ?? 0,
+    shippingCost: p.shippingCost ?? 0,
+    total: p.total ?? 0,
+    currency: p.currency || 'MXN',
+  };
+
+  return {
+    id: p.id,
+    token: p.publicToken,
+    tiendaId: p.tiendaId,
+    status: p.status,
+    paymentStatus: p.paymentStatus,
+    paymentMethod: p.paymentMethod,
+    createdAt: p.createdAt,
+    requestedAt: p.requestedAt,
+    requested: p.requested || false,
+    decidedAt: p.decidedAt || null,
+
+    buyerUserId: p.buyerUserId ?? null,
+    buyerName: p.buyerName || '',
+    buyerPhone: p.buyerPhone || '',
+    buyerEmail: p.buyerEmail || null,
+
+    proofMediaId: p.proofMediaId ?? null,
+
+    items,
+    totals,
+
+    tienda: p.tienda
+      ? {
+          id: p.tienda.id,
+          nombre: p.tienda.nombre,
+          telefonoContacto: p.tienda.telefonoContacto || null,
+          logo: p.tienda.logo ? { url: p.tienda.logo.url || null } : null,
+        }
+      : null,
+  };
+}
+
+/* ================== 1) Intento de pedido ================== */
 router.post('/intent', async (req, res) => {
   try {
-    const {
-      tiendaId,
-      productoId,
-      varianteId = null,
-      cantidad = 1,
-      buyer = null, // { name, phone, email } (opcional en intento)
-      channel = 'WEB',
-    } = req.body || {};
+    const tiendaId   = num(req.body?.tiendaId);
+    const productoId = num(req.body?.productoId);
+    const varianteId = req.body?.varianteId != null ? num(req.body?.varianteId) : null;
+    const cantidad   = Math.max(1, num(req.body?.cantidad, 1));
+    const channelRaw = String(req.body?.channel || 'WHATSAPP').toUpperCase();
 
     if (!tiendaId || !productoId) {
-      return res.status(400).json({ error: 'tiendaId y productoId requeridos' });
+      return res.status(400).json({ error: 'tiendaId y productoId son requeridos' });
     }
 
-    const tienda = await prisma.tienda.findUnique({
-      where: { id: Number(tiendaId) },
-      select: { id: true },
-    });
-    if (!tienda) return res.status(404).json({ error: 'Tienda no encontrada' });
+    // Precio (centavos)
+    let precioCents = 0;
+    let nombreItem = `Producto ${productoId}`;
+    let opciones = null;
 
-    const prod = await prisma.producto.findUnique({
-      where: { id: Number(productoId) },
-      include: { variantes: true },
+    const producto = await prisma.producto.findUnique({
+      where: { id: productoId },
+      select: { nombre: true, precio: true },
     });
-    if (!prod || prod.tiendaId !== Number(tiendaId)) {
-      return res.status(400).json({ error: 'Producto inválido para esta tienda' });
+    if (producto) {
+      nombreItem = producto.nombre || nombreItem;
+      const mayor = Number(producto.precio ?? 0);
+      precioCents = Math.round(mayor * 100);
     }
 
-    const qty = Math.max(1, Number(cantidad || 1));
-
-    let price = null;
-    let varObj = null;
     if (varianteId) {
-      varObj = (prod.variantes || []).find(v => v.id === Number(varianteId));
-      if (!varObj) return res.status(400).json({ error: 'Variante inválida' });
-      price = varObj.precio != null ? Number(varObj.precio) : null;
-    } else {
-      price = prod.precio != null ? Number(prod.precio) : null;
+      const v = await prisma.variante.findUnique({
+        where: { id: varianteId },
+        select: { nombre: true, precio: true, opciones: true },
+      });
+      if (v) {
+        nombreItem = v.nombre || nombreItem;
+        opciones   = v.opciones || null;
+        const mayor = Number(v.precio ?? 0);
+        precioCents = Math.round(mayor * 100);
+      }
     }
-    if (price == null) return res.status(400).json({ error: 'Producto sin precio' });
 
-    const precioUnitario = toCents(price);
-    const lineTotal = precioUnitario * qty;
+    const totalLinea = Math.max(0, precioCents) * cantidad;
+    const subTotal   = totalLinea;
+    const shipping   = 0;
+    const total      = subTotal + shipping;
 
-    const created = await prisma.pedido.create({
+    const publicToken = randomUUID();
+
+    const pedido = await prisma.pedido.create({
       data: {
-        tiendaId: Number(tiendaId),
-
-        // Buyer (opcional en intento)
-        buyerName: buyer?.name ? String(buyer.name) : '',
-        buyerPhone: buyer?.phone ? String(buyer.phone) : '',
-        buyerEmail: buyer?.email ? String(buyer.email) : null,
-
-        channel,
-        status: 'PENDIENTE',
-        paymentStatus: 'PENDIENTE',
+        publicToken,
+        tiendaId,
+        status:        'PENDIENTE',
+        paymentStatus: 'VERIFICANDO',
         paymentMethod: 'TRANSFERENCIA',
+        channel:       channelRaw,
 
-        subTotal: lineTotal,
-        shippingCost: 0,
-        total: lineTotal,
+        subTotal,
+        shippingCost: shipping,
+        total,
         currency: 'MXN',
+
+        buyerName:  'Cliente',
+        buyerPhone: '',
+        buyerEmail: null,
 
         items: {
           create: [{
-            productoId: prod.id,
-            varianteId: varObj ? varObj.id : null,
-            nombre: varObj?.nombre || prod.nombre,
-            opciones: varObj?.opciones || null,
-            precioUnitario,
-            cantidad: qty,
-            total: lineTotal,
-          }]
-        }
+            productoId,
+            varianteId,
+            nombre: nombreItem,
+            opciones,
+            precioUnitario: Math.max(0, precioCents),
+            cantidad,
+            total: totalLinea,
+          }],
+        },
       },
-      select: { id: true, publicToken: true }
+      include: { items: true },
     });
 
-    res.status(201).json({ ok: true, pedidoId: created.id, token: created.publicToken });
+    return res.json({ ok: true, id: pedido.id, token: pedido.publicToken });
   } catch (e) {
-    console.error('[orders:intent]', e);
-    res.status(500).json({ error: 'Error creando intento de pedido' });
+    console.error('POST /orders/intent error:', e);
+    return res.status(500).json({ error: 'No se pudo crear el intento' });
   }
 });
 
-// 2) Consultar pedido público (con posición en fila si ya solicitó)
+/* ================== 2) Vista pública por token ================== */
 router.get('/public/:token', async (req, res) => {
   try {
-    const token = String(req.params.token);
-
-    const pedido = await prisma.pedido.findFirst({
+    const token = String(req.params.token || '');
+    const p = await prisma.pedido.findFirst({
       where: { publicToken: token },
       include: {
-        tienda: { select: { id: true, nombre: true, slug: true, telefonoContacto: true } },
-        items: {
-          include: {
-            producto: { select: { id: true, nombre: true } },
-            variante: { select: { id: true, nombre: true, opciones: true } }
-          }
-        }
-      }
-    });
-    if (!pedido) return res.status(404).json({ error: 'No encontrado' });
-
-    let position = null;
-    if (pedido.requested && pedido.requestedAt) {
-      const ahead = await prisma.pedido.count({
-        where: {
-          tiendaId: pedido.tiendaId,
-          requested: true,
-          requestedAt: { lt: pedido.requestedAt },
-          status: { in: validQueueStatuses },
-        }
-      });
-      position = ahead + 1;
-    }
-
-    res.json({
-      id: pedido.id,
-      token: pedido.publicToken,
-      tienda: {
-        id: pedido.tienda.id,
-        nombre: pedido.tienda.nombre,
-        slug: pedido.tienda.slug,
-        telefonoContacto: pedido.tienda.telefonoContacto || null,
+        items: true,
+        tienda: {
+          select: {
+            id: true,
+            nombre: true,
+            telefonoContacto: true,
+            logo: { select: { url: true } },
+          },
+        },
       },
-      status: pedido.status,
-      paymentStatus: pedido.paymentStatus,
-      requested: pedido.requested,
-      requestedAt: pedido.requestedAt,
-      decidedAt: pedido.decidedAt,
-      position,
-      positionMessage: queueMessage(position),
-      totals: {
-        subTotal: pedido.subTotal,
-        shippingCost: pedido.shippingCost,
-        total: pedido.total,
-        currency: pedido.currency,
-      },
-      items: pedido.items.map(it => ({
-        id: it.id,
-        productoId: it.productoId,
-        varianteId: it.varianteId,
-        nombre: it.nombre,
-        opciones: it.opciones,
-        cantidad: it.cantidad,
-        precioUnitario: it.precioUnitario,
-        total: it.total,
-      })),
-      createdAt: pedido.createdAt,
-      proofMediaId: pedido.proofMediaId || null,
     });
+    if (!p) return res.status(404).json({ error: 'Pedido no encontrado' });
+    return res.json(normalizeOrderForVendor(p));
   } catch (e) {
-    console.error('[orders:public:get]', e);
-    res.status(500).json({ error: 'Error cargando pedido' });
+    console.error('GET /public/:token error:', e);
+    return res.status(500).json({ error: 'Error al cargar el pedido' });
   }
 });
 
-// 3) Registrar comprobante (recibe mediaId de tu /api/media/upload)
+/* Registrar comprobante */
 router.post('/public/:token/proof', async (req, res) => {
   try {
-    const token = String(req.params.token);
-    const { mediaId } = req.body || {};
+    const token = String(req.params.token || '');
+    const mediaId = num(req.body?.mediaId);
     if (!mediaId) return res.status(400).json({ error: 'mediaId requerido' });
 
-    const updated = await prisma.pedido.update({
-      where: { publicToken: token },
-      data: {
-        proofMediaId: Number(mediaId),
-        paymentStatus: 'VERIFICANDO',
-      },
-      select: { id: true, paymentStatus: true, proofMediaId: true }
-    });
+    const p = await prisma.pedido.findFirst({ where: { publicToken: token } });
+    if (!p) return res.status(404).json({ error: 'Pedido no encontrado' });
 
-    res.json({ ok: true, pedidoId: updated.id, paymentStatus: updated.paymentStatus });
+    await prisma.pedido.update({
+      where: { id: p.id },
+      data: { proofMediaId: mediaId },
+    });
+    return res.json({ ok: true });
   } catch (e) {
-    console.error('[orders:public:proof]', e);
-    res.status(500).json({ error: 'Error subiendo comprobante' });
+    console.error('POST /public/:token/proof error:', e);
+    return res.status(500).json({ error: 'No se pudo registrar comprobante' });
   }
 });
 
-// 4) Solicitar revisión (entra a la fila por tienda)
+/* Solicitar revisión */
 router.post('/public/:token/request', async (req, res) => {
   try {
-    const token = String(req.params.token);
+    const token = String(req.params.token || '');
+    const p = await prisma.pedido.findFirst({ where: { publicToken: token } });
+    if (!p) return res.status(404).json({ error: 'Pedido no encontrado' });
 
-    const pedido = await prisma.pedido.update({
-      where: { publicToken: token },
-      data: {
-        requested: true,
-        requestedAt: new Date(),
-        paymentStatus: 'VERIFICANDO',
-      },
-      select: { id: true, tiendaId: true, requestedAt: true, status: true }
+    await prisma.pedido.update({
+      where: { id: p.id },
+      data: { requested: true, requestedAt: new Date() },
     });
 
-    const ahead = await prisma.pedido.count({
-      where: {
-        tiendaId: pedido.tiendaId,
-        requested: true,
-        requestedAt: { lt: pedido.requestedAt },
-        status: { in: validQueueStatuses },
-      }
-    });
-    const position = ahead + 1;
-
-    res.json({ ok: true, pedidoId: pedido.id, position, positionMessage: queueMessage(position) });
+    return res.json({ ok: true, position: null, positionMessage: 'Pronto serás atendido' });
   } catch (e) {
-    console.error('[orders:public:request]', e);
-    res.status(500).json({ error: 'Error al solicitar revisión' });
+    console.error('POST /public/:token/request error:', e);
+    return res.status(500).json({ error: 'No se pudo solicitar revisión' });
   }
 });
 
-// 5) Lista de solicitudes para el vendedor (con posición)
-router.get('/vendor/requests', async (req, res) => {
+/* ================== 3) Adjuntar usuario / actualizar comprador ================== */
+router.post('/public/:token/attach-user', async (req, res) => {
   try {
-    const tiendaId = Number(req.query.tiendaId || 0);
-    if (!tiendaId) return res.status(400).json({ error: 'tiendaId requerido' });
+    const token  = String(req.params.token || '');
+    const userId = Number(req.headers['x-user-id'] || req.body?.userId || 0) || null;
+    const phone  = safePhone(req.body?.phone);
 
-    const statuses = String(req.query.status || 'PENDIENTE,EN_PROCESO')
-      .split(',')
-      .map(s => s.trim())
-      .filter(Boolean);
+    const p = await prisma.pedido.findFirst({ where: { publicToken: token } });
+    if (!p) return res.status(404).json({ error: 'Pedido no encontrado' });
 
-    const pedidos = await prisma.pedido.findMany({
-      where: {
-        tiendaId,
-        requested: true,
-        status: { in: statuses },
-      },
-      orderBy: { requestedAt: 'asc' },
-      include: { items: true }
+    const patch = {};
+    if (userId) Object.assign(patch, await buildBuyerFromUser(userId));
+    if (phone && !patch.buyerPhone) patch.buyerPhone = phone;
+
+    if (!Object.keys(patch).length) return res.json({ ok: true, unchanged: true, orderId: p.id });
+
+    const upd = await prisma.pedido.update({
+      where: { id: p.id },
+      data: patch,
+      select: { id: true, buyerUserId: true, buyerName: true, buyerEmail: true, buyerPhone: true },
     });
 
-    const withPos = await Promise.all(pedidos.map(async p => {
-      let position = null;
-      if (p.requested && p.requestedAt) {
-        const ahead = await prisma.pedido.count({
-          where: {
-            tiendaId,
-            requested: true,
-            requestedAt: { lt: p.requestedAt },
-            status: { in: validQueueStatuses },
-          }
-        });
-        position = ahead + 1;
-      }
-      return { ...p, position, positionMessage: queueMessage(position) };
-    }));
-
-    res.json({ items: withPos });
+    return res.json({ ok: true, orderId: upd.id, buyer: upd });
   } catch (e) {
-    console.error('[orders:vendor:requests]', e);
-    res.status(500).json({ error: 'Error listando solicitudes' });
+    console.error('POST /public/:token/attach-user error:', e);
+    return res.status(500).json({ error: 'Failed to attach user' });
   }
 });
 
-// 6) Decisión del vendedor (Aceptar / Rechazar / En espera / Aceptar sin foto)
-router.patch('/:id/decision', async (req, res) => {
+router.post('/:id/attach-user', async (req, res) => {
   try {
-    const id = Number(req.params.id);
-    const { decision } = req.body || {}; // 'ACCEPT' | 'REJECT' | 'PENDING' | 'ACCEPT_CASH'
-    if (!id || !decision) return res.status(400).json({ error: 'id y decision requeridos' });
+    const id     = num(req.params.id);
+    const userId = Number(req.headers['x-user-id'] || req.body?.userId || 0) || null;
+    const phone  = safePhone(req.body?.phone);
 
-    const data = { decidedAt: new Date() };
-    switch (decision) {
-      case 'ACCEPT':
-      case 'ACCEPT_CASH':
-        data.status = 'CONFIRMADA';
-        data.paymentStatus = 'PAGADA';
-        break;
-      case 'REJECT':
-        data.status = 'CANCELADA';
-        data.paymentStatus = 'RECHAZADA';
-        break;
-      case 'PENDING':
-      default:
-        data.status = 'PENDIENTE';
-        data.paymentStatus = 'VERIFICANDO';
-        break;
-    }
+    const p = await prisma.pedido.findUnique({ where: { id } });
+    if (!p) return res.status(404).json({ error: 'Pedido no encontrado' });
 
-    const updated = await prisma.pedido.update({
+    const patch = {};
+    if (userId) Object.assign(patch, await buildBuyerFromUser(userId));
+    if (phone && !patch.buyerPhone) patch.buyerPhone = phone;
+
+    if (!Object.keys(patch).length) return res.json({ ok: true, unchanged: true, orderId: p.id });
+
+    const upd = await prisma.pedido.update({
+      where: { id },
+      data: patch,
+      select: { id: true, buyerUserId: true, buyerName: true, buyerEmail: true, buyerPhone: true },
+    });
+
+    return res.json({ ok: true, orderId: upd.id, buyer: upd });
+  } catch (e) {
+    console.error('POST /:id/attach-user error:', e);
+    return res.status(500).json({ error: 'Failed to attach user' });
+  }
+});
+
+router.patch('/:id/buyer', async (req, res) => {
+  try {
+    const id = num(req.params.id);
+    const { name, email, phone } = req.body || {};
+
+    const data = {};
+    if (name  != null) data.buyerName  = toTitle(name);
+    if (email != null) data.buyerEmail = String(email || '').trim() || null;
+    if (phone != null) data.buyerPhone = safePhone(phone);
+
+    if (!Object.keys(data).length) return res.json({ ok: true, unchanged: true });
+
+    const upd = await prisma.pedido.update({
       where: { id },
       data,
-      select: { id: true, status: true, paymentStatus: true }
+      select: { id: true, buyerName: true, buyerEmail: true, buyerPhone: true },
     });
 
-    res.json({ ok: true, pedido: updated });
+    return res.json({ ok: true, orderId: upd.id, buyer: upd });
   } catch (e) {
-    console.error('[orders:decision]', e);
-    res.status(500).json({ error: 'Error aplicando decisión' });
+    console.error('PATCH /orders/:id/buyer error:', e);
+    return res.status(500).json({ error: 'Failed to update buyer' });
   }
 });
 
-// 7) Métricas básicas del panel
-router.get('/vendor/metrics', async (req, res) => {
+/* ================== 4) GET por id ================== */
+router.get('/:id', async (req, res) => {
   try {
-    const tiendaId = Number(req.query.tiendaId || 0);
-    const range = String(req.query.range || 'month'); // day|week|month|year
+    const id = num(req.params.id);
+    const p = await prisma.pedido.findUnique({
+      where: { id },
+      include: {
+        items: true,
+        tienda: { select: { id: true, nombre: true, telefonoContacto: true, logo: { select: { url: true } } } },
+      },
+    });
+    if (!p) return res.status(404).json({ error: 'Pedido no encontrado' });
+    return res.json(normalizeOrderForVendor(p));
+  } catch (e) {
+    console.error('GET /orders/:id error:', e);
+    return res.status(500).json({ error: 'Error al cargar el pedido' });
+  }
+});
+
+/* ================== 5) Bandeja del vendedor ================== */
+router.get('/vendor/requests', async (req, res) => {
+  try {
+    const tiendaId = num(req.query.tiendaId);
     if (!tiendaId) return res.status(400).json({ error: 'tiendaId requerido' });
 
-    const now = new Date();
-    const since = new Date(now);
-    if (range === 'day') since.setDate(now.getDate() - 1);
-    else if (range === 'week') since.setDate(now.getDate() - 7);
-    else if (range === 'month') since.setMonth(now.getMonth() - 1);
-    else if (range === 'year') since.setFullYear(now.getFullYear() - 1);
+    const statusList = String(req.query.status || 'PENDIENTE,EN_PROCESO')
+      .split(',')
+      .map((s) => s.trim().toUpperCase())
+      .filter(Boolean);
+
+    const ALLOWED = new Set(['PENDIENTE', 'EN_PROCESO', 'CONFIRMADA', 'ENVIADA', 'ENTREGADA', 'CANCELADA']);
+    const wanted  = statusList.filter(s => ALLOWED.has(s));
+    const whereStatus = wanted.length ? { in: wanted } : undefined;
 
     const pedidos = await prisma.pedido.findMany({
-      where: {
-        tiendaId,
-        status: { in: ['CONFIRMADA', 'ENVIADA', 'ENTREGADA'] },
-        createdAt: { gte: since }
+      where: { tiendaId, ...(whereStatus ? { status: whereStatus } : {}) },
+      orderBy: [{ requestedAt: 'asc' }, { createdAt: 'asc' }],
+      include: {
+        items: true,
+        tienda: { select: { id: true, nombre: true, telefonoContacto: true, logo: { select: { url: true } } } },
       },
-      include: { items: true }
     });
 
-    const ingreso = pedidos.reduce((acc, p) => acc + p.total, 0);
-    const contador = pedidos.length;
-
-    const map = new Map();
-    for (const p of pedidos) {
-      for (const it of p.items) {
-        const k = `${it.productoId}`;
-        map.set(k, (map.get(k) || 0) + it.total);
-      }
-    }
-    let top = null;
-    for (const [k, v] of map.entries()) {
-      if (!top || v > top.total) top = { productoId: Number(k), total: v };
-    }
-
-    res.json({ ingreso, pedidos: contador, topProducto: top });
+    return res.json(pedidos.map(normalizeOrderForVendor));
   } catch (e) {
-    console.error('[orders:metrics]', e);
-    res.status(500).json({ error: 'Error obteniendo métricas' });
+    console.error('GET /vendor/requests error:', e);
+    return res.status(500).json({ error: 'No se pudo cargar' });
+  }
+});
+
+/* ================== 6) Ingresos del vendedor ================== */
+/**
+ * GET /api/orders/vendor/income?tiendaId=1&from=iso&to=iso&paymentStatus=PAGADA&status=EN_PROCESO,CONFIRMADA,ENVIADA,ENTREGADA
+ * - Filtra por createdAt (rango opcional)
+ * - Filtra por paymentStatus (default: PAGADA)
+ * - Filtra por status (lista permitida)
+ */
+router.get('/vendor/income', async (req, res) => {
+  try {
+    const tiendaId = num(req.query.tiendaId);
+    if (!tiendaId) return res.status(400).json({ error: 'tiendaId requerido' });
+
+    const from = req.query.from ? new Date(req.query.from) : null;
+    const to   = req.query.to   ? new Date(req.query.to)   : null;
+
+    const statusList = String(req.query.status || 'EN_PROCESO,CONFIRMADA,ENVIADA,ENTREGADA')
+      .split(',').map(s => s.trim().toUpperCase()).filter(Boolean);
+    const ALLOWED = new Set(['PENDIENTE','CONFIRMADA','EN_PROCESO','ENVIADA','ENTREGADA','CANCELADA']);
+    const wanted  = statusList.filter(s => ALLOWED.has(s));
+    const whereStatus = wanted.length ? { in: wanted } : undefined;
+
+    const paymentStatus = String(req.query.paymentStatus || 'PAGADA').toUpperCase();
+    const VALID_PAY = new Set(['PAGADA','PENDIENTE','VERIFICANDO','RECHAZADA','REEMBOLSADA']);
+    const wherePayment = VALID_PAY.has(paymentStatus) ? paymentStatus : 'PAGADA';
+
+    const where = {
+      tiendaId,
+      paymentStatus: wherePayment,
+      ...(whereStatus ? { status: whereStatus } : {}),
+      ...(from && to ? { createdAt: { gte: from, lte: to } } : {}),
+    };
+
+    const pedidos = await prisma.pedido.findMany({
+      where,
+      orderBy: [{ createdAt: 'desc' }],
+      include: {
+        items: true,
+        tienda: { select: { id: true, nombre: true, telefonoContacto: true, logo: { select: { url: true } } } },
+      },
+    });
+
+    return res.json(pedidos.map(normalizeOrderForVendor));
+  } catch (e) {
+    console.error('GET /vendor/income error:', e);
+    return res.status(500).json({ error: 'No se pudo cargar ingresos' });
+  }
+});
+
+/* ================== 7) Decisión del vendedor ================== */
+router.patch('/:id/decision', async (req, res) => {
+  try {
+    const id = num(req.params.id);
+    const decision = String(req.body?.decision || '').toUpperCase();
+
+    if (!['ACCEPT', 'ACCEPT_CASH', 'REJECT'].includes(decision)) {
+      return res.status(400).json({ error: 'decision inválida' });
+    }
+
+    let data = {};
+    if (decision === 'REJECT') {
+      data = { status: 'CANCELADA', paymentStatus: 'RECHAZADA', decidedAt: new Date() };
+    } else if (decision === 'ACCEPT_CASH') {
+      data = { status: 'EN_PROCESO', paymentStatus: 'PAGADA', paymentMethod: 'CONTRA_ENTREGA', decidedAt: new Date() };
+    } else {
+      data = { status: 'EN_PROCESO', paymentStatus: 'PAGADA', decidedAt: new Date() };
+    }
+
+    const upd = await prisma.pedido.update({
+      where: { id },
+      data,
+      select: { id: true, status: true, paymentStatus: true },
+    });
+
+    return res.json({ ok: true, id: upd.id, status: upd.status, paymentStatus: upd.paymentStatus });
+  } catch (e) {
+    console.error('PATCH /:id/decision error:', e);
+    return res.status(500).json({ error: 'No se pudo actualizar el pedido' });
+  }
+});
+
+/* ================== 8) Marcar ENTREGADA ================== */
+router.patch('/:id/delivered', async (req, res) => {
+  try {
+    const id = num(req.params.id);
+    // ⚠️ Tu esquema no tiene deliveredAt. Solo cambia el status.
+    const upd = await prisma.pedido.update({
+      where: { id },
+      data: { status: 'ENTREGADA' },
+      select: { id: true, status: true, paymentStatus: true },
+    });
+    return res.json({ ok: true, id: upd.id, status: upd.status, paymentStatus: upd.paymentStatus });
+  } catch (e) {
+    console.error('PATCH /orders/:id/delivered error:', e);
+    return res.status(500).json({ error: 'No se pudo marcar como entregada' });
+  }
+});
+/* ===========================================================
+   5.1) Compras del usuario (mis pedidos)
+   GET /api/orders/mine
+   GET /api/orders/by-user?userId=123
+   GET /api/orders/search?buyerUserId=123
+   GET /api/orders?buyerUserId=123
+   Query opcionales:
+     - status=EN_PROCESO,ENTREGADA,...
+     - paymentStatus=PAGADA|PENDIENTE|VERIFICANDO|RECHAZADA|REEMBOLSADA
+   =========================================================== */
+
+// Helper para parsear filtros comunes
+function parseStatusFilters(req) {
+  const ALLOWED = new Set(['PENDIENTE','EN_PROCESO','CONFIRMADA','ENVIADA','ENTREGADA','CANCELADA']);
+  const statusList = String(req.query.status || '')
+    .split(',').map(s => s.trim().toUpperCase()).filter(Boolean);
+  const wanted = statusList.filter(s => ALLOWED.has(s));
+  const whereStatus = wanted.length ? { in: wanted } : undefined;
+
+  const psRaw = String(req.query.paymentStatus || '').toUpperCase();
+  const PS_ALLOWED = new Set(['PAGADA','PENDIENTE','VERIFICANDO','RECHAZADA','REEMBOLSADA']);
+  const wherePayment = PS_ALLOWED.has(psRaw) ? psRaw : undefined;
+
+  return { whereStatus, wherePayment };
+}
+
+// GET /api/orders/by-user?userId=123
+router.get('/by-user', async (req, res) => {
+  try {
+    const userId = Number(req.query.userId || req.headers['x-user-id'] || 0);
+    if (!userId) return res.status(400).json({ error: 'userId requerido' });
+
+    const { whereStatus, wherePayment } = parseStatusFilters(req);
+
+    const where = {
+      buyerUserId: userId,
+      ...(whereStatus ? { status: whereStatus } : {}),
+      ...(wherePayment ? { paymentStatus: wherePayment } : {}),
+    };
+
+    const pedidos = await prisma.pedido.findMany({
+      where,
+      orderBy: [{ createdAt: 'desc' }],
+      include: {
+        items: true,
+        tienda: { select: { id: true, nombre: true, telefonoContacto: true, logo: { select: { url: true } } } },
+      },
+    });
+
+    return res.json(pedidos.map(normalizeOrderForVendor));
+  } catch (e) {
+    console.error('GET /orders/by-user error:', e);
+    return res.status(500).json({ error: 'No se pudieron cargar compras' });
+  }
+});
+
+// Alias: GET /api/orders/mine  (toma x-user-id)
+router.get('/mine', async (req, res) => {
+  try {
+    const userId = Number(req.headers['x-user-id'] || 0);
+    if (!userId) return res.status(401).json({ error: 'No autorizado' });
+    // Reusar lógica de /by-user
+    req.query.userId = String(userId);
+    return router.handle({ ...req, url: '/by-user', method: 'GET' }, res);
+  } catch (e) {
+    console.error('GET /orders/mine error:', e);
+    return res.status(500).json({ error: 'No se pudieron cargar compras' });
+  }
+});
+
+// Alias: GET /api/orders/search?buyerUserId=123
+router.get('/search', async (req, res) => {
+  try {
+    const userId = Number(req.query.buyerUserId || req.headers['x-user-id'] || 0);
+    if (!userId) return res.status(400).json({ error: 'buyerUserId requerido' });
+
+    const { whereStatus, wherePayment } = parseStatusFilters(req);
+    const where = {
+      buyerUserId: userId,
+      ...(whereStatus ? { status: whereStatus } : {}),
+      ...(wherePayment ? { paymentStatus: wherePayment } : {}),
+    };
+
+    const pedidos = await prisma.pedido.findMany({
+      where,
+      orderBy: [{ createdAt: 'desc' }],
+      include: {
+        items: true,
+        tienda: { select: { id: true, nombre: true, telefonoContacto: true, logo: { select: { url: true } } } },
+      },
+    });
+
+    return res.json(pedidos.map(normalizeOrderForVendor));
+  } catch (e) {
+    console.error('GET /orders/search error:', e);
+    return res.status(500).json({ error: 'No se pudieron cargar compras' });
+  }
+});
+
+// Alias súper flexible: GET /api/orders?buyerUserId=123
+router.get('/', async (req, res) => {
+  try {
+    const buyerUserId = Number(req.query.buyerUserId || 0);
+    if (!buyerUserId) return res.status(400).json({ error: 'buyerUserId requerido' });
+
+    const { whereStatus, wherePayment } = parseStatusFilters(req);
+    const where = {
+      buyerUserId,
+      ...(whereStatus ? { status: whereStatus } : {}),
+      ...(wherePayment ? { paymentStatus: wherePayment } : {}),
+    };
+
+    const pedidos = await prisma.pedido.findMany({
+      where,
+      orderBy: [{ createdAt: 'desc' }],
+      include: {
+        items: true,
+        tienda: { select: { id: true, nombre: true, telefonoContacto: true, logo: { select: { url: true } } } },
+      },
+    });
+
+    return res.json(pedidos.map(normalizeOrderForVendor));
+  } catch (e) {
+    console.error('GET /orders error:', e);
+    return res.status(500).json({ error: 'No se pudieron cargar compras' });
   }
 });
 

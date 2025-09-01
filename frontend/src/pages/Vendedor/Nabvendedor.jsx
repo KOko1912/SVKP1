@@ -64,9 +64,9 @@ export default function Nabvendedor() {
   const menuItems = [
     { path: '/vendedor/pagina', icon: <FiHome />, text: 'Mi Tienda' },
     { path: '/vendedor/productos', icon: <FiShoppingBag />, text: 'Productos' },
-    { path: '/vendedor/finanzas', icon: <FiDollarSign />, text: 'Finanzas' },   // ← NUEVO
     { path: '/vendedor/perfil', icon: <FiUser />, text: 'Perfil' },
     { path: '/vendedor/configuracion', icon: <FiSettings />, text: 'Configuración' },
+    { path: '/vendedor/finanzas', icon: <FiDollarSign />, text: 'Finanzas' }, 
   ];
 
   // Variants (se desactivan si reduceMotion)

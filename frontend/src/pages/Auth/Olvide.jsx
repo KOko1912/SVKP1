@@ -1,5 +1,5 @@
 // E:\SVKP1\frontend\src\pages\Auth\Olvide.jsx
-import { useState } from 'react';
+/*import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { FiArrowLeft, FiPhone } from 'react-icons/fi';
 import './Auth.css';
@@ -121,3 +121,4 @@ export default function Olvide() {
     </div>
   );
 }
+*/

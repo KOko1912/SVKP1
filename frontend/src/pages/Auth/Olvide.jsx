@@ -122,3 +122,31 @@ export default function Olvide() {
   );
 }
 */
+
+// E:\SVKP1\frontend\src\pages\Auth\Olvide.jsx
+import { } from 'react';
+import './Auth.css';
+
+export default function Olvide() {
+  return (
+    <div className="auth-page">
+      <div className="auth-background"></div>
+
+      <div className="auth-container">
+        <div className="auth-card">
+          <div className="auth-header">
+            <div className="auth-logo">
+              <img src="/SVKP.png" alt="SystemVkode" />
+            </div>
+            <h2>Fuera de servicio</h2>
+            <p>Esta sección no está disponible por el momento.</p>
+          </div>
+        </div>
+
+        <div className="auth-copyright">
+          <p>© {new Date().getFullYear()} SystemVkode. Todos los derechos reservados.</p>
+        </div>
+      </div>
+    </div>
+  );
+}

@@ -224,3 +224,16 @@
   --muted: #6b7280;
   --border-color: #e5e7eb;
 }
+/* ================= Botones negros con texto blanco ================= */
+.pp-wrap .btn,
+.pp-wrap button {
+  background-color: #000000 !important;
+  color: #ffffff !important;
+  border: none;
+}
+
+.pp-wrap .btn:hover,
+.pp-wrap button:hover {
+  background-color: #222222 !important;
+  color: #ffffff !important;
+}

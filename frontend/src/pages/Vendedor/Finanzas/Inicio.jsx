@@ -258,7 +258,6 @@ export default function FinanzasInicio() {
   }, [items]);
 
   /* ======= KPIs ingresos (ENTREGADA + PAGADA) ======= */
-  // Total ingresos entregados (últimos 90 días)
   const ingresosTotalNum = useMemo(
     () => ingresos.reduce((acc, r) => acc + Number(r?.totals?.total ?? r.total ?? 0), 0),
     [ingresos]
@@ -271,7 +270,7 @@ export default function FinanzasInicio() {
   const fmtDayKey = (d) => d.toLocaleDateString("es-MX", { day:"2-digit", month:"2-digit" });
   const fmtWeekKey = (d) => {
     const x = startOfDay(d);
-    const day = x.getDay() || 7; // 1..7
+    const day = x.getDay() || 7;
     const monday = addDays(x, -(day-1));
     const sunday = addDays(monday, 6);
     return `${monday.toLocaleDateString("es-MX",{day:"2-digit",month:"2-digit"})} - ${sunday.toLocaleDateString("es-MX",{day:"2-digit",month:"2-digit"})}`;
@@ -291,26 +290,20 @@ export default function FinanzasInicio() {
       const v = Number(r?.totals?.total ?? r.total ?? 0);
       map.set(key, (map.get(key) || 0) + v);
     });
-    // Ordenar por fecha aproximada: guardamos una "fecha" estimada para ordenar
     const toOrderDate = (k) => {
       if (incomePreset === "week") {
-        const [a, , b] = k.split(" ");
-        // a = dd/mm - take first date
+        const [a] = k.split(" ");
         const [d,m] = a.split("/").map(s=>parseInt(s,10));
         const year = new Date().getFullYear();
         return new Date(year, (m||1)-1, d||1);
       }
       if (incomePreset === "month") {
-        // Ej: "sep. 2025"
         const [mon, year] = k.replace(".", "").split(" ");
         const months = ["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"];
         const idx = months.indexOf(mon?.toLowerCase()?.slice(0,3));
         return new Date(parseInt(year||`${new Date().getFullYear()}`,10), Math.max(0, idx), 1);
       }
-      if (incomePreset === "year") {
-        return new Date(parseInt(k,10), 0, 1);
-      }
-      // day
+      if (incomePreset === "year") return new Date(parseInt(k,10), 0, 1);
       const [d,m] = k.split("/").map(Number);
       const y = new Date().getFullYear();
       return new Date(y,(m||1)-1,d||1);
@@ -322,7 +315,6 @@ export default function FinanzasInicio() {
       .map(({_od, ...rest})=>rest);
   }, [ingresos, incomePreset]);
 
-  // Top productos por ingresos
   const topProductsIngresos = useMemo(() => {
     const m = new Map();
     ingresos.forEach(p => {
@@ -374,82 +366,81 @@ export default function FinanzasInicio() {
     <>
       <FinanzasNabvar />
 
-      {/* ===== HERO / PORTADA ===== */}
-      <div
-        className="finz-hero"
-        style={{
-          position: "relative",
-          borderRadius: 16,
-          overflow: "hidden",
-          margin: "12px var(--gutter, 16px) 0",
-          background: portadaUrl
-            ? `linear-gradient(180deg, rgba(0,0,0,.45), rgba(0,0,0,.35)), url("${portadaUrl}") center/cover no-repeat`
-            : "linear-gradient(135deg, var(--primary), var(--secondary))",
-          minHeight: 120,
-          display: "flex",
-          alignItems: "center",
-          padding: "16px 20px"
-        }}
-      >
-        {logoUrl ? (
-          <img
-            src={logoUrl}
-            alt="Logo"
-            style={{
-              width: 64, height: 64, objectFit: "contain",
-              background: "rgba(255,255,255,.85)", borderRadius: 12, padding: 8, marginRight: 12
-            }}
-            onError={(e)=>{ e.currentTarget.style.display="none"; }}
-          />
-        ) : null}
-        <div style={{ color: "#fff" }}>
-          <div style={{ opacity:.9, fontSize:12, letterSpacing:.5 }}>Panel de Finanzas</div>
-          <h1 style={{ margin: "2px 0 2px", fontSize: 22, fontWeight: 700 }}>
-            {tienda?.nombre || "Mi Tienda"}
-          </h1>
-          <div style={{ opacity:.9, fontSize:13 }}>
-            Pedidos pendientes por confirmar · <b>{totalPendiente}</b>
-          </div>
-        </div>
-        <div style={{ flex: 1 }} />
-        <button onClick={loadAll} className="btn btn-ghost" style={{ color:"#fff", borderColor:"rgba(255,255,255,.4)" }}>
-          <FiRefreshCw /> Actualizar
-        </button>
-      </div>
-
+      {/* ===== HERO / PORTADA (dentro del contenedor para evitar overflow) ===== */}
       <div className="finanzas-wrap">
+        <div
+          className="finz-hero"
+          style={{
+            position: "relative",
+            borderRadius: 16,
+            overflow: "hidden",
+            background: portadaUrl
+              ? `linear-gradient(180deg, rgba(0,0,0,.45), rgba(0,0,0,.35)), url("${portadaUrl}") center/cover no-repeat`
+              : "linear-gradient(135deg, var(--primary), var(--secondary))",
+            minHeight: 120,
+            display: "flex",
+            alignItems: "center",
+            padding: "16px 20px"
+          }}
+        >
+          {logoUrl ? (
+            <img
+              src={logoUrl}
+              alt="Logo"
+              style={{
+                width: 64, height: 64, objectFit: "contain",
+                background: "rgba(255,255,255,.85)", borderRadius: 12, padding: 8, marginRight: 12
+              }}
+              onError={(e)=>{ e.currentTarget.style.display="none"; }}
+            />
+          ) : null}
+          <div style={{ color: "#fff" }}>
+            <div style={{ opacity:.9, fontSize:12, letterSpacing:.5 }}>Panel de Finanzas</div>
+            <h1 style={{ margin: "2px 0 2px", fontSize: 22, fontWeight: 700 }}>
+              {tienda?.nombre || "Mi Tienda"}
+            </h1>
+            <div style={{ opacity:.9, fontSize:13 }}>
+              Pedidos pendientes por confirmar · <b>{totalPendiente}</b>
+            </div>
+          </div>
+          <div style={{ flex: 1 }} />
+          <button onClick={loadAll} className="btn btn-ghost" style={{ color:"#fff", borderColor:"rgba(255,255,255,.4)" }}>
+            <FiRefreshCw /> Actualizar
+          </button>
+        </div>
+
         {/* ===== KPIs PENDIENTES + GRÁFICAS ===== */}
-        <div className="kpi-grid" style={{ display:"grid", gridTemplateColumns:"repeat(12,1fr)", gap:12, margin: "12px 0" }}>
+        <div className="kpi-grid">
           {/* KPIs pendientes */}
-          <div className="card" style={{ gridColumn:"span 3", minWidth:220 }}>
+          <div className="card span-3">
             <div className="card-header"><h3 className="card-title">Monto pendiente</h3></div>
             <div className="card-body">
-              <div style={{ fontSize:26, fontWeight:700 }}>{totalPendiente}</div>
+              <div className="big-number">{totalPendiente}</div>
               <div className="muted">Suma de pedidos en revisión</div>
             </div>
           </div>
-          <div className="card" style={{ gridColumn:"span 3", minWidth:220 }}>
+          <div className="card span-3">
             <div className="card-header"><h3 className="card-title">Pedidos</h3></div>
             <div className="card-body">
-              <div style={{ fontSize:26, fontWeight:700 }}>{pedidosCount}</div>
+              <div className="big-number">{pedidosCount}</div>
               <div className="muted">En la bandeja</div>
             </div>
           </div>
-          <div className="card" style={{ gridColumn:"span 3", minWidth:220 }}>
+          <div className="card span-3">
             <div className="card-header"><h3 className="card-title">Ticket promedio</h3></div>
             <div className="card-body">
-              <div style={{ fontSize:26, fontWeight:700 }}>{avgTicket}</div>
+              <div className="big-number">{avgTicket}</div>
               <div className="muted">Con base en pendientes</div>
             </div>
           </div>
 
           {/* Tendencia por día (pendientes) */}
-          <div className="card" style={{ gridColumn:"span 6", minHeight: 220 }}>
+          <div className="card span-6">
             <div className="card-header">
               <h3 className="card-title">Tendencia por día (pendientes)</h3>
               <p className="card-subtitle">Monto de pedidos aún no confirmados</p>
             </div>
-            <div className="card-body" style={{ height: 180 }}>
+            <div className="card-body chart">
               {byDayPending.length === 0 ? (
                 <div className="muted">Sin datos suficientes</div>
               ) : (
@@ -473,12 +464,12 @@ export default function FinanzasInicio() {
           </div>
 
           {/* Top productos (pendientes) */}
-          <div className="card" style={{ gridColumn:"span 6", minHeight: 220 }}>
+          <div className="card span-6">
             <div className="card-header">
               <h3 className="card-title">Top productos (pendientes)</h3>
               <p className="card-subtitle">Por monto</p>
             </div>
-            <div className="card-body" style={{ height: 180 }}>
+            <div className="card-body chart">
               {topProductsPending.length === 0 ? (
                 <div className="muted">Sin datos suficientes</div>
               ) : (
@@ -497,34 +488,30 @@ export default function FinanzasInicio() {
         </div>
 
         {/* ===== KPIs INGRESOS ENTREGADOS + GRÁFICAS ===== */}
-        <div className="kpi-grid" style={{ display:"grid", gridTemplateColumns:"repeat(12,1fr)", gap:12, margin: "18px 0 8px" }}>
-          {/* KPIs ingresos */}
-          <div className="card" style={{ gridColumn:"span 3", minWidth:220 }}>
-            <div className="card-header">
-              <h3 className="card-title">Ingresos (90 días)</h3>
-            </div>
+        <div className="kpi-grid kpi-grid--spaced">
+          <div className="card span-3">
+            <div className="card-header"><h3 className="card-title">Ingresos (90 días)</h3></div>
             <div className="card-body">
-              <div style={{ fontSize:26, fontWeight:700 }}>{ingresosTotalFmt}</div>
+              <div className="big-number">{ingresosTotalFmt}</div>
               <div className="muted">Acumulado ENTREGADA + PAGADA</div>
             </div>
           </div>
-          <div className="card" style={{ gridColumn:"span 3", minWidth:220 }}>
+          <div className="card span-3">
             <div className="card-header"><h3 className="card-title">Ventas entregadas</h3></div>
             <div className="card-body">
-              <div style={{ fontSize:26, fontWeight:700 }}>{ingresosPedidos}</div>
+              <div className="big-number">{ingresosPedidos}</div>
               <div className="muted">En el periodo mostrado</div>
             </div>
           </div>
-          <div className="card" style={{ gridColumn:"span 3", minWidth:220 }}>
+          <div className="card span-3">
             <div className="card-header"><h3 className="card-title">Ticket promedio</h3></div>
             <div className="card-body">
-              <div style={{ fontSize:26, fontWeight:700 }}>{ingresosAvg}</div>
+              <div className="big-number">{ingresosAvg}</div>
               <div className="muted">Pedidos entregados</div>
             </div>
           </div>
 
-          {/* Selector de periodo ingresos */}
-          <div className="card" style={{ gridColumn:"span 3", minWidth:220 }}>
+          <div className="card span-3">
             <div className="card-header"><h3 className="card-title">Agrupar por</h3></div>
             <div className="card-body">
               <select value={incomePreset} onChange={(e)=>setIncomePreset(e.target.value)} className="form-select">
@@ -537,13 +524,12 @@ export default function FinanzasInicio() {
             </div>
           </div>
 
-          {/* Serie de ingresos */}
-          <div className="card" style={{ gridColumn:"span 8", minHeight: 260 }}>
+          <div className="card span-8">
             <div className="card-header">
               <h3 className="card-title">Ingresos por {incomePreset === "day" ? "día" : incomePreset === "week" ? "semana" : incomePreset === "month" ? "mes" : "año"}</h3>
               <p className="card-subtitle">Incluye solo pedidos ENTREGADA con pago PAGADA</p>
             </div>
-            <div className="card-body" style={{ height: 200 }}>
+            <div className="card-body chart tall">
               {seriesIngresos.length === 0 ? (
                 <div className="muted">Sin datos aún. Marca pedidos como ENTREGADA en la sección Ingresos.</div>
               ) : (
@@ -566,13 +552,12 @@ export default function FinanzasInicio() {
             </div>
           </div>
 
-          {/* Top productos por ingresos */}
-          <div className="card" style={{ gridColumn:"span 4", minHeight: 260 }}>
+          <div className="card span-4">
             <div className="card-header">
               <h3 className="card-title">Top productos (ingresos)</h3>
               <p className="card-subtitle">Basado en pedidos ENTREGADA</p>
             </div>
-            <div className="card-body" style={{ height: 200 }}>
+            <div className="card-body chart tall">
               {topProductsIngresos.length === 0 ? (
                 <div className="muted">Sin datos suficientes</div>
               ) : (
@@ -710,8 +695,6 @@ export default function FinanzasInicio() {
             </div>
           </div>
         )}
-
-      
       </div>
     </>
   );

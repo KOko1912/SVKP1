@@ -4,7 +4,8 @@ import dayjs from "dayjs";
 import "dayjs/locale/es";
 import { jsPDF } from "jspdf";
 import {
-  FiCalendar, FiDownload, FiRefreshCw, FiSearch, FiUser, FiPhone, FiImage, FiPackage,
+  FiCalendar, FiDownload, FiRefreshCw, FiSearch, FiUser, FiPhone,
+  FiImage, FiPackage, FiX
 } from "react-icons/fi";
 import Swal from "sweetalert2";
 import "./Finanzaz.css";
@@ -77,6 +78,22 @@ export default function Ingresos() {
   const [from, setFrom] = useState(rangePreset("day").from.format("YYYY-MM-DD"));
   const [to, setTo] = useState(rangePreset("day").to.format("YYYY-MM-DD"));
   const [q, setQ] = useState("");
+
+  // responsive: tabla en desktop, tarjetas en móvil
+  const [isMobile, setIsMobile] = useState(
+    typeof window !== "undefined" ? window.matchMedia("(max-width: 600px)").matches : false
+  );
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 600px)");
+    const onChange = (e) => setIsMobile(e.matches);
+    mq.addEventListener?.("change", onChange);
+    setIsMobile(mq.matches);
+    return () => mq.removeEventListener?.("change", onChange);
+  }, []);
+
+  // Modal de comprobante
+  const [showProof, setShowProof] = useState(false);
+  const [proofSrc, setProofSrc] = useState("");
 
   const loadAll = async () => {
     setLoading(true);
@@ -216,16 +233,83 @@ export default function Ingresos() {
     doc.save(`Ingresos_${tienda?.nombre || "Tienda"}_${dayjs(from).format("YYYYMMDD")}-${dayjs(to).format("YYYYMMDD")}.pdf`);
   }
 
+  function openProof(row) {
+    if (!row?.proofMediaId) {
+      Swal.fire({ icon: "info", title: "Sin comprobante", text: "Este pedido no tiene comprobante." });
+      return;
+    }
+    setProofSrc(`${API}/api/media/${row.proofMediaId}`);
+    setShowProof(true);
+  }
+
+  /* ------------ UI helpers (móvil: tarjetas) ------------ */
+  const RowCard = ({ r }) => (
+    <article className="order-card" style={{ marginBottom: 10 }}>
+      <header className="order-card__head">
+        <div className="badges">
+          <span className="badge badge--payment">{r.paymentStatus || "PAGADA"}</span>
+          <span className="badge badge--status">{r.status}</span>
+        </div>
+        <div className="order-meta">
+          {dayjs(r.decidedAt || r.createdAt).format("DD/MM/YYYY HH:mm")}
+        </div>
+      </header>
+
+      <section className="order-card__buyer">
+        <div><FiUser /> {r.buyerName || "-"}</div>
+        <div><FiPhone /> {r.buyerPhone || "-"}</div>
+        <div><b>Total:</b>&nbsp;{moneyMXN(r?.totals?.total ?? r.total)}</div>
+      </section>
+
+      <section className="order-items">
+        {(r.items || []).map((it) => (
+          <div key={it.id} className="order-item">
+            <div>
+              <div className="order-item__name">{it.nombre || "Producto"}</div>
+              <div className="order-item__opt">x{it.cantidad}</div>
+            </div>
+            <div className="order-item__qty">
+              <div className="order-item__money">{moneyMXN(it.total)}</div>
+            </div>
+          </div>
+        ))}
+        <div className="order-totals">
+          <div className="order-row"><span>Subtotal</span><strong>{moneyMXN(r?.totals?.subTotal ?? r.subTotal)}</strong></div>
+          {!!Number(r?.totals?.shippingCost ?? r.shippingCost) && (
+            <div className="order-row"><span>Envío</span><strong>{moneyMXN(r?.totals?.shippingCost ?? r.shippingCost)}</strong></div>
+          )}
+          <div className="order-row order-row--total"><span>Total</span><strong>{moneyMXN(r?.totals?.total ?? r.total)}</strong></div>
+        </div>
+      </section>
+
+      <footer className="order-actions">
+        <button className="btn btn-ghost" onClick={() => openProof(r)}>
+          <FiImage /> Ver comprobante
+        </button>
+        {r.status !== "ENTREGADA" ? (
+          <button className="btn btn-primary" onClick={() => markDelivered(r.id)}>
+            <FiPackage /> Entregado
+          </button>
+        ) : null}
+      </footer>
+    </article>
+  );
+
+  /* ------------ RENDER ------------ */
   return (
     <>
       <FinanzasNabvar />
+
       <div className="finanzas-wrap">
+        {/* Head */}
         <div className="finanzas-head">
           <div>
             <h1>Finanzas · Ingresos</h1>
-            <p className="finanzas-sub">Tienda: <b>{tienda?.nombre || "-"}</b> · Total mostrado: <b>{moneyMXN(total)}</b></p>
+            <p className="finanzas-sub">
+              Tienda: <b>{tienda?.nombre || "-"}</b> · Total mostrado: <b>{moneyMXN(total)}</b>
+            </p>
           </div>
-          <div className="btns" style={{ display:"flex", gap:8, alignItems:"center" }}>
+          <div className="btns" style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <button className="btn" onClick={() => loadAll()}><FiRefreshCw /> Actualizar</button>
             <button className="btn btn-success" onClick={onExportPDF}><FiDownload /> Exportar PDF</button>
           </div>
@@ -234,7 +318,7 @@ export default function Ingresos() {
         {/* Filtros */}
         <div className="card" style={{ padding: "1rem", marginBottom: 12 }}>
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-            <label style={{ display:"flex", alignItems:"center", gap:6 }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
               <FiCalendar /> Período:
               <select value={preset} onChange={(e)=>setPreset(e.target.value)}>
                 <option value="day">Día</option>
@@ -259,65 +343,97 @@ export default function Ingresos() {
               placeholder="Buscar cliente / producto / #id"
               value={q}
               onChange={(e)=>setQ(e.target.value)}
-              style={{ minWidth: 220 }}
+              style={{ minWidth: 220, flex: isMobile ? "1 1 100%" : "0 0 auto" }}
             />
           </div>
         </div>
 
-        {/* Tabla */}
-        <div className="table-wrap">
-          <table className="table">
-            <thead>
-              <tr>
-                <th>#</th><th>Fecha</th><th>Cliente</th><th>Teléfono</th><th>Producto(s)</th><th>Total</th><th>Estado</th><th>Comprobante</th><th>Acciones</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading && (
-                <tr><td colSpan={9} style={{ textAlign:"center", padding:"1rem" }}>Cargando…</td></tr>
-              )}
-              {!loading && visible.length === 0 && (
-                <tr><td colSpan={9} style={{ textAlign:"center", padding:"1rem" }}>Sin resultados</td></tr>
-              )}
-              {!loading && visible.map(r => (
-                <tr key={r.id}>
-                  <td>{r.id}</td>
-                  <td>{dayjs(r.decidedAt || r.createdAt).format("DD/MM/YYYY HH:mm")}</td>
-                  <td><FiUser /> {r.buyerName || "-"}</td>
-                  <td><FiPhone /> {r.buyerPhone || "-"}</td>
-                  <td>
-                    {(r.items || []).map(it => (
-                      <div key={it.id} className="muted">
-                        {it.nombre} x{it.cantidad}
-                      </div>
-                    ))}
-                  </td>
-                  <td><b>{moneyMXN(r?.totals?.total ?? r.total)}</b></td>
-                  <td>{r.status}</td>
-                  <td>
-                    {r.proofMediaId
-                      ? <a className="btn btn-ghost" href={`${API}/api/media/${r.proofMediaId}`} target="_blank" rel="noreferrer"><FiImage /> Ver</a>
-                      : <span className="muted">—</span>}
-                  </td>
-                  <td>
-                    {r.status !== "ENTREGADA" ? (
-                      <button className="btn btn-primary" onClick={() => markDelivered(r.id)} title="Marcar como ENTREGADA">
-                        <FiPackage /> Entregado
-                      </button>
-                    ) : <span className="muted">—</span>}
-                  </td>
+        {/* Desktop: tabla / Mobile: tarjetas */}
+        {!isMobile ? (
+          <div className="table-wrap">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>#</th><th>Fecha</th><th>Cliente</th><th>Teléfono</th>
+                  <th>Producto(s)</th><th>Total</th><th>Estado</th><th>Comprobante</th><th>Acciones</th>
                 </tr>
-              ))}
-            </tbody>
-            <tfoot>
-              <tr>
-                <td colSpan={5} style={{ textAlign:"right" }}><b>Total</b></td>
-                <td colSpan={4}><b>{moneyMXN(total)}</b></td>
-              </tr>
-            </tfoot>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {loading && (
+                  <tr><td colSpan={9} style={{ textAlign:"center", padding:"1rem" }}>Cargando…</td></tr>
+                )}
+                {!loading && visible.length === 0 && (
+                  <tr><td colSpan={9} style={{ textAlign:"center", padding:"1rem" }}>Sin resultados</td></tr>
+                )}
+                {!loading && visible.map(r => (
+                  <tr key={r.id}>
+                    <td>{r.id}</td>
+                    <td>{dayjs(r.decidedAt || r.createdAt).format("DD/MM/YYYY HH:mm")}</td>
+                    <td><FiUser /> {r.buyerName || "-"}</td>
+                    <td><FiPhone /> {r.buyerPhone || "-"}</td>
+                    <td>
+                      {(r.items || []).map(it => (
+                        <div key={it.id} className="muted">
+                          {it.nombre} x{it.cantidad}
+                        </div>
+                      ))}
+                    </td>
+                    <td><b>{moneyMXN(r?.totals?.total ?? r.total)}</b></td>
+                    <td>{r.status}</td>
+                    <td>
+                      <button className="btn btn-ghost" onClick={() => openProof(r)}>
+                        <FiImage /> Ver
+                      </button>
+                    </td>
+                    <td>
+                      {r.status !== "ENTREGADA" ? (
+                        <button className="btn btn-primary" onClick={() => markDelivered(r.id)} title="Marcar como ENTREGADA">
+                          <FiPackage /> Entregado
+                        </button>
+                      ) : <span className="muted">—</span>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr>
+                  <td colSpan={5} style={{ textAlign:"right" }}><b>Total</b></td>
+                  <td colSpan={4}><b>{moneyMXN(total)}</b></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        ) : (
+          <div style={{ display: "grid", gap: 12 }}>
+            {loading && <div className="empty">Cargando…</div>}
+            {!loading && visible.length === 0 && <div className="empty">Sin resultados</div>}
+            {!loading && visible.map(r => <RowCard key={r.id} r={r} />)}
+            {!loading && visible.length > 0 && (
+              <div className="card" style={{ padding: "0.9rem 1rem", fontWeight: 800 }}>
+                Total: {moneyMXN(total)}
+              </div>
+            )}
+          </div>
+        )}
       </div>
+
+      {/* Modal de comprobante (igual que Inicio) */}
+      {showProof && proofSrc && (
+        <div
+          onClick={() => setShowProof(false)}
+          style={{
+            position: "fixed", inset: 0, background: "rgba(0,0,0,.85)",
+            display: "grid", placeItems: "center", zIndex: 1000, padding: "2rem"
+          }}
+        >
+          <div onClick={(e)=>e.stopPropagation()} style={{ position: "relative", maxWidth: "min(95vw, 1000px)", maxHeight: "85vh" }}>
+            <button className="btn btn-ghost" style={{ position: "absolute", top: 8, right: 8 }} onClick={() => setShowProof(false)} aria-label="Cerrar">
+              <FiX />
+            </button>
+            <img src={proofSrc} alt="Comprobante" style={{ width: "100%", height: "100%", objectFit: "contain", borderRadius: 8 }} />
+          </div>
+        </div>
+      )}
     </>
   );
 }

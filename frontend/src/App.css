@@ -803,3 +803,340 @@ p { color: var(--gray-300); margin-bottom: 1rem; font-size: clamp(1rem, 2vw, 1.0
   position: relative;
   z-index: 1;
 }
+/* ===========================
+   Finanzas (Vendedor) — UI
+   Basado en la paleta/estilo de App.css
+   =========================== */
+
+/* Layout base de la vista */
+.finanzas-wrap {
+  max-width: var(--container);
+  margin: 0 auto;
+  padding: 1rem var(--gutter) 2rem;
+}
+
+/* Título + barra de acciones */
+.finanzas-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .75rem;
+}
+
+.finanzas-head h1 {
+  font-size: clamp(1.35rem, 2.5vw, 1.65rem);
+  margin: 0 0 .25rem;
+}
+
+.finanzas-sub {
+  color: var(--gray-300);
+  font-size: .86rem;
+}
+
+/* Botón “Actualizar” */
+.btn-refresh {
+  display: inline-flex;
+  align-items: center;
+  gap: .55rem;
+  padding: .6rem .9rem;
+  border-radius: var(--radius-md);
+  background: var(--gray-700);
+  color: var(--light);
+  border: 1px solid rgba(255,255,255,.08);
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+  transition: transform .2s ease, box-shadow .2s ease, background .2s ease;
+}
+.btn-refresh:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); background: var(--gray-600); }
+.btn-refresh:active { transform: translateY(0); }
+
+/* Animación suave para el icono de refresh */
+@keyframes spin-slow { to { transform: rotate(360deg); } }
+.animate-spin-slow { animation: spin-slow 1.4s linear infinite; }
+
+/* Grid de tarjetas */
+.orders-grid {
+  margin-top: 1rem;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+}
+
+/* Tarjeta de pedido */
+.order-card {
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.02));
+  border: 1px solid var(--gray-700);
+  border-radius: var(--radius-2xl);
+  box-shadow: var(--shadow-md);
+  backdrop-filter: blur(10px);
+  overflow: hidden;
+}
+
+/* Header de tarjeta */
+.order-card__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: .75rem;
+  padding: 1rem 1rem .5rem;
+}
+
+/* Badges de estado */
+.badges {
+  display: flex; align-items: center; gap: .5rem; flex-wrap: wrap;
+}
+
+.badge {
+  font-size: .72rem;
+  padding: .25rem .5rem;
+  border-radius: var(--radius-full);
+  border: 1px solid rgba(255,255,255,.08);
+  background: rgba(255,255,255,.05);
+  color: var(--light);
+}
+
+.badge--status       { background: rgba(234,179,8,.18);  color: #facc15; border-color: rgba(234,179,8,.35); }
+.badge--payment      { background: rgba(59,130,246,.18); color: #93c5fd; border-color: rgba(59,130,246,.35); }
+.badge--queue        { background: rgba(168,85,247,.18); color: #d8b4fe; border-color: rgba(168,85,247,.35); }
+
+/* Fecha */
+.order-meta {
+  display: flex; align-items: center; gap: .4rem;
+  font-size: .78rem; color: var(--gray-300);
+}
+
+/* Comprador */
+.order-card__buyer {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: .6rem;
+  padding: .5rem 1rem 0;
+}
+.order-card__buyer div {
+  display: inline-flex; align-items: center; gap: .45rem; color: var(--light);
+  background: rgba(255,255,255,.03);
+  border: 1px solid rgba(255,255,255,.06);
+  border-radius: var(--radius-md);
+  padding: .5rem .65rem;
+}
+
+/* Items */
+.order-items {
+  margin-top: .75rem;
+  padding: .75rem 1rem;
+  background: rgba(255,255,255,.03);
+  border-top: 1px dashed rgba(255,255,255,.08);
+  border-bottom: 1px dashed rgba(255,255,255,.08);
+}
+
+.order-item {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: .75rem;
+  padding: .55rem 0;
+  border-bottom: 1px solid rgba(255,255,255,.06);
+}
+.order-item:last-child { border-bottom: 0; }
+.order-item__name { font-weight: 600; color: var(--light); font-size: .96rem; }
+.order-item__opt  { color: var(--gray-300); font-size: .78rem; margin-top: .15rem; }
+.order-item__qty  { color: var(--gray-300); font-size: .85rem; text-align: right; }
+.order-item__money{ font-weight: 700; }
+
+/* Totales */
+.order-totals {
+  display: grid; gap: .4rem; padding-top: .35rem;
+}
+.order-row {
+  display: flex; align-items: center; justify-content: space-between;
+  color: var(--gray-300); font-size: .92rem;
+}
+.order-row--total { color: var(--light); font-weight: 800; }
+
+/* Acciones */
+.order-actions {
+  display: flex; flex-wrap: wrap; gap: .6rem;
+  padding: .9rem 1rem 1.1rem;
+}
+
+/* Botones de acción */
+.btn {
+  display: inline-flex; align-items: center; gap: .5rem;
+  padding: .6rem .9rem; border-radius: var(--radius-md);
+  font-weight: 700; cursor: pointer; border: 1px solid transparent;
+  transition: transform .2s ease, box-shadow .2s ease, background .2s ease, color .2s ease, border-color .2s ease;
+  box-shadow: var(--shadow-sm);
+}
+
+.btn:disabled { opacity: .6; cursor: not-allowed; }
+
+.btn-ghost {
+  background: transparent; color: var(--light);
+  border-color: rgba(255,255,255,.1);
+}
+.btn-ghost:hover {
+  background: rgba(255,255,255,.06);
+  transform: translateY(-1px); box-shadow: var(--shadow-md);
+}
+
+.btn-success {
+  background: linear-gradient(135deg, #059669, #10B981);
+  color: #fff; border-color: rgba(16,185,129,.45);
+}
+.btn-success:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }
+
+.btn-primary {
+  background: var(--gradient-primary);
+  color: #fff; border-color: rgba(139,92,246,.45);
+}
+.btn-primary:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }
+
+.btn-danger {
+  background: linear-gradient(135deg, #b91c1c, #ef4444);
+  color: #fff; border-color: rgba(239,68,68,.45);
+}
+.btn-danger:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }
+
+/* Empty state */
+.empty {
+  padding: 1rem 1.2rem;
+  background: rgba(255,255,255,.03);
+  border: 1px dashed rgba(255,255,255,.1);
+  border-radius: var(--radius-lg);
+  color: var(--gray-300);
+  text-align: center;
+}
+
+/* Nota técnica */
+.foot-note {
+  color: var(--gray-400);
+  font-size: .8rem;
+  border-top: 1px solid rgba(255,255,255,.06);
+  padding-top: .75rem;
+}
+
+/* Scrollbar sutil */
+.orders-grid,
+.order-items {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(139,92,246,.45) transparent;
+}
+.orders-grid::-webkit-scrollbar,
+.order-items::-webkit-scrollbar { height: 8px; width: 8px; }
+.orders-grid::-webkit-scrollbar-thumb,
+.order-items::-webkit-scrollbar-thumb {
+  background: linear-gradient(135deg, var(--primary), var(--secondary));
+  border-radius: var(--radius-full);
+}
+
+/* Estados de error/carga */
+.state-error {
+  color: #fecaca;
+  background: rgba(239,68,68,.08);
+  border: 1px solid rgba(239,68,68,.25);
+  padding: .9rem 1rem;
+  border-radius: var(--radius-lg);
+}
+
+/* Responsivo */
+@media (max-width: 768px) {
+  .finanzas-wrap { padding: 1rem 1rem 2.5rem; }
+  .order-card__buyer { grid-template-columns: 1fr; }
+}
+
+/* Utilidades para usarlas directamente en JSX si lo deseas */
+.u-flex   { display: flex; }
+.u-between{ justify-content: space-between; }
+.u-center { align-items: center; }
+.u-gap-sm { gap: .5rem; }
+.u-gap-md { gap: .9rem; }
+
+/* ===== Navbar Finanzas ===== */
+.finz-navbar{
+  position: sticky; top: 0;
+  z-index: 40;
+  display:flex; gap:.5rem;
+  background: rgba(17,17,17,.7);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid rgba(255,255,255,.06);
+  padding:.5rem var(--gutter);
+}
+.finz-tab{
+  display:inline-flex; align-items:center; gap:.5rem;
+  padding:.55rem .85rem;
+  border-radius: var(--radius-full);
+  color: var(--gray-200);
+  border:1px solid transparent;
+  transition: background .2s ease, color .2s ease, transform .2s ease, border-color .2s ease;
+}
+.finz-tab:hover{ background: rgba(255,255,255,.06); transform: translateY(-1px); }
+.finz-tab.is-active{
+  color:#fff;
+  background: linear-gradient(135deg, var(--primary), var(--secondary));
+  border-color: rgba(255,255,255,.15);
+}
+@media (max-width: 768px){
+  .finz-navbar{ padding-left:1rem; padding-right:1rem; overflow:auto; }
+  .finz-tab span{ display:none; } /* solo iconos en móviles */
+}
+
+/* ===================================================================== */
+/* ====== KPIs & Charts responsive sin romper el look desktop ========== */
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 12px;
+}
+
+/* Anchuras mínimas coherentes con desktop */
+.kpi-grid .card { min-width: 220px; }
+
+/* Hero responsivo */
+.finz-hero .card-title,
+.finz-hero h1 { line-height: 1.15; }
+
+/* Tablas responsivas (scroll horizontal en móvil) */
+.table-wrap {
+  overflow: auto;              /* scroll X si no cabe */
+  -webkit-overflow-scrolling: touch;
+}
+.table {
+  min-width: 880px;            /* evita que se aplaste */
+}
+
+/* Botonera/hero compactos en móviles */
+@media (max-width: 768px) {
+  .finanzas-wrap { padding: 1rem 1rem 2.5rem; }
+
+  /* KPI grids en carrusel horizontal */
+  .kpi-grid {
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(260px, 1fr);
+    grid-template-columns: none;
+    overflow-x: auto;
+    padding-bottom: 6px;
+    scrollbar-width: thin;
+  }
+  .kpi-grid .card { min-width: 260px; }
+
+  /* Ajustes de hero */
+  .finz-hero { min-height: 100px; padding: 12px 14px; }
+  .finz-hero h1 { font-size: 18px !important; }
+  .finz-hero .btn { padding: .45rem .7rem; }
+
+  /* Filtros alineados y “respirando” */
+  .finanzas-head { flex-wrap: wrap; }
+  .finanzas-head .btns { flex-wrap: wrap; }
+
+  /* Buyer section en columna (refuerzo) */
+  .order-card__buyer { grid-template-columns: 1fr !important; }
+
+  /* Tabla: celdas cómodas y nowrap */
+  .table th, .table td { padding: .55rem .6rem; white-space: nowrap; }
+}
+
+/* Navbar compacta en móvil */
+@media (max-width: 768px){
+  .finz-navbar { gap: .4rem; }
+  .finz-navbar .finz-tab { padding: .45rem .65rem; }
+}

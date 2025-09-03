@@ -1,4 +1,190 @@
-/* Navbar (compacto, fixed y sin tapar contenido) */
+/* ===========================
+   Finanzas (Vendedor) — UI
+   Tema oscuro + responsive
+   =========================== */
+
+:root{
+  --container: 1180px;
+  --gutter: 16px;
+}
+
+/* Evita scroll lateral fantasma */
+html, body { overflow-x: hidden; }
+
+/* ===== Layout contenedor ===== */
+.finanzas-wrap{
+  max-width: var(--container);
+  margin: 0 auto;
+  padding: 1rem var(--gutter) 2rem;
+}
+
+/* ===== HERO ===== */
+/* El <div class="finz-hero"> vive DENTRO de .finanzas-wrap */
+.finz-hero{
+  border: 1px solid rgba(255,255,255,.06);
+  box-shadow: 0 10px 30px rgba(0,0,0,.25);
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+/* ===== Head (título + acciones) ===== */
+.finanzas-head{
+  display:flex; align-items:center; justify-content:space-between; gap:.75rem;
+}
+.finanzas-head h1{ font-size:clamp(1.35rem,2.5vw,1.65rem); margin:0 0 .25rem; }
+.finanzas-sub{ color:var(--gray-300); font-size:.86rem; }
+
+/* Botón refresh */
+.btn-refresh{
+  display:inline-flex; align-items:center; gap:.55rem;
+  padding:.6rem .9rem; border-radius:var(--radius-md);
+  background:var(--gray-700); color:var(--light);
+  border:1px solid rgba(255,255,255,.08); box-shadow:var(--shadow-sm);
+  cursor:pointer; transition:transform .2s, box-shadow .2s, background .2s;
+}
+.btn-refresh:hover{ transform:translateY(-2px); box-shadow:var(--shadow-md); background:var(--gray-600); }
+.btn-refresh:active{ transform:translateY(0); }
+@keyframes spin-slow{ to{ transform:rotate(360deg); } }
+.animate-spin-slow{ animation:spin-slow 1.4s linear infinite; }
+
+/* ====== GRID UTIL (para KPIs y charts) ====== */
+.kpi-grid{
+  display:grid;
+  grid-template-columns: repeat(12, minmax(0,1fr));
+  gap:12px;
+  margin:12px 0;
+}
+.kpi-grid--spaced{ margin:18px 0 8px; }
+
+.span-3{ grid-column: span 3; }
+.span-4{ grid-column: span 4; }
+.span-6{ grid-column: span 6; }
+.span-8{ grid-column: span 8; }
+
+/* ===== Tarjetas genéricas ===== */
+.card{
+  background: linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.02));
+  border:1px solid var(--gray-700);
+  border-radius: var(--radius-2xl);
+  box-shadow: var(--shadow-md);
+  backdrop-filter: blur(10px);
+  overflow:hidden;
+}
+.card-header{ padding:.9rem 1rem .25rem; }
+.card-title{ margin:0; font-weight:800; color:#fff; }
+.card-subtitle{ margin:.25rem 0 0; color:var(--gray-300); font-size:.82rem; }
+.card-body{ padding:.75rem 1rem 1rem; }
+.card-body.chart{ height:180px; }
+.card-body.chart.tall{ height:200px; }
+
+.big-number{ font-size:26px; font-weight:800; }
+
+/* ===== Tabla/Inputs ligeros (select, input) ===== */
+.form-select,
+.finanzas-wrap select,
+.finanzas-wrap input[type="date"],
+.finanzas-wrap input[type="search"]{
+  background: rgba(255,255,255,.04);
+  border:1px solid rgba(255,255,255,.08);
+  color: var(--light);
+  padding:.5rem .6rem; border-radius:10px;
+  outline:none;
+}
+
+/* ===== Pedidos (cards) ===== */
+.orders-grid{ margin-top:1rem; display:grid; grid-template-columns:1fr; gap:1rem; }
+
+.order-card{
+  background: linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.02));
+  border:1px solid var(--gray-700);
+  border-radius: var(--radius-2xl);
+  box-shadow: var(--shadow-md);
+  backdrop-filter: blur(10px);
+  overflow:hidden;
+}
+
+.order-card__head{
+  display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between;
+  gap:.75rem; padding:1rem 1rem .5rem;
+}
+
+.badges{ display:flex; align-items:center; gap:.5rem; flex-wrap:wrap; }
+.badge{
+  font-size:.72rem; padding:.25rem .5rem; border-radius:var(--radius-full);
+  border:1px solid rgba(255,255,255,.08); background:rgba(255,255,255,.05); color:#fff;
+}
+.badge--status{ background: rgba(234,179,8,.18); color:#facc15; border-color:rgba(234,179,8,.35); }
+.badge--payment{ background: rgba(59,130,246,.18); color:#93c5fd; border-color:rgba(59,130,246,.35); }
+
+.order-meta{ display:flex; align-items:center; gap:.4rem; font-size:.78rem; color:var(--gray-300); }
+
+.order-card__buyer{
+  display:grid; grid-template-columns:1fr 1fr 1fr; gap:.6rem; padding:.5rem 1rem 0;
+}
+.order-card__buyer div{
+  display:inline-flex; align-items:center; gap:.45rem; color:#fff;
+  background: rgba(255,255,255,.03);
+  border: 1px solid rgba(255,255,255,.06);
+  border-radius: var(--radius-md);
+  padding: .5rem .65rem;
+}
+
+.order-items{
+  margin-top:.75rem; padding:.75rem 1rem;
+  background:rgba(255,255,255,.03);
+  border-top:1px dashed rgba(255,255,255,.08);
+  border-bottom:1px dashed rgba(255,255,255,.08);
+}
+.order-item{
+  display:flex; align-items:center; justify-content:space-between; gap:.75rem;
+  padding:.55rem 0; border-bottom:1px solid rgba(255,255,255,.06);
+}
+.order-item:last-child{ border-bottom:0; }
+.order-item__name{ font-weight:700; color:#fff; font-size:.96rem; }
+.order-item__opt{ color:var(--gray-300); font-size:.78rem; margin-top:.15rem; }
+.order-item__qty{ color:var(--gray-300); font-size:.85rem; text-align:right; }
+.order-item__money{ font-weight:800; color:#fff; }
+
+.order-totals{ display:grid; gap:.4rem; padding-top:.35rem; }
+.order-row{ display:flex; align-items:center; justify-content:space-between; color:var(--gray-300); font-size:.92rem; }
+.order-row--total{ color:#fff; font-weight:800; }
+
+.order-actions{ display:flex; flex-wrap:wrap; gap:.6rem; padding:.9rem 1rem 1.1rem; }
+
+/* ===== Botones ===== */
+.btn{
+  display:inline-flex; align-items:center; gap:.5rem;
+  padding:.6rem .9rem; border-radius: var(--radius-md);
+  font-weight:700; cursor:pointer; border:1px solid transparent;
+  transition: transform .2s, box-shadow .2s, background .2s, color .2s, border-color .2s;
+  box-shadow: var(--shadow-sm);
+}
+.btn:disabled{ opacity:.6; cursor:not-allowed; }
+
+.btn-ghost{ background:transparent; color:#fff; border-color:rgba(255,255,255,.1); }
+.btn-ghost:hover{ background:rgba(255,255,255,.06); transform:translateY(-1px); box-shadow:var(--shadow-md); }
+
+.btn-success{ background:linear-gradient(135deg,#059669,#10B981); color:#fff; border-color:rgba(16,185,129,.45); }
+.btn-success:hover{ transform:translateY(-2px); box-shadow:var(--shadow-md); }
+
+.btn-primary{ background:var(--gradient-primary); color:#fff; border-color:rgba(139,92,246,.45); }
+.btn-primary:hover{ transform:translateY(-2px); box-shadow:var(--shadow-md); }
+
+.btn-danger{ background:linear-gradient(135deg,#b91c1c,#ef4444); color:#fff; border-color:rgba(239,68,68,.45); }
+.btn-danger:hover{ transform:translateY(-2px); box-shadow:var(--shadow-md); }
+
+/* ===== Empty & estados ===== */
+.empty{
+  padding:1rem 1.2rem; background:rgba(255,255,255,.03);
+  border:1px dashed rgba(255,255,255,.1); border-radius:var(--radius-lg);
+  color:var(--gray-300); text-align:center;
+}
+.state-error{
+  color:#fecaca; background:rgba(239,68,68,.08);
+  border:1px solid rgba(239,68,68,.25); padding:.9rem 1rem; border-radius:var(--radius-lg);
+}
+
+/* ===== Navbar Finanzas (solo versión fixed) ===== */
 .finz-navbar{
   position: fixed; top: 0; left: 0; right: 0;
   z-index: 60;
@@ -13,66 +199,58 @@
   margin: 0 auto;
   padding: 8px var(--gutter) 10px;
 }
-
-/* Fila compacta: back + título centrado + placeholder */
-.finz-row{
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  align-items: center;
-  gap: 12px;
-}
-
+.finz-row{ display:grid; grid-template-columns:auto 1fr; align-items:center; gap:12px; }
 .finz-title{
-  text-align: center;
-  font-weight: 800;
-  letter-spacing: .2px;
-  user-select: none;
-  color: #fff;
-  font-size: clamp(.98rem, 2.2vw, 1.06rem);
+  text-align:center; font-weight:800; letter-spacing:.2px; user-select:none;
+  color:#fff; font-size: clamp(.95rem, 2.2vw, 1.05rem);
 }
-
-/* Tabs pill scrollables en móvil */
-.finz-tabs{
-  margin-top: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  flex-wrap: nowrap;
-  overflow-x: auto;           /* <- scroll horizontal si no caben */
-  -webkit-overflow-scrolling: touch;
-  scrollbar-width: thin;
-}
-.finz-tabs::-webkit-scrollbar{ height: 6px; }
-.finz-tabs::-webkit-scrollbar-thumb{
-  background: rgba(255,255,255,.15);
-  border-radius: 999px;
-}
-
-/* Píldoras */
+.finz-tabs{ margin-top:10px; display:flex; align-items:center; justify-content:center; gap:8px; flex-wrap:wrap; }
 .finz-tab{
-  display: inline-flex; align-items: center; gap: 8px;
-  padding: 9px 14px; border-radius: 12px;
-  border: 1px solid rgba(255,255,255,.08);
-  background: rgba(255,255,255,.03);
-  color: var(--gray-200);
-  white-space: nowrap;        /* evita cortes feos */
-  transition: background .2s ease, color .2s ease, transform .2s ease, border-color .2s ease;
+  display:inline-flex; align-items:center; gap:8px;
+  padding:9px 14px; border-radius:12px;
+  border:1px solid rgba(255,255,255,.08);
+  background:rgba(255,255,255,.03);
+  color:var(--gray-200);
+  transition: all .2s ease;
 }
-.finz-tab:hover{ background: rgba(255,255,255,.06); transform: translateY(-1px); }
-.finz-tab.is-active{
-  color:#fff;
+.finz-tab:hover{ background:rgba(255,255,255,.06); transform:translateY(-1px); }
+.finz-tab.is-active{ color:#fff; background:linear-gradient(135deg,var(--primary),var(--secondary)); border-color:rgba(255,255,255,.15); }
+
+/* ===== Scrollbars sutiles ===== */
+.orders-grid, .order-items{
+  scrollbar-width: thin; scrollbar-color: rgba(139,92,246,.45) transparent;
+}
+.orders-grid::-webkit-scrollbar, .order-items::-webkit-scrollbar{ height:8px; width:8px; }
+.orders-grid::-webkit-scrollbar-thumb, .order-items::-webkit-scrollbar-thumb{
   background: linear-gradient(135deg, var(--primary), var(--secondary));
-  border-color: rgba(255,255,255,.15);
+  border-radius: var(--radius-full);
 }
-.finz-text-strong{ font-weight: 700; }
 
-/* Spacer controlado por el componente (no toques) */
-.finz-spacer{ width:100%; height: var(--finz-nav-h, 64px); }
+/* ===== Breakpoints ===== */
+/* Tablet ≤ 1024px: 6 columnas */
+@media (max-width: 1024px){
+  .kpi-grid{ grid-template-columns: repeat(6, minmax(0,1fr)); }
+  .span-8{ grid-column: span 6; }
+  .span-6{ grid-column: span 6; }
+  .span-4{ grid-column: span 6; }
+  .span-3{ grid-column: span 3; }
+  .card-body.chart{ height:160px; }
+  .card-body.chart.tall{ height:180px; }
+}
 
-/* Móvil: tabs compactas, siguen con scroll horizontal */
+/* Móvil ≤ 600px: 1 columna y paddings compactos */
 @media (max-width: 600px){
-  .finz-navbar-inner{ padding: 6px 12px 8px; }
-  .finz-tab{ padding: 8px 12px; font-size: .94rem; }
-  .finz-tabs{ gap: 6px; }
+  .finanzas-wrap{ padding:.75rem .75rem 1.25rem; }
+  .kpi-grid{ grid-template-columns: 1fr; }
+  .kpi-grid > *{ grid-column: 1 / -1; }
+  .card-header{ padding:.7rem .8rem .2rem; }
+  .card-body{ padding:.6rem .8rem .8rem; }
+  .card-title{ font-size:.98rem; }
+  .big-number{ font-size:20px; }
+  .card-body.chart{ height:140px; }
+  .card-body.chart.tall{ height:160px; }
+  .order-card__buyer{ grid-template-columns:1fr; }
+  .order-item__name{ font-size:.9rem; }
+  .finz-tabs{ gap:6px; }
+  .finz-tab{ padding:8px 12px; font-size:.94rem; }
 }

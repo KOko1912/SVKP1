@@ -2,6 +2,7 @@ import React, { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import Nabvendedor from "./Nabvendedor";
 import "./Vendedor.css";
 import "./PaginaGrid.css";
+import MascotWarmupLoader from "../../components/MascotWarmupLoader";
 import {
   FiFacebook, FiInstagram, FiYoutube, FiPhone, FiMail, FiClock,
   FiMapPin, FiExternalLink, FiMessageCircle, FiShoppingBag, FiStar, FiSearch,
@@ -257,17 +258,17 @@ export default function Pagina() {
   }, [tienda?.homeLayout]);
 
   /* ===================== Render principal ===================== */
+
   if (loading) {
     return (
       <div className="vendedor-container">
         <Nabvendedor />
-        <div className="loading-screen">
-          <div className="loading-spinner" />
-          <div>Cargando tienda...</div>
-        </div>
+  
+     <MascotWarmupLoader brand="SystemVkode" healthcheckUrl={`${API}/health`} mascotSrc="/mascota-svk.png" />
       </div>
     );
   }
+
 
   if (error) {
     return (

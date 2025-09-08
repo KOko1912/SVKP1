@@ -3,6 +3,7 @@
 import React, { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import "./Vendedor/Vendedor.css";
 import "./Vendedor/PaginaGrid.css";
+import MascotWarmupLoader from "../components/MascotWarmupLoader";
 import {
   FiFacebook, FiInstagram, FiYoutube, FiPhone, FiMail, FiClock,
   FiMapPin, FiExternalLink, FiMessageCircle, FiShoppingBag, FiStar,
@@ -259,17 +260,15 @@ export default function SVKT() {
     }
   }, []);
 
-  if (loading) {
+   if (loading) {
     return (
       <div className="vendedor-container">
         {usuario ? <NavBarUsuario /> : null}
-        <div className="loading-screen">
-          <div className="loading-spinner" />
-          <div>Cargando tienda...</div>
-        </div>
+      <MascotWarmupLoader brand="SystemVkode" healthcheckUrl={`${API}/health`} mascotSrc="/mascota-svk.png" />
       </div>
     );
   }
+
 
   if (error) {
     return (

@@ -348,14 +348,18 @@ export default function PublicProducto() {
   };
 
   /* ===================== Render ===================== */
-  if (loading) {
-    return (
-      <div className="pp-loading">
-        <div className="pp-spinner" />
-        <p>Cargando producto...</p>
-      </div>
-    );
-  }
+if (loading) {
+  return (
+   <MascotWarmupLoader
+     brand="SystemVkode"
+     logoSrc="/SVKP.png"
+     mascotSrc="/mascota-svk-transparente.png"
+     healthcheckUrl={`${API}/health`}
+     compactAt={600}
+   />
+  );
+}
+
 
   if (err || !producto) {
     return (

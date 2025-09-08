@@ -1,6 +1,8 @@
 // frontend/src/pages/Vendedor/Finanzas/Inicio.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import Swal from "sweetalert2";
+import MascotWarmupLoader from "../../../components/MascotWarmupLoader.jsx";
+
 import {
   FiCheckCircle, FiXCircle, FiEye, FiRefreshCw, FiClock, FiPhone, FiMail, FiUser,
   FiDollarSign, FiMessageCircle, FiX
@@ -341,7 +343,14 @@ export default function FinanzasInicio() {
     return (
       <>
         <FinanzasNabvar />
-        <div className="finanzas-wrap"><div className="p-4 text-sm" style={{color:"var(--gray-300)"}}>Cargando Finanzas…</div></div>
+       {/* Loader con mascota (usa Portal y cubre la pantalla completa) */}
+       <MascotWarmupLoader
+         brand="SystemVkode"
+         logoSrc="/SVKP.png"
+         mascotSrc="/mascota-svk-transparente.png"   // tu PNG con fondo transparente
+         healthcheckUrl={`${API}/health`}            // opcional; si no existe, puedes quitar esta prop
+         compactAt={600}                              // breakpoint móvil
+       />
       </>
     );
   }

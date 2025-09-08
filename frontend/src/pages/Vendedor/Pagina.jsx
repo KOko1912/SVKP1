@@ -259,15 +259,22 @@ export default function Pagina() {
 
   /* ===================== Render principal ===================== */
 
-  if (loading) {
+   if (loading) {
     return (
       <div className="vendedor-container">
         <Nabvendedor />
-  
-     <MascotWarmupLoader brand="SystemVkode" healthcheckUrl={`${API}/health`} mascotSrc="/mascota-svk.png" />
+      {/* contenido de carga anterior */}
+       <MascotWarmupLoader
+         brand="SystemVkode"
+         logoSrc="/SVKP.png"
+         mascotSrc="/mascota-svk-transparente.png"
+         healthcheckUrl={`${API}/health`}
+         compactAt={600}
+       />
       </div>
     );
   }
+
 
 
   if (error) {

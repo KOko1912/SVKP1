@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import MascotWarmupLoader from "../../components/MascotWarmupLoader.jsx";
 import {
   FiTag, FiBox, FiHash, FiInfo, FiShoppingCart, FiChevronLeft, FiPackage,
   FiAlertTriangle, FiClipboard, FiTruck, FiShield, FiImage, FiExternalLink, FiX
@@ -350,13 +351,13 @@ export default function PublicProducto() {
   /* ===================== Render ===================== */
 if (loading) {
   return (
-   <MascotWarmupLoader
-     brand="SystemVkode"
-     logoSrc="/SVKP.png"
-     mascotSrc="/mascota-svk-transparente.png"
-     healthcheckUrl={`${API}/health`}
-     compactAt={600}
-   />
+    <MascotWarmupLoader
+      brand="SystemVkode"
+      logoSrc="/SVKP.png"
+      mascotSrc="/mascota-svk-transparente.png"
+      healthcheckUrl={`${API}/health`}
+      compactAt={600}
+    />
   );
 }
 

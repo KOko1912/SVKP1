@@ -173,9 +173,21 @@
   padding:4px 10px; font-size:.85rem; background: rgba(255,255,255,.06); font-family:system-ui;
 }
 .ff-desc{
-  margin:0; color:var(--ff-sub); font: 500 .98rem/1.6 system-ui, sans-serif;
-  display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; min-height:3.6em;
+  margin: 0;
+  color: var(--ff-sub);
+  font: 500 .98rem/1.6 system-ui, sans-serif;
+
+  /* clamp multi-línea */
+  display: -webkit-box;          /* WebKit */
+  -webkit-box-orient: vertical;  /* WebKit */
+  -webkit-line-clamp: 3;         /* WebKit */
+  line-clamp: 3;                 /* Estándar */
+  overflow: hidden;
+
+  /* evita “saltos” de altura: 3 líneas x 1.6em de line-height */
+  min-height: calc(1.6em * 3);
 }
+
 .ff-card-foot{ margin-top:auto; display:flex; align-items:center; justify-content:space-between; gap:12px; }
 .ff-price{ font-weight:900; font-size:1.18rem; color:#ffd166; text-shadow:0 0 10px rgba(255,209,102,.15); }
 .ff-variants{ font-size:.92rem; color:var(--ff-sub); }

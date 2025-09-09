@@ -144,9 +144,21 @@
   background: rgba(255,255,255,.06); font-family:system-ui;
 }
 .auto-desc{
-  margin:0; color:var(--auto-sub); font: 500 .96rem/1.6 system-ui, sans-serif;
-  display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; min-height:3.6em;
+  margin:0;
+  color:var(--auto-sub);
+  font: 500 .96rem/1.6 system-ui, sans-serif;
+
+  /* multi-line clamp */
+  display: -webkit-box;          /* WebKit */
+  -webkit-box-orient: vertical;  /* WebKit */
+  -webkit-line-clamp: 3;         /* WebKit */
+  line-clamp: 3;                 /* Estándar */
+  overflow: hidden;
+
+  /* opcional: asegura altura mínima de 3 líneas para evitar “bailes” */
+  min-height: calc(1.6em * 3);
 }
+
 .auto-card-foot{ margin-top:auto; display:flex; align-items:center; justify-content:space-between; gap:12px; }
 .auto-price{ font-weight:900; font-size:1.14rem; color:#7dd3fc; text-shadow:0 0 10px rgba(125,211,252,.15); }
 .auto-variants{ font-size:.92rem; color:var(--auto-sub); }

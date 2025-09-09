@@ -1,33 +1,41 @@
-// E:\SVKP1\frontend\src\pages\Vendedor\Disenos\DisenoEstiloVintage.jsx
-import React, { Fragment, useMemo, useState } from "react";
+import React, { useMemo, useState, useRef, useEffect, Fragment } from "react";
 import { Link } from "react-router-dom";
 import { buildProductoHref } from "../../../lib/productHref";
+import "./vintage.css";
 import {
   FiSearch,
   FiStar,
   FiShoppingBag,
-  FiPhone,
-  FiMail,
+  FiMessageCircle,
   FiMapPin,
   FiExternalLink,
+  FiPhone,
+  FiMail,
   FiClock,
+  FiFacebook,
+  FiInstagram,
+  FiYoutube,
+  FiGrid,
   FiHeart,
+  FiTrendingUp,
   FiLayers,
   FiShoppingCart,
-  FiGrid
 } from "react-icons/fi";
 
-/* ===== Props por defecto (alineado al editor) ===== */
+/* ===== Props por defecto (igual que editor) ===== */
 const DEFAULT_BLOCK_PROPS = {
-  hero:     { showLogo: true, showDescripcion: true, align: "center" },
+  hero: { showLogo: true, showDescripcion: true, align: "center" },
   featured: { title: "Destacados", limit: 8 },
-  grid:     { title: "Todos los productos", limit: 12, showFilter: true },
+  grid: { title: "Todos los productos", limit: 12, showFilter: true },
   category: { title: "", categoriaId: null, limit: 12, showFilter: true },
-  product:  { productoId: null },
-  banner:   { title: "Colección Exclusiva", ctaText: "Descubrir", ctaUrl: "" },
-  logo:     { shape: "rounded", frame: "thin" },
+  product: { productoId: null },
+  banner: { title: "Colección Exclusiva", ctaText: "Descubrir", ctaUrl: "" },
+  logo: { shape: "rounded", frame: "thin" },
 };
 
+/**
+ * Diseño Vintage Premium – respeta el orden/props de ConfiguracionVista
+ */
 export default function DisenoEstiloVintage({
   tienda,
   productos = [],
@@ -37,47 +45,39 @@ export default function DisenoEstiloVintage({
 }) {
   const [q, setQ] = useState("");
   const [catId, setCatId] = useState("all");
+  const [mounted, setMounted] = useState(false);
+  const [scrollProgress, setScrollProgress] = useState(0);
+  const heroRef = useRef(null);
 
-  /* ===== Paleta de lujo inspirada en marcas premium ===== */
+  // Paleta: permite usar colorPrincipal como acento si viene en gradiente/hex
   const tokens = useMemo(() => {
+    const accent =
+      extractColors(tienda?.colorPrincipal || "")?.from?.toUpperCase?.() ||
+      "#D4AF37";
     return {
-      gold: "#D4AF37",           // Dorado elegante
-      dark: "#0A0A0A",           // Negro profundo
-      light: "#FFFFFF",          // Blanco puro
-      cream: "#F7F4EF",          // Crema suave
-      gray: "#8E8E8E",           // Gris elegante
-      accent: "#D4AF37",         // Dorado como acento
-      accentSoft: "rgba(212, 175, 55, 0.15)",
-      border: "rgba(212, 175, 55, 0.2)",
-      shadow: "0 10px 30px rgba(0,0,0,0.1)",
+      gold: accent.match(/^#([0-9A-F]{6})$/i) ? accent : "#D4AF37",
+      dark: "#0A0A0A",
+      light: "#FFFFFF",
+      cream: "#F7F4EF",
+      gray: "#A8A8A8",
+      border: "rgba(212,175,55,0.25)",
+      glow: "rgba(212,175,55,0.25)",
     };
-  }, []);
+  }, [tienda?.colorPrincipal]);
 
-  /* ===== Portada / Logo / Hero props ===== */
-  const portada = toPublicSrc?.(tienda?.portada?.url || tienda?.portadaUrl) || "";
-  const logo    = toPublicSrc?.(tienda?.logo?.url || tienda?.logoUrl) || "";
-  const heroProps = {
-    ...DEFAULT_BLOCK_PROPS.hero,
-    ...(orderedBlocks.find((b) => b?.type === "hero")?.props || {}),
-  };
-
-  /* ===== Categorías y búsqueda global (fallback) ===== */
-  const catTabs = useMemo(
-    () => [{ id: "all", nombre: "Todo" }, ...categorias],
-    [categorias]
-  );
+  // Filtros globales
   const filtered = useMemo(() => {
-    let list = productos || [];
+    let list = Array.isArray(productos) ? [...productos] : [];
     if (catId !== "all") {
       const idNum = Number(catId);
       list = list.filter(
         (p) =>
-          Array.isArray(p.categorias) &&
-          p.categorias.some((pc) => Number(pc.categoriaId) === idNum)
+          Array.isArray(p?.categorias) &&
+          p.categorias.some((pc) => Number(pc?.categoriaId) === idNum)
       );
     }
     if (q.trim()) {
-      const needle = q.toLowerCase().trim();
+      const needle = q.trim().toLowerCase();
       list = list.filter((p) =>
         `${p?.nombre || ""} ${p?.descripcion || ""} ${p?.detalle || ""}`
           .toLowerCase()
@@ -87,75 +87,109 @@ export default function DisenoEstiloVintage({
     return list;
   }, [productos, catId, q]);
 
-  /* ===== Alineación hero ===== */
+  useEffect(() => {
+    setMounted(true);
+    const onScroll = () => {
+      const top = window.scrollY;
+      const h = document.body.offsetHeight - window.innerHeight;
+      setScrollProgress(h > 0 ? top / h : 0);
+    };
+    window.addEventListener("scroll", onScroll);
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
+  const portada = toPublicSrc?.(tienda?.portada?.url || tienda?.portadaUrl) || "";
+  const logo = toPublicSrc?.(tienda?.logo?.url || tienda?.logoUrl) || "";
+
+  const catTabs = useMemo(
+    () => [{ id: "all", nombre: "Todo" }, ...categoriasSafe(categorias)],
+    [categorias]
+  );
+
+  // Toma props del primer bloque hero del layout (si existiera)
+  const heroBlock = (orderedBlocks || []).find((b) => b?.type === "hero");
+  const heroProps = { ...DEFAULT_BLOCK_PROPS.hero, ...(heroBlock?.props || {}) };
+
   const alignToFlex = (align) =>
     align === "left" ? "flex-start" : align === "right" ? "flex-end" : "center";
 
   return (
-    <div className="luxury-root">
-      <style>{cssLuxury(tokens)}</style>
+    <div className="vintage-root">
+      {/* Barra de progreso sutil */}
+      <div className="vintage-scroll">
+        <div
+          className="vintage-scroll-bar"
+          style={{
+            width: `${scrollProgress * 100}%`,
+            background: tokens.gold,
+          }}
+        />
+      </div>
 
-      {/* HERO ELEGANTE */}
+      {/* HERO */}
       <header
-        className="luxury-hero"
+        ref={heroRef}
+        className={`vintage-hero ${mounted ? "mounted" : ""}`}
         style={{
           backgroundImage: portada
-            ? `linear-gradient(rgba(10,10,10,0.7), rgba(10,10,10,0.5)), url(${portada})`
-            : `linear-gradient(135deg, ${tokens.dark}, #2A2A2A)`,
+            ? `linear-gradient(rgba(10,10,10,0.75), rgba(10,10,10,0.6)), url(${portada})`
+            : `linear-gradient(135deg, ${tokens.dark}, #1b1b1b)`,
         }}
       >
-        <div className="luxury-hero-overlay" />
+        <div className="vintage-hero-overlay" />
         <div
-          className="luxury-hero-content"
+          className="vintage-hero-content"
           style={{ alignItems: alignToFlex(heroProps.align), textAlign: heroProps.align }}
         >
-          {heroProps.showLogo && (
+          {heroProps.showLogo ? (
             logo ? (
-              <div className="luxury-logo-frame">
-                <img src={logo} alt="logo" className="luxury-logo" />
-                <div className="luxury-logo-glow"></div>
+              <div className="vintage-logo-frame" style={{ borderColor: tokens.gold }}>
+                <img className="vintage-logo" src={logo} alt="logo" />
+                <div className="vintage-logo-glow" />
               </div>
             ) : (
-              <div className="luxury-logo placeholder">
-                <FiGrid size={32} />
+              <div className="vintage-logo placeholder" style={{ color: tokens.gold }}>
+                <FiGrid size={36} />
               </div>
             )
-          )}
-          <div className="luxury-hero-text">
-            <h1 className="luxury-title">{tienda?.nombre || "Mi Tienda"}</h1>
+          ) : null}
+
+          <div className="vintage-title-wrap">
+            <h1 className="vintage-title">{tienda?.nombre || "Mi Tienda"}</h1>
             {heroProps.showDescripcion && tienda?.descripcion ? (
-              <p className="luxury-subtitle">{tienda.descripcion}</p>
+              <p className="vintage-subtitle">{tienda.descripcion}</p>
             ) : null}
           </div>
-          <div className="luxury-hero-ornament">
-            <div className="luxury-hero-line"></div>
-            <div className="luxury-hero-diamond"></div>
-            <div className="luxury-hero-line"></div>
+
+          <div className="vintage-ornament">
+            <span className="vintage-line" />
+            <span className="vintage-diamond" style={{ background: tokens.gold }} />
+            <span className="vintage-line" />
           </div>
         </div>
       </header>
 
-      {/* NAV: búsqueda minimalista + categorías */}
-      <nav className="luxury-nav">
-        <div className="luxury-container luxury-nav-inner">
-          <div className="luxury-search-container">
-            <FiSearch className="luxury-search-icon" />
+      {/* NAV */}
+      <nav className="vintage-nav" style={{ borderColor: tokens.border }}>
+        <div className="vintage-nav-inner">
+          <div className="vintage-search">
+            <FiSearch className="vintage-search-icon" />
             <input
               type="search"
               placeholder="Buscar productos…"
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              className="luxury-search-input"
+              className="vintage-search-input"
             />
           </div>
 
-          <div className="luxury-cats">
+          <div className="vintage-cats">
             {catTabs.map((c) => {
               const active = String(catId) === String(c.id);
               return (
                 <button
-                  key={String(c.id)}
-                  className={`luxury-chip ${active ? "active" : ""}`}
+                  key={`${c.id}`}
+                  className={`vintage-chip ${active ? "active" : ""}`}
                   onClick={() => setCatId(String(c.id))}
                   title={c.nombre}
                 >
@@ -168,35 +202,41 @@ export default function DisenoEstiloVintage({
       </nav>
 
       {/* MAIN */}
-      <main className="luxury-main luxury-container">
+      <main className="vintage-main">
+        <VintageStatsSection
+          productosCount={productos.length}
+          categoriasCount={categorias.length}
+        />
+
         {Array.isArray(orderedBlocks) && orderedBlocks.length > 0 ? (
-          <RenderBlocksLuxury
+          <RenderBlocksVintage
             layout={orderedBlocks}
             productos={productos}
-            categorias={categorias}
+            categorias={categoriasSafe(categorias)}
             tienda={tienda}
             toPublicSrc={toPublicSrc}
+            globalQuery={q}
           />
         ) : (
           <>
             {productos.some((p) => p.destacado) && (
-              <LuxurySection title="Productos Destacados" icon={<FiStar />}>
-                <div className="luxury-grid">
+              <VintageSection title="Productos Destacados" icon={<FiStar />}>
+                <div className="vintage-grid">
                   {productos
                     .filter((p) => p.destacado)
                     .slice(0, 8)
                     .map((p) => (
-                      <LuxuryProductCard
+                      <VintageProductCard
                         key={p.id || p.uuid}
                         p={p}
                         toPublicSrc={toPublicSrc}
                       />
                     ))}
                 </div>
-              </LuxurySection>
+              </VintageSection>
             )}
 
-            <LuxurySection
+            <VintageSection
               title={
                 catId === "all"
                   ? q.trim()
@@ -204,7 +244,7 @@ export default function DisenoEstiloVintage({
                     : "Todos los productos"
                   : `${
                       (
-                        [{ id: "all", nombre: "Todo" }, ...categorias].find(
+                        [{ id: "all", nombre: "Todo" }, ...categoriasSafe(categorias)].find(
                           (x) => String(x.id) === String(catId)
                         ) || { nombre: "Categoría" }
                       ).nombre
@@ -213,9 +253,9 @@ export default function DisenoEstiloVintage({
               icon={<FiShoppingBag />}
             >
               {filtered.length ? (
-                <div className="luxury-grid">
+                <div className="vintage-grid">
                   {filtered.map((p) => (
-                    <LuxuryProductCard
+                    <VintageProductCard
                       key={p.id || p.uuid}
                       p={p}
                       toPublicSrc={toPublicSrc}
@@ -223,51 +263,84 @@ export default function DisenoEstiloVintage({
                   ))}
                 </div>
               ) : (
-                <div className="luxury-empty">
+                <div className="vintage-empty">
                   <FiShoppingBag size={40} />
                   <p>No se encontraron productos.</p>
                 </div>
               )}
-            </LuxurySection>
+            </VintageSection>
           </>
         )}
 
-        {/* Info de tienda elegante */}
-        <LuxurySection title="Información" icon={<FiHeart />}>
-          <div className="luxury-info">
-            <div className="l-info-card">
-              <h3><FiPhone /> Contacto</h3>
+        {/* Info */}
+        <VintageSection title="Información de Contacto" icon={<FiHeart />}>
+          <div className="vintage-info-grid">
+            <VintageInfoCard title="Contacto" icon={<FiPhone />}>
               {tienda?.telefonoContacto && (
-                <p>
+                <div className="vintage-contact-item">
+                  <FiPhone />
                   <a href={`tel:${tienda.telefonoContacto}`}>{tienda.telefonoContacto}</a>
-                </p>
+                </div>
               )}
               {tienda?.email && (
-                <p>
+                <div className="vintage-contact-item">
+                  <FiMail />
                   <a href={`mailto:${tienda.email}`}>{tienda.email}</a>
-                </p>
+                </div>
               )}
               {tienda?.ubicacionUrl && (
-                <p>
+                <div className="vintage-contact-item">
+                  <FiMapPin />
                   <a href={tienda.ubicacionUrl} target="_blank" rel="noreferrer">
                     Ver ubicación <FiExternalLink />
                   </a>
-                </p>
+                </div>
               )}
-            </div>
-            <div className="l-info-card">
-              <h3><FiClock /> Horario</h3>
-              <LuxuryHours horario={tienda?.horario} />
-            </div>
+              {tienda?.whatsapp && (
+                <div className="vintage-contact-item">
+                  <FiMessageCircle />
+                  <a
+                    target="_blank"
+                    rel="noreferrer"
+                    href={`https://wa.me/${String(tienda.whatsapp).replace(/[^0-9]/g, "")}`}
+                  >
+                    WhatsApp
+                  </a>
+                </div>
+              )}
+            </VintageInfoCard>
+
+            <VintageInfoCard title="Horario" icon={<FiClock />}>
+              <VintageHours horario={tienda?.horario} />
+            </VintageInfoCard>
+
+            <VintageInfoCard title="Redes" icon={<FiHeart />}>
+              <div className="vintage-social">
+                {tienda?.redes?.facebook && (
+                  <a href={tienda.redes.facebook} target="_blank" rel="noreferrer">
+                    <FiFacebook /> <span>Facebook</span>
+                  </a>
+                )}
+                {tienda?.redes?.instagram && (
+                  <a href={tienda.redes.instagram} target="_blank" rel="noreferrer">
+                    <FiInstagram /> <span>Instagram</span>
+                  </a>
+                )}
+                {tienda?.redes?.tiktok && (
+                  <a href={tienda.redes.tiktok} target="_blank" rel="noreferrer">
+                    <FiYoutube /> <span>TikTok</span>
+                  </a>
+                )}
+              </div>
+            </VintageInfoCard>
           </div>
-        </LuxurySection>
+        </VintageSection>
       </main>
 
-      {/* FOOTER ELEGANTE */}
-      <footer className="luxury-footer">
-        <div className="luxury-container l-footer-inner">
+      <footer className="vintage-footer">
+        <div className="vintage-footer-inner">
           <span>© {new Date().getFullYear()} {tienda?.nombre || "Mi Tienda"}</span>
-          <span className="luxury-dot">•</span>
+          <span className="vintage-dot">•</span>
           <span>Colección Exclusiva</span>
         </div>
       </footer>
@@ -275,18 +348,27 @@ export default function DisenoEstiloVintage({
   );
 }
 
-/* ====== Render de bloques guardados ====== */
-function RenderBlocksLuxury({
+/* ========= Render de BLOQUES guardados ========= */
+function RenderBlocksVintage({
   layout = [],
   productos = [],
   categorias = [],
   tienda,
   toPublicSrc,
+  globalQuery = "",
 }) {
   const catName = (id) =>
     categorias.find((c) => Number(c.id) === Number(id))?.nombre || "Categoría";
 
-  const Section = LuxurySection;
+  const applyGlobal = (arr, p) => {
+    if (!p?.showFilter || !globalQuery.trim()) return arr;
+    const needle = globalQuery.trim().toLowerCase();
+    return arr.filter((x) =>
+      `${x?.nombre || ""} ${x?.descripcion || ""} ${x?.detalle || ""}`
+        .toLowerCase()
+        .includes(needle)
+    );
+  };
 
   return (
     <>
@@ -294,41 +376,42 @@ function RenderBlocksLuxury({
         const type = b?.type;
         const p = { ...(DEFAULT_BLOCK_PROPS[type] || {}), ...(b?.props || {}) };
 
-        if (type === "hero") return null; // ya se renderizó arriba
+        if (type === "hero") return null;
 
         if (type === "featured") {
-          const list = (productos || []).filter((x) => x.destacado).slice(0, p.limit ?? 8);
-          if (!list.length) return null;
+          const list = (productos || []).filter((x) => x.destacado);
+          const display = applyGlobal(list, p).slice(0, p.limit ?? 8);
+          if (!display.length) return null;
           return (
-            <Section key={b.id} title={p.title || "Destacados"} icon={<FiStar />}>
-              <div className="luxury-grid">
-                {list.map((prod) => (
-                  <LuxuryProductCard
+            <VintageSection key={b.id} title={p.title || "Destacados"} icon={<FiStar />}>
+              <div className="vintage-grid">
+                {display.map((prod) => (
+                  <VintageProductCard
                     key={prod.id || prod.uuid}
                     p={prod}
                     toPublicSrc={toPublicSrc}
                   />
                 ))}
               </div>
-            </Section>
+            </VintageSection>
           );
         }
 
         if (type === "grid") {
-          const list = (productos || []).slice(0, p.limit ?? 12);
+          const list = applyGlobal([...productos], p).slice(0, p.limit ?? 12);
           if (!list.length) return null;
           return (
-            <Section key={b.id} title={p.title || "Todos los productos"} icon={<FiShoppingBag />}>
-              <div className="luxury-grid">
+            <VintageSection key={b.id} title={p.title || "Todos los productos"} icon={<FiShoppingBag />}>
+              <div className="vintage-grid">
                 {list.map((prod) => (
-                  <LuxuryProductCard
+                  <VintageProductCard
                     key={prod.id || prod.uuid}
                     p={prod}
                     toPublicSrc={toPublicSrc}
                   />
                 ))}
               </div>
-            </Section>
+            </VintageSection>
           );
         }
 
@@ -339,20 +422,21 @@ function RenderBlocksLuxury({
             (prod) =>
               Array.isArray(prod.categorias) &&
               prod.categorias.some((pc) => Number(pc.categoriaId) === id)
-          ).slice(0, p.limit ?? 12);
-          if (!list.length) return null;
+          );
+          const display = applyGlobal(list, p).slice(0, p.limit ?? 12);
+          if (!display.length) return null;
           return (
-            <Section key={b.id} title={p.title || catName(id)} icon={<FiShoppingBag />}>
-              <div className="luxury-grid">
-                {list.map((prod) => (
-                  <LuxuryProductCard
+            <VintageSection key={b.id} title={p.title || catName(id)} icon={<FiShoppingBag />}>
+              <div className="vintage-grid">
+                {display.map((prod) => (
+                  <VintageProductCard
                     key={prod.id || prod.uuid}
                     p={prod}
                     toPublicSrc={toPublicSrc}
                   />
                 ))}
               </div>
-            </Section>
+            </VintageSection>
           );
         }
 
@@ -362,36 +446,34 @@ function RenderBlocksLuxury({
           const prod = (productos || []).find((x) => Number(x.id) === id);
           if (!prod) return null;
           return (
-            <Section key={b.id} title={prod.nombre || "Producto"} icon={<FiShoppingBag />}>
-              <div className="luxury-grid">
-                <LuxuryProductCard p={prod} toPublicSrc={toPublicSrc} />
+            <VintageSection key={b.id} title={prod.nombre || "Producto"} icon={<FiShoppingBag />}>
+              <div className="vintage-grid">
+                <VintageProductCard p={prod} toPublicSrc={toPublicSrc} />
               </div>
-            </Section>
+            </VintageSection>
           );
         }
 
         if (type === "banner") {
           const src = toPublicSrc?.(tienda?.bannerPromoUrl);
           return (
-            <section key={b.id} className="l-section">
-              <div className="l-head">
-                <div className="l-icon"><FiLayers /></div>
-                <h2 className="l-title">{p.title || "Colección Exclusiva"}</h2>
-                <div className="l-line" />
+            <section key={b.id} className="v-section">
+              <div className="v-head">
+                <div className="v-icon"><FiLayers /></div>
+                <h2 className="v-title">{p.title || "Colección Exclusiva"}</h2>
+                <div className="v-line" />
               </div>
               <div
-                className="l-banner"
-                style={{
-                  backgroundImage: src ? `url(${src})` : undefined,
-                }}
+                className="v-banner"
+                style={{ backgroundImage: src ? `url(${src})` : undefined }}
               >
                 {p.ctaText ? (
                   p.ctaUrl ? (
-                    <a href={p.ctaUrl} target="_blank" rel="noreferrer" className="l-cta">
+                    <a className="v-cta" href={p.ctaUrl} target="_blank" rel="noreferrer">
                       {p.ctaText} <FiExternalLink />
                     </a>
                   ) : (
-                    <em className="l-cta muted">{p.ctaText}</em>
+                    <em className="v-cta muted">{p.ctaText}</em>
                   )
                 ) : null}
               </div>
@@ -402,8 +484,8 @@ function RenderBlocksLuxury({
         if (type === "logo") {
           const src = toPublicSrc?.(tienda?.logo?.url || tienda?.logoUrl);
           return (
-            <section key={b.id} className="l-section l-center">
-              {src ? <img src={src} alt="logo" style={{ maxWidth: 180, filter: "brightness(0) invert(1)" }} /> : null}
+            <section key={b.id} className="v-section v-center">
+              {src ? <img src={src} alt="logo" style={{ maxWidth: 180, filter: "brightness(.95)" }} /> : null}
             </section>
           );
         }
@@ -414,21 +496,64 @@ function RenderBlocksLuxury({
   );
 }
 
-/* ====== Secciones y Cards ====== */
-function LuxurySection({ title, icon, children }) {
+/* ========= Componentes auxiliares ========= */
+
+function VintageStatsSection({ productosCount, categoriasCount }) {
   return (
-    <section className="l-section">
-      <div className="l-head">
-        <div className="l-icon">{icon}</div>
-        <h2 className="l-title">{title}</h2>
-        <div className="l-line" />
+    <section className="vintage-stats">
+      <div className="vintage-stats-grid">
+        <div className="vintage-stat">
+          <div className="vintage-stat-ico"><FiShoppingCart /></div>
+          <div className="vintage-stat-body">
+            <h3>{productosCount}</h3>
+            <p>Productos Totales</p>
+          </div>
+        </div>
+        <div className="vintage-stat">
+          <div className="vintage-stat-ico"><FiLayers /></div>
+          <div className="vintage-stat-body">
+            <h3>{categoriasCount}</h3>
+            <p>Categorías</p>
+          </div>
+        </div>
+        <div className="vintage-stat">
+          <div className="vintage-stat-ico"><FiTrendingUp /></div>
+          <div className="vintage-stat-body">
+            <h3>100%</h3>
+            <p>Calidad Garantizada</p>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function VintageSection({ title, icon, children }) {
+  return (
+    <section className="v-section">
+      <div className="v-head">
+        <div className="v-icon">{icon}</div>
+        <h2 className="v-title">{title}</h2>
+        <div className="v-line" />
       </div>
       {children}
     </section>
   );
 }
 
-function LuxuryProductCard({ p = {}, toPublicSrc }) {
+function VintageInfoCard({ title, icon, children }) {
+  return (
+    <div className="vintage-info-card">
+      <div className="vintage-info-head">
+        <div className="vintage-info-ico">{icon}</div>
+        <h3 className="vintage-info-title">{title}</h3>
+      </div>
+      <div className="vintage-info-content">{children}</div>
+    </div>
+  );
+}
+
+function VintageProductCard({ p = {}, toPublicSrc }) {
   const img =
     toPublicSrc?.(
       [
@@ -455,23 +580,23 @@ function LuxuryProductCard({ p = {}, toPublicSrc }) {
     (typeof p?.precio === "string" && p.precio.trim() !== "");
   const precio = (() => {
     const n = Number(p.precio || 0);
-    return isFinite(n) ? `$${n.toFixed(2)}` : "";
+    return Number.isFinite(n) ? `$${n.toFixed(2)}` : "";
   })();
 
   const to = buildProductoHref(p);
 
   const Media = ({ children }) =>
     to ? (
-      <Link to={to} className="lp-media" title="Ver detalles">
+      <Link to={to} className="vp-media" title="Ver detalles">
         {children}
       </Link>
     ) : (
-      <div className="lp-media">{children}</div>
+      <div className="vp-media">{children}</div>
     );
 
   return (
-    <article className="lp-card">
-      <div className="lp-gold-frame"></div>
+    <article className="vp-card">
+      <div className="vp-frame" />
       <Media>
         {img ? (
           <img
@@ -485,51 +610,53 @@ function LuxuryProductCard({ p = {}, toPublicSrc }) {
                 encodeURIComponent(
                   `<svg xmlns='http://www.w3.org/2000/svg' width='480' height='360'>
                      <rect width='100%' height='100%' fill='#0A0A0A'/>
-                     <text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' fill='#8E8E8E' font-family='Georgia' font-size='16'>Sin imagen</text>
+                     <text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' fill='#A8A8A8' font-family='Georgia' font-size='16'>Sin imagen</text>
                    </svg>`
                 );
             }}
           />
         ) : (
-          <div className="lp-placeholder"><FiShoppingBag size={24} /></div>
+          <div className="vp-placeholder"><FiShoppingBag size={24} /></div>
         )}
-        {p.destacado && <span className="lp-badge"><FiStar /> Exclusivo</span>}
+        {p.destacado && (
+          <span className="vp-badge"><FiStar size={14} /> Exclusivo</span>
+        )}
       </Media>
 
-      <div className="lp-body">
-        <div className="lp-top">
-          <h4 className="lp-title">
+      <div className="vp-body">
+        <div className="vp-top">
+          <h4 className="vp-title">
             {to ? (
-              <Link to={to} className="lp-link">{p?.nombre || p?.title || "Producto"}</Link>
+              <Link to={to} className="vp-link">{p?.nombre || p?.title || "Producto"}</Link>
             ) : (
               <span>{p?.nombre || p?.title || "Producto"}</span>
             )}
           </h4>
-          {categoria && <span className="lp-chip">{categoria}</span>}
+          {categoria && <span className="vp-chip">{categoria}</span>}
         </div>
 
         {p?.descripcion && (
-          <p className="lp-desc">
+          <p className="vp-desc">
             {String(p.descripcion).length > 110
               ? `${String(p.descripcion).slice(0, 110)}…`
               : String(p.descripcion)}
           </p>
         )}
 
-        <div className="lp-foot">
+        <div className="vp-foot">
           {conPrecio ? (
-            <span className="lp-price">{precio}</span>
+            <span className="vp-price">{precio}</span>
           ) : (
-            <span className="lp-variants">Variantes disponibles</span>
+            <span className="vp-variants">Con variantes</span>
           )}
-          {to && <Link to={to} className="lp-btn">Ver detalles</Link>}
+          {to && <Link to={to} className="vp-btn">Ver detalles</Link>}
         </div>
       </div>
     </article>
   );
 }
 
-function LuxuryHours({ horario = {} }) {
+function VintageHours({ horario = {} }) {
   const dias = [
     { id: "lun", label: "Lunes" },
     { id: "mar", label: "Martes" },
@@ -540,638 +667,22 @@ function LuxuryHours({ horario = {} }) {
     { id: "dom", label: "Domingo" },
   ];
   return (
-    <div className="l-hours">
+    <div className="vintage-hours">
       {dias.map((d) => (
         <Fragment key={d.id}>
-          <span className="l-hours-day">{d.label}</span>
-          <span className="l-hours-time">{horario?.[d.id] || "Cerrado"}</span>
+          <span className="vintage-hours-day">{d.label}</span>
+          <span className="vintage-hours-time">{horario?.[d.id] || "Cerrado"}</span>
         </Fragment>
       ))}
     </div>
   );
 }
 
-/* ====== CSS Elegante con Marcos Dorados ====== */
-function cssLuxury(t) {
-  return `
-:root {
-  --gold: ${t.gold};
-  --dark: ${t.dark};
-  --light: ${t.light};
-  --cream: ${t.cream};
-  --gray: ${t.gray};
-  --accent: ${t.accent};
-  --accent-soft: ${t.accentSoft};
-  --border: ${t.border};
-  --shadow: ${t.shadow};
-}
-
-* { box-sizing: border-box; margin: 0; padding: 0; }
-.luxury-root {
-  background: var(--dark);
-  color: var(--light);
-  min-height: 100dvh;
-  font-family: 'Cormorant Garamond', 'Georgia', 'Times New Roman', serif;
-  line-height: 1.6;
-}
-
-/* contenedor */
-.luxury-container {
-  width: min(1200px, 92vw);
-  margin-inline: auto;
-}
-
-/* HERO ELEGANTE */
-.luxury-hero {
-  position: relative;
-  min-height: 85vh;
-  display: grid;
-  place-items: center;
-  padding: 80px 20px;
-  background-size: cover;
-  background-position: center;
-  overflow: hidden;
-}
-.luxury-hero-overlay {
-  position: absolute; 
-  inset: 0;
-  background: linear-gradient(180deg, rgba(10,10,10,0.8), rgba(10,10,10,0.9));
-}
-.luxury-hero-content {
-  position: relative; 
-  z-index: 2;
-  width: min(1100px, 92vw);
-  display: flex; 
-  flex-direction: column; 
-  gap: 28px;
-  align-items: center; 
-  text-align: center;
-}
-
-.luxury-logo-frame {
-  position: relative;
-  padding: 12px;
-  border: 2px solid var(--gold);
-  border-radius: 50%;
-  background: rgba(0,0,0,0.3);
-  box-shadow: 0 0 30px rgba(212, 175, 55, 0.3);
-}
-
-.luxury-logo {
-  width: 100px; 
-  height: 100px; 
-  object-fit: contain;
-  border-radius: 50%;
-  background: var(--light);
-  padding: 8px;
-}
-
-.luxury-logo.placeholder { 
-  width: 100px; 
-  height: 100px; 
-  border: 2px dashed var(--gold);
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-  color: var(--gold);
-}
-
-.luxury-logo-glow {
-  position: absolute;
-  top: -5px;
-  left: -5px;
-  right: -5px;
-  bottom: -5px;
-  border: 1px solid var(--gold);
-  border-radius: 50%;
-  animation: gold-pulse 3s infinite alternate;
-}
-
-@keyframes gold-pulse {
-  0% { box-shadow: 0 0 10px var(--gold); }
-  100% { box-shadow: 0 0 20px var(--gold), 0 0 30px rgba(212, 175, 55, 0.5); }
-}
-
-.luxury-title {
-  font-family: "Cormorant Garamond", "Georgia", serif;
-  font-weight: 600;
-  font-size: clamp(2.5rem, 7vw, 4rem);
-  letter-spacing: 1px;
-  color: var(--light);
-  text-transform: uppercase;
-  margin: 0;
-}
-
-.luxury-subtitle {
-  font-size: clamp(1.1rem, 3vw, 1.4rem);
-  max-width: 680px;
-  color: var(--gray);
-  font-style: italic;
-  font-weight: 300;
-}
-
-.luxury-hero-ornament {
-  display: flex;
-  align-items: center;
-  gap: 20px;
-  margin-top: 20px;
-}
-
-.luxury-hero-line {
-  height: 1px;
-  width: 80px;
-  background: linear-gradient(90deg, transparent, var(--gold), transparent);
-}
-
-.luxury-hero-diamond {
-  width: 8px;
-  height: 8px;
-  background: var(--gold);
-  transform: rotate(45deg);
-}
-
-/* NAV ELEGANTE */
-.luxury-nav {
-  position: sticky; 
-  top: 0; 
-  z-index: 10;
-  background: rgba(10,10,10,0.95);
-  backdrop-filter: blur(10px);
-  border-bottom: 1px solid var(--border);
-}
-.luxury-nav-inner {
-  display: flex; 
-  align-items: center; 
-  gap: 24px; 
-  padding: 16px 0; 
-  flex-wrap: wrap;
-}
-
-.luxury-search-container {
-  position: relative;
-  flex: 1;
-  min-width: 280px;
-}
-
-.luxury-search-icon {
-  position: absolute;
-  left: 16px;
-  top: 50%;
-  transform: translateY(-50%);
-  color: var(--gray);
-  z-index: 2;
-}
-
-.luxury-search-input {
-  width: 100%;
-  padding: 14px 14px 14px 44px;
-  background: rgba(255,255,255,0.08);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  color: var(--light);
-  font-family: inherit;
-  font-size: 0.95rem;
-  transition: all 0.3s ease;
-}
-
-.luxury-search-input:focus {
-  outline: none;
-  background: rgba(255,255,255,0.12);
-  border-color: var(--gold);
-  box-shadow: 0 0 0 3px var(--accent-soft);
-}
-
-.luxury-cats { 
-  display: flex; 
-  gap: 8px; 
-  flex-wrap: wrap; 
-}
-
-.luxury-chip {
-  padding: 10px 20px; 
-  border-radius: 20px; 
-  border: 1px solid var(--border);
-  background: rgba(255,255,255,0.05);
-  color: var(--gray); 
-  font-family: 'Inter', sans-serif;
-  font-size: 0.9rem; 
-  cursor: pointer;
-  transition: all 0.3s ease;
-}
-
-.luxury-chip:hover { 
-  background: rgba(212, 175, 55, 0.1);
-  color: var(--light);
-}
-
-.luxury-chip.active {
-  background: var(--gold);
-  color: var(--dark);
-  border-color: var(--gold);
-  font-weight: 500;
-}
-
-/* MAIN / SECTION */
-.luxury-main { 
-  position: relative; 
-  z-index: 1; 
-  padding: 60px 0 100px; 
-}
-
-.l-section { 
-  margin: 50px 0 40px; 
-}
-
-.l-head { 
-  display: flex; 
-  align-items: center; 
-  gap: 16px; 
-  margin-bottom: 30px; 
-}
-
-.l-icon { 
-  width: 40px; 
-  height: 40px; 
-  display: grid; 
-  place-items: center;
-  background: rgba(212, 175, 55, 0.1); 
-  border: 1px solid var(--border); 
-  border-radius: 10px; 
-  color: var(--gold);
-}
-
-.l-title {
-  font-family: "Cormorant Garamond", "Georgia", serif;
-  font-size: clamp(1.6rem, 4vw, 2.2rem);
-  font-weight: 600;
-  color: var(--light);
-  margin: 0;
-  text-transform: uppercase;
-  letter-spacing: 1px;
-}
-
-.l-line { 
-  height: 1px; 
-  background: linear-gradient(90deg, var(--gold), transparent);
-  flex: 1; 
-}
-
-/* GRID ELEGANTE */
-.luxury-grid {
-  display: grid; 
-  gap: 30px;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-}
-
-/* CARD DE LUJO CON MARCO DORADO */
-.lp-card {
-  position: relative;
-  background: rgba(20, 20, 20, 0.8);
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  overflow: hidden;
-  box-shadow: var(--shadow);
-  display: flex; 
-  flex-direction: column; 
-  height: 100%;
-  transition: transform 0.3s ease, box-shadow 0.3s ease;
-}
-
-.lp-card:hover { 
-  transform: translateY(-5px); 
-  box-shadow: 0 20px 40px rgba(0,0,0,0.3), 0 0 30px rgba(212, 175, 55, 0.2);
-}
-
-.lp-gold-frame {
-  position: absolute;
-  top: -1px;
-  left: -1px;
-  right: -1px;
-  bottom: -1px;
-  border: 2px solid transparent;
-  border-radius: 16px;
-  background: linear-gradient(45deg, transparent, var(--gold), transparent) border-box;
-  mask: linear-gradient(#fff 0 0) padding-box, linear-gradient(#fff 0 0);
-  mask-composite: exclude;
-  pointer-events: none;
-  opacity: 0.7;
-  transition: opacity 0.3s ease;
-}
-
-.lp-card:hover .lp-gold-frame {
-  opacity: 1;
-  animation: frame-glow 2s infinite alternate;
-}
-
-@keyframes frame-glow {
-  0% { box-shadow: 0 0 10px rgba(212, 175, 55, 0.5); }
-  100% { box-shadow: 0 0 20px rgba(212, 175, 55, 0.8); }
-}
-
-.lp-media { 
-  position: relative; 
-  display: block; 
-  overflow: hidden;
-}
-
-.lp-media img, .lp-placeholder {
-  width: 100%; 
-  aspect-ratio: 4/3; 
-  object-fit: cover; 
-  display: block;
-  background: #1A1A1A;
-  transition: transform 0.6s ease;
-}
-
-.lp-card:hover .lp-media img {
-  transform: scale(1.05);
-}
-
-.lp-placeholder { 
-  display: grid; 
-  place-items: center; 
-  color: var(--gray);
-}
-
-.lp-badge {
-  position: absolute; 
-  top: 12px; 
-  left: 12px;
-  display: inline-flex; 
-  align-items: center; 
-  gap: 6px;
-  background: rgba(10,10,10,0.9);
-  border: 1px solid var(--gold);
-  border-radius: 20px; 
-  padding: 8px 14px; 
-  font-size: 0.8rem; 
-  color: var(--gold);
-  font-family: 'Inter', sans-serif;
-  font-weight: 500;
-  backdrop-filter: blur(10px);
-}
-
-.lp-body { 
-  padding: 20px; 
-  display: flex; 
-  flex-direction: column; 
-  gap: 12px; 
-  flex: 1; 
-}
-
-.lp-top { 
-  display: flex; 
-  align-items: flex-start; 
-  justify-content: space-between; 
-  gap: 12px; 
-}
-
-.lp-title {
-  margin: 0; 
-  font-size: 1.1rem; 
-  line-height: 1.3;
-  font-family: "Cormorant Garamond", "Georgia", serif;
-  font-weight: 600;
-  color: var(--light);
-}
-
-.lp-link { 
-  color: inherit; 
-  text-decoration: none; 
-}
-
-.lp-link:hover { 
-  color: var(--gold);
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
-
-.lp-chip {
-  border: 1px solid var(--border); 
-  border-radius: 12px; 
-  padding: 4px 10px; 
-  font-size: 0.8rem; 
-  color: var(--gray); 
-  background: rgba(255,255,255,0.05);
-  font-family: 'Inter', sans-serif;
-}
-
-.lp-desc { 
-  margin: 0; 
-  color: var(--gray); 
-  font-size: 0.95rem; 
-  flex: 1; 
-  font-style: italic;
-}
-
-.lp-foot { 
-  display: flex; 
-  align-items: center; 
-  justify-content: space-between; 
-  gap: 12px; 
-  margin-top: auto; 
-}
-
-.lp-price {
-  font-weight: 700; 
-  color: var(--gold); 
-  font-family: "Cormorant Garamond", "Georgia", serif;
-  font-size: 1.2rem;
-}
-
-.lp-variants { 
-  font-size: 0.86rem; 
-  color: var(--gray); 
-}
-
-.lp-btn {
-  border: 1px solid var(--border); 
-  border-radius: 10px; 
-  padding: 10px 16px;
-  background: linear-gradient(180deg, rgba(212, 175, 55, 0.1), rgba(212, 175, 55, 0.05));
-  text-decoration: none; 
-  color: var(--light); 
-  font-family: 'Inter', sans-serif;
-  font-weight: 500; 
-  font-size: 0.9rem;
-  transition: all 0.3s ease;
-}
-
-.lp-btn:hover { 
-  background: linear-gradient(180deg, rgba(212, 175, 55, 0.2), rgba(212, 175, 55, 0.1));
-  border-color: var(--gold);
-  box-shadow: 0 0 15px rgba(212, 175, 55, 0.2);
-}
-
-/* Banner */
-.l-banner {
-  min-height: 240px; 
-  background-size: cover; 
-  background-position: center;
-  border-radius: 16px; 
-  border: 1px solid var(--border);
-  display: grid; 
-  place-items: center; 
-  overflow: hidden;
-  position: relative;
-}
-
-.l-banner:before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(45deg, rgba(10,10,10,0.7), rgba(10,10,10,0.5));
-}
-
-.l-cta { 
-  position: relative;
-  z-index: 2;
-  color: var(--light); 
-  font-weight: 600; 
-  text-decoration: none;
-  font-family: "Cormorant Garamond", serif;
-  font-size: 1.2rem;
-  padding: 12px 24px;
-  border: 1px solid var(--gold);
-  border-radius: 8px;
-  background: rgba(212, 175, 55, 0.1);
-  transition: all 0.3s ease;
-}
-
-.l-cta:hover {
-  background: rgba(212, 175, 55, 0.2);
-  box-shadow: 0 0 20px rgba(212, 175, 55, 0.3);
-}
-
-.l-cta.muted { 
-  color: var(--gray); 
-  font-style: normal; 
-  font-weight: 500; 
-  border: none;
-  background: none;
-}
-
-/* Empty */
-.luxury-empty {
-  border: 2px dashed var(--border); 
-  border-radius: 16px;
-  padding: 60px 20px; 
-  color: var(--gray); 
-  display: grid; 
-  place-items: center; 
-  gap: 16px;
-  background: rgba(255,255,255,0.03);
-}
-
-/* Info */
-.luxury-info {
-  display: grid; 
-  gap: 24px; 
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-}
-
-.l-info-card {
-  background: rgba(20, 20, 20, 0.8); 
-  border: 1px solid var(--border); 
-  border-radius: 16px; 
-  padding: 24px;
-  box-shadow: var(--shadow);
-  position: relative;
-  overflow: hidden;
-}
-
-.l-info-card:before {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background: linear-gradient(90deg, transparent, var(--gold), transparent);
-}
-
-.l-info-card h3 { 
-  margin: 0 0 16px 0; 
-  font-size: 1.1rem; 
-  display: flex; 
-  align-items: center; 
-  gap: 10px; 
-  color: var(--gold);
-  font-family: "Cormorant Garamond", serif;
-}
-
-.l-info-card p { 
-  margin: 8px 0; 
-}
-
-.l-info-card a { 
-  color: var(--light); 
-  text-decoration: none;
-  transition: color 0.3s ease;
-}
-
-.l-info-card a:hover { 
-  color: var(--gold);
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
-
-/* Horario */
-.l-hours {
-  display: grid; 
-  grid-template-columns: 1fr auto; 
-  gap: 8px 16px;
-  font-variant-numeric: tabular-nums;
-}
-
-.l-hours-day { 
-  color: var(--light);
-  font-family: 'Inter', sans-serif;
-}
-
-.l-hours-time { 
-  color: var(--gray);
-  font-family: 'Inter', sans-serif;
-}
-
-/* FOOTER ELEGANTE */
-.luxury-footer {
-  border-top: 1px solid var(--border);
-  background: rgba(10,10,10,0.95);
-  backdrop-filter: blur(10px);
-}
-
-.l-footer-inner {
-  padding: 24px 0; 
-  display: flex; 
-  gap: 12px; 
-  align-items: center; 
-  justify-content: center; 
-  color: var(--gray);
-  font-family: 'Inter', sans-serif;
-}
-
-.luxury-dot { 
-  opacity: 0.6; 
-}
-
-/* Responsive */
-@media (max-width: 768px) {
-  .luxury-hero { min-height: 70vh; padding: 60px 20px; }
-  .luxury-nav-inner { padding: 12px 0; flex-direction: column; gap: 16px; }
-  .luxury-search-container { min-width: 100%; }
-  .luxury-cats { justify-content: center; }
-  .luxury-grid { grid-template-columns: 1fr; }
-  .l-head { flex-direction: column; align-items: flex-start; gap: 12px; }
-  .l-line { width: 100%; }
-  .lp-top { flex-direction: column; align-items: flex-start; }
-  .lp-foot { flex-direction: column; align-items: flex-start; gap: 12px; }
-  .lp-btn { align-self: stretch; text-align: center; }
-  .l-footer-inner { flex-direction: column; gap: 8px; text-align: center; }
-  .luxury-dot { display: none; }
-}
-
-/* Fuentes */
-@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600&display=swap');
-`;
+/* ========= Utils ========= */
+function categoriasSafe(c) {
+  return Array.isArray(c) ? c : [];
+}
+function extractColors(gradientString) {
+  const m = gradientString?.match(/#([0-9a-f]{6})/gi);
+  return { from: m?.[0] || "", to: m?.[1] || "" };
 }

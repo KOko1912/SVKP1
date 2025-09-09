@@ -1,16 +1,15 @@
 // E:\SVKP1\frontend\src\pages\Vendedor\Disenos\DisenoEstiloComidaRapida.jsx
 import React, { Fragment, useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import {
   FiSearch, FiStar, FiShoppingBag, FiMessageCircle, FiMapPin, FiExternalLink,
   FiPhone, FiMail, FiClock, FiFacebook, FiInstagram, FiYoutube, FiFramer, FiLoader
 } from "react-icons/fi";
+import { buildProductoHref } from "../../../lib/productHref";
+import "./comidarapida.css";
 
 /**
  * Diseño Estilo Comida Rápida – cálido, enérgico y directo
- * Props compatibles con Pagina.jsx:
- * - tienda, productos, categorias, orderedBlocks
- * - toPublicSrc (func), API, FILES, isPublic (opcionales)
  */
 export default function DisenoEstiloComidaRapida({
   tienda,
@@ -55,8 +54,6 @@ export default function DisenoEstiloComidaRapida({
 
   return (
     <div className="fastfood-root">
-      <style>{FASTFOOD_CSS}</style>
-
       {/* Fondo con textura "plancha" y halos cálidos */}
       <div className="ff-bg" aria-hidden="true">
         <div className="ff-halos" />
@@ -433,7 +430,10 @@ function FFRowSection({ title, icon, items = [], enableSearch = false, storeKey,
         <div className="ff-grid">
           {filtered.length ? (
             filtered.map((p) => (
-              <FFCard key={p.id || p.uuid || `p-${Math.random()}`} p={p} storeKey={storeKey} toPublicSrc={toPublicSrc} />
+              <FFCard
+                key={p.id || p.uuid || `p-${Math.random()}`}
+                p={p}
+              />
             ))
           ) : (
             <div className="ff-empty">
@@ -446,7 +446,10 @@ function FFRowSection({ title, icon, items = [], enableSearch = false, storeKey,
         <div className="ff-scroll" ref={ref}>
           {filtered.length ? (
             filtered.map((p) => (
-              <FFCard key={p.id || p.uuid || `p-${Math.random()}`} p={p} storeKey={storeKey} toPublicSrc={toPublicSrc} />
+              <FFCard
+                key={p.id || p.uuid || `p-${Math.random()}`}
+                p={p}
+              />
             ))
           ) : (
             <div className="ff-empty">
@@ -477,18 +480,17 @@ function FFRowSection({ title, icon, items = [], enableSearch = false, storeKey,
   );
 }
 
-function FFCard({ p = {}, storeKey, toPublicSrc }) {
-  const img = normalizePublicSrc(
-    toPublicSrc,
-    [
-      p?.imagenes?.find((x) => x?.isPrincipal)?.url,
-      p?.imagenes?.[0]?.url,
-      p?.imagen,
-      p?.thumb,
-      p?.foto,
-      p?.cover,
-    ].filter(Boolean)[0]
-  );
+function FFCard({ p = {} }) {
+  const navigate = useNavigate();
+
+  const img = [
+    p?.imagenes?.find((x) => x?.isPrincipal)?.url,
+    p?.imagenes?.[0]?.url,
+    p?.imagen,
+    p?.thumb,
+    p?.foto,
+    p?.cover,
+  ].filter(Boolean)[0];
 
   const categoria =
     p?.categoria?.nombre ||
@@ -505,13 +507,8 @@ function FFCard({ p = {}, storeKey, toPublicSrc }) {
   const precioNum = Number(p.precio || 0);
   const precio = isFinite(precioNum) ? `$${precioNum.toFixed(2)}` : "";
 
-  // URL pública
-  const to = useMemo(() => {
-    const pid = p?.uuid || p?.publicUuid || p?.id;
-    if (!pid) return null;
-    if (storeKey) return `/t/${encodeURIComponent(storeKey)}/producto/${encodeURIComponent(pid)}`;
-    return `/producto/${encodeURIComponent(pid)}`;
-  }, [p?.uuid, p?.publicUuid, p?.id, storeKey]);
+  // Ruta absoluta del producto (igual que Cyberpunk)
+  const to = useMemo(() => buildProductoHref(p), [p]);
 
   const Media = ({ children }) =>
     to ? (
@@ -523,6 +520,12 @@ function FFCard({ p = {}, storeKey, toPublicSrc }) {
     );
 
   const short = (s) => (String(s || "").length > 96 ? `${String(s).slice(0, 96)}…` : String(s || ""));
+
+  const goDetail = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (to) navigate(to);
+  };
 
   return (
     <article className="ff-card" aria-label={p?.nombre || "Producto"}>
@@ -582,9 +585,13 @@ function FFCard({ p = {}, storeKey, toPublicSrc }) {
             <span className="ff-variants">Con variantes</span>
           )}
           {to && (
-            <Link to={to} className="ff-btn ff-btn-primary ff-btn-sm">
+            <button
+              type="button"
+              onClick={goDetail}
+              className="ff-btn ff-btn-primary ff-btn-sm"
+            >
               Ver detalle
-            </Link>
+            </button>
           )}
         </div>
       </div>
@@ -813,210 +820,3 @@ function bestTextOn(hexA, hexB) {
   const L = (luminance(hexToRgb(hexA)) + luminance(hexToRgb(hexB))) / 2;
   return L > 0.45 ? "#161616" : "#ffffff";
 }
-
-/* ===================== CSS (estilo comida rápida) ===================== */
-const FASTFOOD_CSS = `
-:root{
-  --ff-bg: #0b0b0b;
-  --ff-surface: rgba(255,255,255,0.04);
-  --ff-border: rgba(255,255,255,0.10);
-  --ff-text: #fffbea;
-  --ff-sub: #ffe7b8;
-  --ff-from: #ef4444; /* ketchup */
-  --ff-to: #f59e0b;   /* mostaza */
-  --ff-contrast: #ffffff;
-  --ff-grease: rgba(0,0,0,.18);
-  --ff-smoke: rgba(255,255,255,.08);
-}
-
-.fastfood-root{
-  background: radial-gradient(1200px 700px at 0% -10%, var(--ff-grease), transparent 60%),
-              radial-gradient(1200px 700px at 100% -10%, var(--ff-smoke), transparent 60%),
-              var(--ff-bg);
-  color: var(--ff-text);
-  min-height: 100vh;
-  line-height: 1.55;
-  font-family: 'Bebas Neue', ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial;
-  position: relative;
-  overflow-x: hidden;
-  letter-spacing:.2px;
-}
-
-/* Background texture */
-.ff-bg{ position: fixed; inset: 0; pointer-events:none; z-index:0; }
-.ff-halos{ position:absolute; inset:-10% -10% -10% -10%;
-  background:
-    radial-gradient(40% 30% at 20% 20%, var(--ff-from), transparent 60%),
-    radial-gradient(40% 30% at 80% 10%, var(--ff-to), transparent 60%);
-  filter: blur(40px); opacity:.18;
-}
-.ff-dots{
-  position:absolute; inset:0;
-  background-image:
-    radial-gradient(1px 1px at 10px 10px, rgba(255,255,255,.06) 50%, transparent 55%),
-    radial-gradient(1px 1px at 40px 30px, rgba(255,255,255,.06) 50%, transparent 55%);
-  background-size: 60px 60px; opacity:.25;
-}
-
-/* HERO */
-.ff-hero{
-  position:relative; min-height:520px; display:flex; align-items:center; justify-content:center;
-  padding:84px 18px; background-size:cover; background-position:center; overflow:hidden; isolation:isolate;
-}
-.ff-hero-fx{ position:absolute; inset:0; opacity:.22; background:
-  radial-gradient(circle at 20% 50%, var(--ff-from) 0%, transparent 55%),
-  radial-gradient(circle at 80% 20%, var(--ff-to) 0%, transparent 55%); filter: blur(22px);
-}
-.ff-hero-content{ position:relative; z-index:2; max-width:1100px; width:100%; text-align:center; }
-.ff-logo-wrap{ position:relative; display:inline-block; margin-bottom:22px; }
-.ff-hero-logo{
-  width:112px; height:112px; object-fit:contain; border-radius:20px;
-  border:2px solid rgba(255,255,255,.25); background:#0006; box-shadow:0 0 28px rgba(0,0,0,.35);
-}
-.ff-logo-steam{ position:absolute; top:50%; left:50%; width:160px; height:160px; transform:translate(-50%,-50%);
-  border-radius:50%; filter:blur(16px); background: radial-gradient(circle, var(--ff-from), transparent 60%); opacity:.35; }
-.ff-title{
-  font-size:clamp(2.8rem,6.2vw,4.2rem); font-weight:900; margin:0 0 10px 0;
-  text-shadow: 0 0 15px rgba(0,0,0,.6); letter-spacing:1px;
-}
-.ff-subtitle{ max-width:720px; margin:0 auto; opacity:.96; font: 500 1.15rem/1.6 system-ui, sans-serif; color:var(--ff-sub); }
-.ff-hero-stripes{ display:flex; align-items:center; justify-content:center; gap:14px; margin-top:22px; color:var(--ff-sub); }
-.ff-hero-stripes > span{ width:120px; height:3px; background:linear-gradient(90deg, transparent, var(--ff-from), transparent); border-radius:4px; }
-.ff-hero-indicator{ position:absolute; bottom:24px; left:50%; transform:translateX(-50%); opacity:.9; animation: ff-bounce 1.8s infinite; color:var(--ff-sub) }
-@keyframes ff-bounce { 0%,20%,50%,80%,100%{ transform:translateX(-50%) translateY(0) } 40%{ transform:translateX(-50%) translateY(-10px) } 60%{ transform:translateX(-50%) translateY(-5px) } }
-
-/* SECTION + CARDS */
-.ff-section{ max-width:1200px; margin:0 auto; padding:42px 18px; position:relative; z-index:1; }
-.ff-card.vendor{ background: var(--ff-surface); border:1px solid var(--ff-border); border-radius:18px; overflow:hidden; backdrop-filter: blur(10px); }
-.ff-card.vendor::before{ content:""; position:absolute; left:0; right:0; top:0; height:3px; background:linear-gradient(90deg, transparent, var(--ff-from), var(--ff-to), transparent); }
-.ff-vendor-head{ display:flex; gap:18px; align-items:center; padding:22px 22px 8px; }
-.ff-vendor-logo{ width:76px; height:76px; border-radius:16px; object-fit:contain; border:2px solid var(--ff-border); background:#0005; }
-.ff-vendor-logo.placeholder{ width:76px; height:76px; border-radius:16px; background:#161616; border:2px dashed var(--ff-border); }
-.ff-vendor-name{ margin:0; font-size:1.55rem; font-weight:900; letter-spacing:.5px; }
-.ff-vendor-tags{ display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; }
-.ff-vendor-tags > span{ border:1px solid var(--ff-border); color:#fff8d9; font-size:.9rem; padding:6px 10px; border-radius:999px; background:rgba(255,255,255,.06); font-family:system-ui; }
-.ff-vendor-body{ padding:10px 22px 22px; }
-.ff-vendor-desc{ margin:8px 0 16px; color:var(--ff-sub); font: 500 1.05rem/1.7 system-ui, sans-serif; }
-.ff-cta-row{ display:flex; flex-wrap:wrap; gap:10px; }
-.ff-btn{ border:1px solid var(--ff-border); background:rgba(255,255,255,.06); color:var(--ff-text); padding:.65rem 1rem; border-radius:12px; text-decoration:none; display:inline-flex; align-items:center; gap:8px; transition: all .22s ease; font-weight:700; font-family:system-ui; }
-.ff-btn:hover{ background:rgba(255,255,255,.12); transform: translateY(-2px); }
-.ff-btn-primary{ border-color:transparent; background:linear-gradient(135deg, var(--ff-from), var(--ff-to)); color:#151515; }
-
-/* Hours */
-.ff-hours{ margin-top:18px; background: var(--ff-surface); border:1px solid var(--ff-border); border-radius:18px; padding:18px; backdrop-filter: blur(10px); }
-.ff-hours > h3{ margin:0 0 12px; display:flex; align-items:center; gap:10px; color:#ffe7b8; font-family:system-ui; }
-.ff-hours-grid{ display:grid; grid-template-columns:1fr auto; gap:8px 14px; }
-.ff-hours-day.today, .ff-hours-time.today{ color:#ffd166; font-weight:800; }
-
-/* Row head */
-.ff-row-head{ display:flex; gap:14px; align-items:center; justify-content:space-between; margin-bottom:18px; flex-wrap:wrap; }
-.ff-section-title{ display:flex; align-items:center; gap:10px; font-size:1.45rem; font-weight:900; margin:0; letter-spacing:.6px; }
-.ff-count{ color:var(--ff-sub); font-weight:700; font-size:1rem; margin-left:6px; font-family:system-ui; }
-.ff-icon{ color:#ffd166; filter: drop-shadow(0 0 10px rgba(255,209,102,.15)); }
-.ff-search{ position:relative; display:inline-flex; align-items:center; gap:10px; border:1px solid var(--ff-border); padding:9px 14px; border-radius:12px; background:rgba(255,255,255,.06); min-width:280px; }
-.ff-search input{ outline:none; border:0; background:transparent; color:var(--ff-text); min-width:0; width:200px; font-family:system-ui; }
-.ff-search-underline{ position:absolute; left:0; bottom:0; width:100%; height:2px; transform:scaleX(0); background:linear-gradient(90deg,transparent,var(--ff-from),var(--ff-to),transparent); transition:transform .25s; }
-.ff-search:focus-within .ff-search-underline{ transform:scaleX(1); }
-
-/* grid/carrusel */
-.ff-grid{ display:grid; grid-template-columns: repeat(auto-fill, minmax(280px,1fr)); gap:22px; }
-.ff-scroll{ position:relative; display:grid; grid-auto-flow:column; grid-auto-columns:78%; gap:18px; overflow-x:auto; scroll-snap-type:x mandatory; padding-bottom:10px; }
-@media (min-width:480px) and (max-width:1023.98px){ .ff-scroll{ grid-auto-columns:60%; } }
-.ff-scroll > .ff-card{ scroll-snap-align:start; }
-.ff-scroll-btn{
-  position:sticky; top:40%; align-self:center; z-index:4; opacity:0; pointer-events:none; transform:translateY(-50%);
-  border:1px solid var(--ff-border); background:rgba(20,20,20,.92); backdrop-filter:blur(10px);
-  width:40px; height:40px; border-radius:999px; display:grid; place-items:center; color:var(--ff-text); font-size:1.2rem;
-}
-.ff-scroll-btn.left{ left:8px; }
-.ff-scroll-btn.right{ right:8px; margin-left:auto; }
-.ff-scroll-btn.show{ opacity:1; pointer-events:auto; }
-.ff-empty{
-  grid-column:1/-1; text-align:center; padding:60px 20px; border:2px dashed var(--ff-border);
-  border-radius:16px; color:var(--ff-sub);
-}
-
-/* Card */
-.ff-card{
-  position:relative; border-radius:18px; overflow:hidden; background: var(--ff-surface);
-  border:1px solid var(--ff-border); display:flex; flex-direction:column; min-height:360px; transition:transform .2s ease, box-shadow .2s ease;
-}
-.ff-card:hover { transform: translateY(-3px); box-shadow: 0 15px 35px rgba(0,0,0,0.35); }
-.ff-card-glow{ position:absolute; inset:0; border-radius:18px; box-shadow:0 0 26px rgba(255,209,102,.18) inset; opacity:0; transition:opacity .2s; }
-.ff-card:hover .ff-card-glow{ opacity:.6; }
-.ff-card-media{
-  position:relative; display:block; width:100%; aspect-ratio:4/3;
-  background:rgba(255,255,255,.06); overflow:hidden;
-}
-.ff-card-media img{ width:100%; height:100%; object-fit:cover; transition:transform .45s; display:block; }
-.ff-card:hover .ff-card-media img{ transform:scale(1.06); }
-.ff-img-ph{ width:100%; height:100%; display:grid; place-items:center; color:var(--ff-sub); }
-.ff-badge{
-  position:absolute; top:12px; left:12px; display:inline-flex; align-items:center; gap:6px;
-  font-size:.85rem; padding:8px 12px; border-radius:999px; background:rgba(0,0,0,.65);
-  border:1px solid var(--ff-border); color:#ffd166; backdrop-filter:blur(8px); font-family:system-ui;
-}
-.ff-card-body{ padding:16px; display:flex; flex-direction:column; gap:12px; flex:1; }
-.ff-card-head{ display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
-.ff-title-sm{ margin:0; font-weight:900; line-height:1.15; color:var(--ff-text); text-decoration:none; font-size:1.08rem; letter-spacing:.3px; }
-.ff-title-sm:focus { outline: 2px solid var(--ff-to); outline-offset: 2px; border-radius: 6px; }
-.ff-chip{
-  border:1px solid var(--ff-border); color:var(--ff-sub); border-radius:999px;
-  padding:4px 10px; font-size:.85rem; background: rgba(255,255,255,.06); font-family:system-ui;
-}
-.ff-desc{
-  margin:0; color:var(--ff-sub); font: 500 .98rem/1.6 system-ui, sans-serif;
-  display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; min-height:3.6em;
-}
-.ff-card-foot{ margin-top:auto; display:flex; align-items:center; justify-content:space-between; gap:12px; }
-.ff-price{ font-weight:900; font-size:1.18rem; color:#ffd166; text-shadow:0 0 10px rgba(255,209,102,.15); }
-.ff-variants{ font-size:.92rem; color:var(--ff-sub); }
-.ff-btn-sm{ padding:.55rem .85rem; border-radius:10px; }
-
-/* Banner */
-.ff-banner{
-  position:relative; border-radius:18px; overflow:hidden; border:1px solid var(--ff-border);
-  min-height:170px; display:flex; align-items:center; padding:26px; background-size:cover; background-position:center;
-}
-.ff-banner-steam{ position:absolute; inset:0; background:
-  radial-gradient(80% 60% at 0% 0%, rgba(255,255,255,.12), transparent 60%),
-  radial-gradient(80% 60% at 100% 0%, rgba(255,255,255,.12), transparent 60%); mix-blend-mode:screen; pointer-events:none; }
-.ff-banner-inner{ position:relative; z-index:2; display:flex; gap:16px; align-items:center; }
-.ff-banner-title{ font-size:1.55rem; font-weight:900; letter-spacing:.5px; }
-.ff-banner-cta-muted{ margin-left:10px; opacity:.9; }
-
-/* Policies & Social */
-.ff-policies{ display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:18px; }
-.ff-policy-card{ background: var(--ff-surface); border:1px solid var(--ff-border); border-radius:16px; padding:20px; position:relative; backdrop-filter: blur(10px); }
-.ff-policy-card h3{ margin:0 0 10px; color:#ffd166; }
-.ff-policy-line{ position:absolute; top:0; left:0; right:0; height:3px; background:linear-gradient(90deg,transparent,var(--ff-from),var(--ff-to),transparent); }
-.ff-paylist{ display:flex; flex-wrap:wrap; gap:10px; }
-.ff-paylist > span{ background:rgba(255,255,255,.06); border:1px solid var(--ff-border); padding:6px 10px; border-radius:999px; }
-
-.ff-social{ display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:14px; }
-.ff-social-link{ display:flex; align-items:center; gap:12px; text-decoration:none; color:var(--ff-text);
-  border:1px solid var(--ff-border); border-radius:12px; padding:14px; background:rgba(255,255,255,.06); transition: all .2s ease; }
-.ff-social-link:hover{ background:rgba(255,255,255,.1); transform: translateY(-3px); }
-
-/* Footer */
-.ff-footer{ border-top:1px solid var(--ff-border); margin-top:40px; background:#0f0f0f; position:relative; padding:26px 0; }
-.ff-footer-inner{ max-width:1200px; margin:0 auto; padding:0 22px; display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; }
-.ff-footer-right{ display:flex; align-items:center; gap:10px; color:var(--ff-sub); font-family:system-ui; }
-.ff-dot{ width:5px; height:5px; border-radius:999px; background:var(--ff-sub); }
-.ff-footer-steam{ position:absolute; inset:0; background: radial-gradient(30% 20% at 70% 0%, rgba(255,255,255,.06), transparent 60%); pointer-events:none; }
-
-/* Motion reduce */
-@media (prefers-reduced-motion: reduce){
-  * { animation: none !important; transition: none !important; }
-}
-
-/* Responsive */
-@media (max-width:480px){
-  .ff-grid{ grid-template-columns:1fr; }
-  .ff-hero { min-height: 420px; padding: 44px 15px; }
-  .ff-title { font-size: 2.35rem; }
-  .ff-vendor-head { flex-direction: column; text-align: center; }
-  .ff-cta-row { justify-content: center; }
-  .ff-footer-inner { flex-direction: column; text-align: center; }
-}
-`;

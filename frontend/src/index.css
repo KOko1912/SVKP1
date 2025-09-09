@@ -21,3 +21,28 @@ code {
   display: flex;
   flex-direction: column;
 }
+/* elimina márgenes colapsados y paddings globales arriba */
+html, body, #root { margin: 0; padding: 0; }
+
+/* si el layout del panel mete un spacer para la appbar, lo anulamos */
+.pv-header-spacer,
+.pv-toolbar-spacer,
+.pv-top-spacer,
+.header-spacer {
+  height: 0 !important;
+  padding: 0 !important;
+  margin: 0 !important;
+}
+
+/* asegura que las vistas de tienda no empujen hacia abajo */
+.fastfood-root,
+.cyberpunk-root {
+  margin-top: 0 !important;
+  padding-top: 0 !important;
+}
+
+/* evita que el primer hijo colapse margen hacia el body */
+.fastfood-root > *:first-child,
+.cyberpunk-root > *:first-child {
+  margin-top: 0 !important;
+}

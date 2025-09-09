@@ -20,6 +20,10 @@ const PASS_SELECT = {
   foto: { select: { id: true, url: true, provider: true, key: true } },
 };
 
+// Hash dummy para comparación constante cuando no hay usuario/contraseña
+// (hash de la palabra "dummy")
+const DUMMY_HASH = '$2a$10$C0nSTAntTimePAdDingE2e1y/5iB8P5y2dS5QzQ8pF9F2F8cs5NHu';
+
 const isHashed = (s) => typeof s === 'string' && /^\$2[aby]\$/.test(s);
 async function hashPassword(plain) { return bcrypt.hash(String(plain), 10); }
 
@@ -113,38 +117,58 @@ exports.crearUsuario = async (payload = {}) => {
 };
 
 exports.loginUsuario = async (payload = {}) => {
-  const { telefono } = payload;
+  const telRaw = payload.telefono ?? '';
+  const telNorm = String(telRaw).replace(/\D/g, ''); // sólo dígitos
   const plain =
     payload.password ??
     payload.contrasena ??
     payload['contraseña'] ??
     payload.contrasenia;
 
-  const usuario = await prisma.usuario.findUnique({ where: { telefono } });
-  if (!usuario) {
-    const e = new Error('Usuario no encontrado');
-    e.status = 404;
+  if (!telNorm && !telRaw) {
+    const e = new Error('Teléfono es requerido');
+    e.status = 400;
+    throw e;
+  }
+  if (!plain) {
+    const e = new Error('Contraseña es requerida');
+    e.status = 400;
     throw e;
   }
 
+  // 1) Intentamos encontrar por distintas variantes (con/sin símbolos)
+  const usuario = await prisma.usuario.findFirst({
+    where: {
+      OR: [
+        { telefono: telNorm },
+        { telefono: String(telRaw) },
+      ],
+    },
+  });
+
+  // 2) Comparación en tiempo constante (aunque no exista usuario)
   const stored = getStoredPasswordFromUser(usuario);
-  if (!stored) {
-    const e = new Error('Contraseña no configurada');
-    e.status = 401;
-    throw e;
-  }
+  const toCompare = stored ?? DUMMY_HASH;
 
-  const ok = isHashed(stored)
-    ? await bcrypt.compare(String(plain), String(stored))
-    : String(plain) === String(stored ?? '');
+  const ok = isHashed(toCompare)
+    ? await bcrypt.compare(String(plain), String(toCompare))
+    : String(plain) === String(toCompare ?? '');
 
-  if (!ok) {
+  if (!usuario || !ok) {
     const e = new Error('Credenciales inválidas');
     e.status = 401;
     throw e;
   }
 
-  // Traemos con SELECT consistente para exponer fotoUrl
+  // 3) Si la contraseña estaba en texto plano y coincidió, migramos a bcrypt
+  if (!isHashed(stored)) {
+    try {
+      const newHash = await hashPassword(plain);
+      await tryUpdatePassword(usuario.id, newHash);
+    } catch (_) {}
+  }
+
+  // 4) Traemos con SELECT consistente para exponer fotoUrl
   const u = await prisma.usuario.findUnique({ where: { id: usuario.id }, select: PASS_SELECT });
   return { usuario: mapUsuario(u) };
 };

@@ -70,6 +70,11 @@ function randomId() {
    ========================= */
 const LAYOUT_MODES = { TEMPLATE_6x20: 'TEMPLATE_6x20', FREE: 'FREE' };
 
+// templates que el backend acepta
+const ALLOWED_TEMPLATES = new Set([
+  'classic', 'cyberpunk', 'brujil', 'auto', 'fastfood', 'japanese', 'fashion', 'vintage'
+]);
+
 function clamp(min, max, v) {
   const n = Number.isFinite(+v) ? +v : min;
   return Math.min(max, Math.max(min, n));
@@ -123,15 +128,26 @@ function clampByMode(gs, type, mode, cols) {
   }
   return g;
 }
+
+/**
+ * ¡Ahora preserva meta.templateId!
+ */
 function normalizeHomeLayout(raw) {
-  let meta = { mode: LAYOUT_MODES.FREE };
+  let meta = { mode: LAYOUT_MODES.FREE, templateId: undefined };
   let blocks = [];
+
   if (Array.isArray(raw)) {
     blocks = raw;
   } else if (raw && typeof raw === 'object') {
-    meta = { mode: raw?.meta?.mode === LAYOUT_MODES.TEMPLATE_6x20 ? LAYOUT_MODES.TEMPLATE_6x20 : LAYOUT_MODES.FREE };
+    const modeRaw = raw?.meta?.mode;
+    const tplRaw  = raw?.meta?.templateId;
+    meta = {
+      mode: modeRaw === LAYOUT_MODES.TEMPLATE_6x20 ? LAYOUT_MODES.TEMPLATE_6x20 : LAYOUT_MODES.FREE,
+      templateId: typeof tplRaw === 'string' ? tplRaw.toLowerCase().trim() : undefined,
+    };
     blocks = Array.isArray(raw.blocks) ? raw.blocks : [];
   }
+
   const cols = meta.mode === LAYOUT_MODES.TEMPLATE_6x20 ? 6 : 12;
   const normalized = blocks.map((b, i) => {
     const type = String(b?.type || '').trim() || 'custom';
@@ -180,6 +196,7 @@ router.get('/me', async (req, res) => {
           moneda: 'MXN',
           seoKeywords: [],
           aliases: [],
+          homeTemplate: 'classic',
         },
         include: { portada: true, logo: true, banner: true },
       });
@@ -193,54 +210,57 @@ router.get('/me', async (req, res) => {
 });
 
 /* =========================
-   PUT /api/tienda/me
-   (actualiza datos; las imágenes van por /upload/:slot)
+   PUT/PATCH /api/tienda/me
    ========================= */
-router.put('/me', async (req, res) => {
+router.put('/me', updateMe);
+router.patch('/me', updateMe);
+
+async function updateMe(req, res) {
   try {
     const userId = getUserId(req);
     if (!userId) return res.status(401).json({ error: 'No autorizado' });
 
     const ALLOWED = new Set([
-      'nombre',
-      'descripcion',
-      'categoria',
-      'subcategorias',
-      'telefonoContacto',
-      'email',
-      'horario',
-      'metodosPago',
-      'redes',
-      'envioCobertura',
-      'envioCosto',
-      'envioTiempo',
-      'devoluciones',
-      'colorPrincipal',
-      'seoKeywords',
-      'seoDescripcion',
-      'homeLayout',
-      'moneda',
-      'ciudad',
-      'pais',
-      'whatsapp',
-      'skuRef',
-      'aliases',
+      'nombre','descripcion','categoria','subcategorias','telefonoContacto','email','horario',
+      'metodosPago','redes','envioCobertura','envioCosto','envioTiempo','devoluciones',
+      'colorPrincipal','seoKeywords','seoDescripcion','homeLayout','homeTemplate','moneda',
+      'ciudad','pais','whatsapp','skuRef','aliases','ubicacionUrl'
     ]);
 
     const raw = Object.assign({}, req.body || {});
     const data = {};
     for (const k of Object.keys(raw)) if (ALLOWED.has(k)) data[k] = raw[k];
 
-    if (data.homeLayout !== undefined) data.homeLayout = normalizeHomeLayout(data.homeLayout);
+    // Carga la tienda actual (para fallback de template)
+    const current = await prisma.tienda.findFirst({ where: { usuarioId: userId } });
+
+    // Normaliza/parsea layout y conserva templateId
+    let layoutObj;
+    if (data.homeLayout !== undefined) {
+      layoutObj = normalizeHomeLayout(data.homeLayout);
+      data.homeLayout = layoutObj;
+    }
+
     if (data.seoKeywords !== undefined) data.seoKeywords = normalizeTokenArray(data.seoKeywords, { maxItems: 30, maxLen: 40 });
     if (data.aliases !== undefined) data.aliases = normalizeTokenArray(data.aliases, { maxItems: 30, maxLen: 40 });
     if (data.subcategorias !== undefined) data.subcategorias = normalizeTokenArray(data.subcategorias, { maxItems: 20, maxLen: 40 });
     if (data.metodosPago !== undefined) data.metodosPago = normalizeTokenArray(data.metodosPago, { maxItems: 15, maxLen: 20 });
     if (data.email !== undefined) data.email = String(data.email || '').trim() || null;
     if (data.skuRef !== undefined) data.skuRef = normalizeSkuRef(data.skuRef);
+    if (data.ubicacionUrl !== undefined) data.ubicacionUrl = String(data.ubicacionUrl || '').trim() || null;
 
-    const current = await prisma.tienda.findFirst({ where: { usuarioId: userId } });
+    // === Nuevo: resolver homeTemplate ===
+    const tplFromBody = typeof raw.homeTemplate === 'string' ? raw.homeTemplate.toLowerCase().trim() : '';
+    const tplFromMeta = layoutObj?.meta?.templateId ? String(layoutObj.meta.templateId).toLowerCase().trim() : '';
+    const currentTpl  = current?.homeTemplate ? String(current.homeTemplate).toLowerCase() : 'classic';
 
+    let finalTemplate = currentTpl;
+    if (ALLOWED_TEMPLATES.has(tplFromBody))      finalTemplate = tplFromBody;
+    else if (ALLOWED_TEMPLATES.has(tplFromMeta)) finalTemplate = tplFromMeta;
+
+    data.homeTemplate = finalTemplate;
+
+    // UPSERT
     let updated = await prisma.tienda.upsert({
       where: { usuarioId: userId },
       create: {
@@ -251,12 +271,14 @@ router.put('/me', async (req, res) => {
         moneda: 'MXN',
         seoKeywords: [],
         aliases: [],
+        homeTemplate: finalTemplate,
         ...data,
       },
       update: data,
       include: { portada: true, logo: true, banner: true },
     });
 
+    // si cambió el nombre y aún no está publicada ni con slug manual, ajusta slug
     if (current && data.nombre && data.nombre !== current.nombre) {
       if (!current.isPublished && (!current.slug || current.slug.trim() === '')) {
         const base = slugify(data.nombre);
@@ -277,7 +299,7 @@ router.put('/me', async (req, res) => {
     console.error(e);
     res.status(500).json({ error: 'No se pudo actualizar la tienda' });
   }
-});
+}
 
 /* =========================
    GET /api/tienda/public/:slug

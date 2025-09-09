@@ -225,11 +225,14 @@ model Tienda {
 
   homeLayout Json?
 
+  // Plantilla visual (string: "classic" | "cyberpunk")
+  homeTemplate String @default("classic")
+
   // Básicos
   nombre      String
   descripcion String?
 
-  // Branding (via Media) — relaciones nombradas
+  // Branding (via Media)
   portadaId Int?
   portada   Media? @relation("TiendaPortada", fields: [portadaId], references: [id], onDelete: SetNull)
   logoId    Int?
@@ -244,6 +247,7 @@ model Tienda {
   telefonoContacto String?
   email            String?
   horario          Json?
+  ubicacionUrl     String?   // <— añadido: utilizado por el frontend para botón “Ubicación”
 
   // Pagos y redes
   metodosPago String[] @default([])
@@ -274,7 +278,7 @@ model Tienda {
   pais     String?
   whatsapp String?
 
-  // 🔎 NUEVOS para búsqueda/refs
+  // 🔎 Nuevos para búsqueda/refs
   skuRef  String?  @db.VarChar(64)
   aliases String[] @default([])
 

@@ -1,4 +1,4 @@
-// frontend/src/pages/Vendedor/ConfiguracionVista.jsx
+// E:\SVKP1\frontend\src\pages\Vendedor\ConfiguracionVista.jsx
 // Editor de vista 6x20 – responsive y con branding consistente con Perfil
 
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
@@ -10,8 +10,8 @@ import {
 import {
   FiPlus, FiSave, FiRefreshCcw, FiSettings, FiTrash2, FiCopy,
   FiImage, FiLayers, FiStar, FiGrid, FiPackage, FiList, FiLayout,
-  FiChevronLeft, FiChevronRight, FiMaximize2, FiMinimize2, FiMove,
-  FiX, FiSliders
+  FiChevronLeft, FiChevronRight, FiMove, FiX, FiSliders, FiCheck,
+  FiSmartphone, FiMonitor, FiTablet
 } from 'react-icons/fi';
 import 'react-grid-layout/css/styles.css';
 import 'react-resizable/css/styles.css';
@@ -78,9 +78,163 @@ const extractColors = (gradientString) => {
   return { from: m?.[0] || '#6d28d9', to: m?.[1] || '#c026d3' };
 };
 
+/* ===================================================== */
+/* Mini previews para selección de plantilla (cards)      */
+/* ===================================================== */
+function TemplateCard({ id, title, desc, selected, onSelect, preview }) {
+  return (
+    <button
+      type="button"
+      onClick={() => onSelect(id)}
+      className={`tpl-card ${selected ? 'is-selected' : ''}`}
+      style={{
+        width: '100%',
+        textAlign: 'left',
+        background: 'var(--bg-card)',
+        border: selected ? '2px solid var(--primary-color)' : '1px solid var(--border-color)',
+        borderRadius: 12,
+        padding: 10,
+        display: 'grid',
+        gap: 8,
+        cursor: 'pointer',
+        transition: 'all 0.2s ease'
+      }}
+      aria-pressed={selected}
+    >
+      <div
+        className="tpl-preview"
+        style={{
+          borderRadius: 10,
+          overflow: 'hidden',
+          border: '1px solid var(--border-color)'
+        }}
+      >
+        {preview}
+      </div>
+      <div style={{display:'flex', alignItems:'center', gap:8}}>
+        <FiLayout/>
+        <strong style={{flex:1}}>{title}</strong>
+        {selected ? <FiCheck aria-label="Seleccionado"/> : null}
+      </div>
+      <p style={{margin:0, color:'var(--muted)', fontSize:'.9rem'}}>{desc}</p>
+    </button>
+  );
+}
+
+/* ---- Previews ---- */
+function ClassicPreview() {
+  return (
+    <div style={{ background: '#111827', color:'#fff', width:'100%', aspectRatio:'16/9', display:'grid', gridTemplateRows:'1fr 1fr'}}>
+      <div style={{background:'linear-gradient(135deg,#6d28d9,#c026d3)', display:'grid', placeItems:'center', position:'relative'}}>
+        <div style={{width:60, height:60, borderRadius:12, background:'#fff3', border:'1px solid #fff6'}}/>
+      </div>
+      <div style={{padding:8, display:'grid', gridTemplateColumns:'repeat(6,1fr)', gap:6, background:'#0b1220'}}>
+        {Array.from({length:12}).map((_,i)=>(<div key={i} style={{background:'#1f2937', height:38, borderRadius:6, border:'1px solid #374151'}}/>))}
+      </div>
+    </div>
+  );
+}
+function CyberpunkPreview() {
+  return (
+    <div style={{ background: '#0b0f18', color:'#fff', width:'100%', aspectRatio:'16/9', display:'grid', gridTemplateRows:'1fr 1fr'}}>
+      <div style={{background:'linear-gradient(135deg,#00e5ff,#7c3aed)', display:'grid', placeItems:'center', position:'relative'}}>
+        <div style={{
+          position:'absolute', inset:0,
+          backgroundImage:'linear-gradient(transparent 31px, rgba(255,255,255,.06) 32px), linear-gradient(90deg, transparent 31px, rgba(255,255,255,.06) 32px)',
+          backgroundSize:'32px 32px, 32px 32px',
+          maskImage:'radial-gradient(120% 80% at 50% -20%, #000 30%, transparent 70%)'
+        }}/>
+        <div style={{width:60, height:60, borderRadius:14, background:'#0006', border:'1px solid #fff3', boxShadow:'0 0 24px rgba(0,229,255,.35)'}}/>
+      </div>
+      <div style={{padding:8, display:'grid', gridTemplateColumns:'repeat(6,1fr)', gap:6, background:'#0b0f18'}}>
+        {Array.from({length:12}).map((_,i)=>(<div key={i} style={{background:'rgba(255,255,255,.06)', height:38, borderRadius:10, border:'1px solid rgba(148,163,184,.18)'}}/>))}
+      </div>
+    </div>
+  );
+}
+function BrujilPreview() {
+  return (
+    <div style={{ background: '#1a103d', color:'#f0eefc', width:'100%', aspectRatio:'16/9', display:'grid', gridTemplateRows:'1fr 1fr'}}>
+      <div style={{background:'linear-gradient(135deg,#8B5CF6,#EC4899)', display:'grid', placeItems:'center', position:'relative', overflow:'hidden'}}>
+        <div style={{position:'absolute', inset:0, backgroundImage:'radial-gradient(2px 2px at 20px 30px, #c4b5fd, transparent), radial-gradient(2px 2px at 40px 70px, #c4b5fd, transparent)', backgroundSize:'200px 100px'}}/>
+        <div style={{width:60, height:60, borderRadius:12, background:'rgba(255,255,255,0.2)', border:'1px solid rgba(255,255,255,0.4)', boxShadow:'0 0 20px rgba(139, 92, 246, 0.6)'}}/>
+      </div>
+      <div style={{padding:8, display:'grid', gridTemplateColumns:'repeat(6,1fr)', gap:6, background:'#1a103d', borderTop:'1px solid rgba(168, 85, 247, 0.3)'}}>
+        {Array.from({length:12}).map((_,i)=>(<div key={i} style={{background:'rgba(45, 31, 88, 0.8)', height:38, borderRadius:10, border:'1px solid rgba(168, 85, 247, 0.3)'}}/>))}
+      </div>
+    </div>
+  );
+}
+function AutoPreview() {
+  return (
+    <div style={{ background: '#06080d', color:'#e6f0ff', width:'100%', aspectRatio:'16/9', display:'grid', gridTemplateRows:'1fr 1fr'}}>
+      <div style={{background:'linear-gradient(135deg,#1e3a8a,#00e5ff)', display:'grid', placeItems:'center', position:'relative', overflow:'hidden'}}>
+        <div style={{position:'absolute', inset:0, backgroundImage:'linear-gradient(45deg, rgba(0,229,255,0.1) 25%, transparent 25%, transparent 50%, rgba(0,229,255,0.1) 50%, rgba(0,229,255,0.1) 75%, transparent 75%, transparent)', backgroundSize:'20px 20px'}}/>
+        <div style={{width:60, height:60, borderRadius:12, background:'rgba(255,255,255,0.1)', border:'1px solid rgba(0,229,255,0.4)', boxShadow:'0 0 20px rgba(0,229,255,0.5)'}}/>
+      </div>
+      <div style={{padding:8, display:'grid', gridTemplateColumns:'repeat(6,1fr)', gap:6, background:'#0a0f1a'}}>
+        {Array.from({length:12}).map((_,i)=>(<div key={i} style={{background:'rgba(30, 58, 138, 0.3)', height:38, borderRadius:8, border:'1px solid rgba(0,229,255,0.3)'}}/>))}
+      </div>
+    </div>
+  );
+}
+function FastfoodPreview() {
+  return (
+    <div style={{ background: '#0a0a0a', color:'#fffbea', width:'100%', aspectRatio:'16/9', display:'grid', gridTemplateRows:'1fr 1fr'}}>
+      <div style={{background:'linear-gradient(135deg,#fb8500,#ffb703)', display:'grid', placeItems:'center', position:'relative', overflow:'hidden'}}>
+        <div style={{position:'absolute', inset:0, backgroundImage:'radial-gradient(circle at 20% 30%, rgba(255,183,3,0.2) 0%, transparent 40%), radial-gradient(circle at 80% 20%, rgba(251,133,0,0.2) 0%, transparent 40%)'}}/>
+        <div style={{width:60, height:60, borderRadius:12, background:'rgba(255,255,255,0.15)', border:'1px solid rgba(255,183,3,0.5)', boxShadow:'0 0 20px rgba(255,183,3,0.4)'}}/>
+      </div>
+      <div style={{padding:8, display:'grid', gridTemplateColumns:'repeat(6,1fr)', gap:6, background:'#1a1200'}}>
+        {Array.from({length:12}).map((_,i)=>(<div key={i} style={{background:'rgba(251, 133, 0, 0.2)', height:38, borderRadius:8, border:'1px solid rgba(255,183,3,0.3)'}}/>))}
+      </div>
+    </div>
+  );
+}
+function JapanesePreview() {
+  return (
+    <div style={{ background: '#0b0b10', color:'#f5f5f7', width:'100%', aspectRatio:'16/9', display:'grid', gridTemplateRows:'1fr 1fr'}}>
+      <div style={{background:'linear-gradient(135deg,#dc2626,#ff3257)', display:'grid', placeItems:'center', position:'relative', overflow:'hidden'}}>
+        <div style={{position:'absolute', inset:0, backgroundImage:'repeating-linear-gradient(45deg, rgba(255,50,87,0.1) 0px, rgba(255,50,87,0.1) 2px, transparent 2px, transparent 4px)'}}/>
+        <div style={{width:60, height:60, borderRadius:12, background:'rgba(255,255,255,0.1)', border:'1px solid rgba(255,50,87,0.5)', boxShadow:'0 0 20px rgba(255,50,87,0.5)'}}/>
+      </div>
+      <div style={{padding:8, display:'grid', gridTemplateColumns:'repeat(6,1fr)', gap:6, background:'#150b0f'}}>
+        {Array.from({length:12}).map((_,i)=>(<div key={i} style={{background:'rgba(220, 38, 38, 0.2)', height:38, borderRadius:8, border:'1px solid rgba(255,50,87,0.3)'}}/>))}
+      </div>
+    </div>
+  );
+}
+function FashionPreview() {
+  return (
+    <div style={{ background: '#0b0b10', color:'#f8f7fb', width:'100%', aspectRatio:'16/9', display:'grid', gridTemplateRows:'1fr 1fr'}}>
+      <div style={{background:'linear-gradient(135deg,#7c3aed,#a78bfa)', display:'grid', placeItems:'center', position:'relative', overflow:'hidden'}}>
+        <div style={{position:'absolute', inset:0, backgroundImage:'linear-gradient(30deg, rgba(167,139,250,0.1) 0%, transparent 50%), linear-gradient(-30deg, rgba(124,58,237,0.1) 0%, transparent 50%)'}}/>
+        <div style={{width:60, height:60, borderRadius:12, background:'rgba(255,255,255,0.1)', border:'1px solid rgba(167,139,250,0.5)', boxShadow:'0 0 20px rgba(167,139,250,0.4)'}}/>
+      </div>
+      <div style={{padding:8, display:'grid', gridTemplateColumns:'repeat(6,1fr)', gap:6, background:'#150b23'}}>
+        {Array.from({length:12}).map((_,i)=>(<div key={i} style={{background:'rgba(124, 58, 237, 0.2)', height:38, borderRadius:8, border:'1px solid rgba(167,139,250,0.3)'}}/>))}
+      </div>
+    </div>
+  );
+}
+function VintagePreview() {
+  return (
+    <div style={{ background: '#0f0e0b', color:'#fff7e6', width:'100%', aspectRatio:'16/9', display:'grid', gridTemplateRows:'1fr 1fr'}}>
+      <div style={{background:'linear-gradient(135deg,#c2410c,#ff6f3c)', display:'grid', placeItems:'center', position:'relative', overflow:'hidden'}}>
+        <div style={{position:'absolute', inset:0, backgroundImage:'repeating-linear-gradient(45deg, rgba(255,111,60,0.1) 0px, rgba(255,111,60,0.1) 2px, transparent 2px, transparent 4px)'}}/>
+        <div style={{width:60, height:60, borderRadius:12, background:'rgba(255,255,255,0.1)', border:'1px solid rgba(255,111,60,0.5)', boxShadow:'0 0 20px rgba(255,111,60,0.4)'}}/>
+      </div>
+      <div style={{padding:8, display:'grid', gridTemplateColumns:'repeat(6,1fr)', gap:6, background:'#1a100b'}}>
+        {Array.from({length:12}).map((_,i)=>(<div key={i} style={{background:'rgba(194, 65, 12, 0.2)', height:38, borderRadius:8, border:'1px solid rgba(255,111,60,0.3)'}}/>))}
+      </div>
+    </div>
+  );
+}
+
 /* ========================= */
 /* Componente principal      */
 /* ========================= */
+const ALLOWED_SERVER_TEMPLATES = ['classic','cyberpunk','brujil','auto','fastfood','japanese','fashion','vintage'];
 export default function ConfiguracionVista(){
   // Modo de color coherente con Perfil
   const prefersLight = window.matchMedia?.('(prefers-color-scheme: light)').matches;
@@ -107,6 +261,12 @@ export default function ConfiguracionVista(){
   // Drawers en móvil
   const [leftOpen, setLeftOpen]   = useState(false); // Bloques/Acciones
   const [propsOpen, setPropsOpen] = useState(false); // Propiedades
+
+  // Template visual
+  const [homeTemplate, setHomeTemplate] = useState('classic');
+
+  // Modo de visualización (desktop, tablet, mobile)
+  const [viewMode, setViewMode] = useState('desktop');
 
   const undoStack = useRef([]);   // array de snapshots (string)
   const redoStack = useRef([]);   // array de snapshots (string)
@@ -135,6 +295,19 @@ export default function ConfiguracionVista(){
         // Aplica tema de marca (mismos tokens que Perfil)
         applyBrandTheme(dt, { persist: false });
 
+        // Template: prioriza el que venga en homeLayout.meta.templateId, luego homeTemplate, luego classic
+     const rawLS  = localStorage.getItem(localKey);
+const lsObj  = safeParse(rawLS, null);
+const tplLocal  = lsObj?.meta?.templateId;
+
+const serverLayoutObj = typeof dt?.homeLayout === 'string'
+  ? safeParse(dt.homeLayout, null)
+  : dt?.homeLayout;
+
+const tplServer = serverLayoutObj?.meta?.templateId || dt?.homeTemplate;
+const tplLoaded = (tplLocal || tplServer || 'classic').toLowerCase();
+setHomeTemplate(tplLoaded);
+
         const qs = dt?.id ? `?tiendaId=${dt.id}` : '';
         const rc = await fetch(`${API}/api/v1/categorias${qs}`, { headers, signal: ac.signal });
         setCategorias(await rc.json().catch(()=>[]));
@@ -144,7 +317,7 @@ export default function ConfiguracionVista(){
         setProductos(Array.isArray(dp?.items)? dp.items : Array.isArray(dp)? dp : []);
 
         // Layout desde BD o local
-        let rawStored = dt?.homeLayout ?? localStorage.getItem(localKey);
+       let rawStored = localStorage.getItem(localKey) ?? dt?.homeLayout;
         let stored = typeof rawStored === 'string' ? safeParse(rawStored, null) : rawStored;
         let blocks = [];
         if (Array.isArray(stored)) blocks = stored;
@@ -164,7 +337,16 @@ export default function ConfiguracionVista(){
       }
     })();
     return () => ac.abort();
-  }, []);
+  }, []); // eslint-disable-line
+
+  /* Aviso suave al cambiar de plantilla */
+  useEffect(() => {
+  const t = setTimeout(() => {
+    localStorage.setItem(localKey, JSON.stringify(buildPayload()));
+  }, 1500);
+  return () => clearTimeout(t);
+}, [items, homeTemplate]); // <-- añade homeTemplate aquí
+
 
   /* ---------------- Undo/Redo ---------------- */
   const snapshot = useCallback((arr) => JSON.stringify(arr), []);
@@ -178,48 +360,48 @@ export default function ConfiguracionVista(){
     redoStack.current = [];
   }, [snapshot]);
 
-  const undo = () => {
+  const undo = useCallback(() => {
     if (undoStack.current.length < 2) return;
     const curr = undoStack.current.pop(); // quita actual
     redoStack.current.push(curr);
     const prev = undoStack.current[undoStack.current.length - 1];
     setItems(JSON.parse(prev));
-  };
+  }, []);
 
-  const redo = () => {
+  const redo = useCallback(() => {
     if (!redoStack.current.length) return;
     const next = redoStack.current.pop();
     undoStack.current.push(next);
     setItems(JSON.parse(next));
-  };
+  }, []);
 
+  /* -- Atajos de teclado: Del, Ctrl/Cmd+D, Ctrl/Cmd+Z y Ctrl/Cmd+Shift+Z -- */
   useEffect(() => {
     const onKey = (e) => {
-      const targetIsInput = ['INPUT','TEXTAREA','SELECT'].includes(e.target.tagName);
-      // Borrar bloque seleccionado
-      if (!targetIsInput && selectedId && (e.key === 'Delete' || e.key === 'Backspace')) {
+      const key = e.key?.toLowerCase?.();
+      const mod = e.metaKey || e.ctrlKey;
+
+      // Eliminar
+      if ((key === 'delete' || key === 'backspace') && selectedId) {
         e.preventDefault();
         handleRemove(selectedId);
+        return;
+      }
+      // Duplicar
+      if (mod && key === 'd' && selectedId) {
+        e.preventDefault();
+        handleDuplicate(selectedId);
+        return;
       }
       // Undo / Redo
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); }
-      // Save
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); save(); }
-      // Duplicar
-      if (!targetIsInput && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') {
+      if (mod && key === 'z') {
         e.preventDefault();
-        if (selectedId) handleDuplicate(selectedId);
-      }
-      // Escape: deseleccionar y cerrar drawers
-      if (e.key === 'Escape') {
-        setSelectedId(null);
-        setLeftOpen(false);
-        setPropsOpen(false);
+        if (e.shiftKey) { redo(); } else { undo(); }
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [selectedId]);
+  }, [selectedId, undo, redo]);
 
   /* ---------------- Layout helpers ---------------- */
   const toRGLItem = (b) => ({
@@ -318,7 +500,7 @@ export default function ConfiguracionVista(){
   };
 
   const buildPayload = () => ({
-    meta: { mode: 'TEMPLATE_6x20' },
+    meta: { mode: 'TEMPLATE_6x20', templateId: homeTemplate }, // << guarda el template aquí
     blocks: items.map(it => ({
       id: it.i,
       type: it.type,
@@ -328,22 +510,48 @@ export default function ConfiguracionVista(){
     }))
   });
 
-  const save = async () => {
-    setSaving(true);
-    const payload = buildPayload();
-    try {
-      const r = await fetch(`${API}/api/tienda/me`, { method:'PUT', headers: headersJson, body: JSON.stringify({ homeLayout: payload }) });
-      if (!r.ok) {
-        localStorage.setItem(localKey, JSON.stringify(payload));
-        toast('Guardado local.');
+const save = async () => {
+  setSaving(true);
+  const payload = buildPayload(); // { meta:{ templateId: homeTemplate }, blocks:[...] }
+
+  try {
+    const body = {
+      homeLayout: payload,         // JSON
+      homeTemplate: homeTemplate,  // siempre enviarlo
+    };
+
+    const r = await fetch(`${API}/api/tienda/me`, {
+      method: 'PATCH',
+      headers: headersJson,
+      body: JSON.stringify(body),
+    });
+
+    const data = await r.json().catch(() => ({}));
+
+    // sincroniza local siempre
+    localStorage.setItem(localKey, JSON.stringify(payload));
+
+    if (!r.ok) {
+      toast('Guardado local (error del servidor).');
+      console.warn('Guardar diseño: HTTP', r.status, data);
+    } else {
+      const savedTpl = String(data?.homeTemplate || '').toLowerCase();
+      if (savedTpl !== String(homeTemplate).toLowerCase()) {
+        toast('Diseño guardado. El servidor no aceptó la plantilla (usaremos la del layout).');
+        console.warn('El servidor devolvió homeTemplate distinto:', savedTpl);
       } else {
         toast('¡Diseño guardado!');
       }
-    } catch {
-      localStorage.setItem(localKey, JSON.stringify(payload));
-      toast('Guardado local (offline).');
-    } finally { setSaving(false); }
-  };
+    }
+  } catch (e) {
+    localStorage.setItem(localKey, JSON.stringify(payload));
+    toast('Guardado local (offline).');
+    console.error('Error guardando diseño:', e);
+  } finally {
+    setSaving(false);
+  }
+};
+
 
   const resetLayout = () => {
     const base = assignIds([ mk('grid', DEFAULT_PROPS.grid, { x:0, y:0, w:6, h:4 }) ]).map(b => toRGLItem(b));
@@ -368,7 +576,7 @@ export default function ConfiguracionVista(){
       localStorage.setItem(localKey, JSON.stringify(buildPayload()));
     }, 1500);
     return () => clearTimeout(t);
-  }, [items]);
+  }, [items]); // eslint-disable-line
 
   /* ---------------- Render previews ---------------- */
   const Card = ({p}) => {
@@ -465,8 +673,19 @@ export default function ConfiguracionVista(){
   };
   const setLayer = (fn) => setItems(prev => prev.map(x => x.i===selectedId ? ({ ...x, z: fn({ curr: Number(x.z)||1, max: Math.max(1,...prev.map(y=>Number(y.z)||1)) }) }) : x));
 
+  // Configuración de columnas según el modo de vista
+  const getColsConfig = () => {
+    // Mantener las mismas llaves que los breakpoints definidos en <ResponsiveGrid>
+    switch(viewMode) {
+      case 'mobile': return { xl: 4, lg: 4, md: 4, sm: 4, xs: 4 };
+      case 'tablet': return { xl: 6, lg: 6, md: 6, sm: 6, xs: 6 };
+      case 'desktop':
+      default:       return { xl: 6, lg: 6, md: 6, sm: 6, xs: 4 };
+    }
+  };
+
   return (
-    <div className="vendedor-container">
+    <div className="vendedor-container" role="application" aria-label="Editor de página de tienda">
       <Nabvendedor/>
 
       {/* Header con overlay seguro y branding */}
@@ -502,7 +721,7 @@ export default function ConfiguracionVista(){
             >
               <FiSliders/> {colorMode === 'light' ? 'Oscuro' : 'Claro'}
             </button>
-            <button className="btn btn-primary" onClick={save} disabled={saving}>
+            <button className="btn btn-primary" onClick={save} disabled={saving} aria-busy={saving}>
               <FiSave/>{saving? ' Guardando…' : ' Guardar'}
             </button>
           </div>
@@ -512,10 +731,62 @@ export default function ConfiguracionVista(){
       {/* Panel principal (3 columnas en desktop; drawers en móvil) */}
       <div className="config-panel builder">
         {/* ----------- Sidebar izquierda: acciones/bloques ----------- */}
-        <aside className={`sidebar pv-left ${leftOpen ? 'open' : ''}`}>
+        <aside className={`sidebar pv-left ${leftOpen ? 'open' : ''}`} aria-label="Panel de plantillas y bloques">
           <button className="drawer-close" onClick={() => setLeftOpen(false)} aria-label="Cerrar menú">
             <FiX/>
           </button>
+
+          {/* Selección de plantilla con cards + mini preview */}
+          <div className="form-section">
+            <h3><FiLayout/> Diseño de la tienda</h3>
+
+            <div style={{display:'grid', gap:10}}>
+              <TemplateCard id="classic"  title="Clásico"        desc="Diseño limpio con hero y grilla tradicional."  selected={homeTemplate === 'classic'}  onSelect={setHomeTemplate} preview={<ClassicPreview/>}/>
+              <TemplateCard id="cyberpunk" title="Cyberpunk"     desc="Estética neón, rejilla holográfica y glass."   selected={homeTemplate === 'cyberpunk'} onSelect={setHomeTemplate} preview={<CyberpunkPreview/>}/>
+              <TemplateCard id="brujil"    title="Brujil"        desc="Temática mística y encantada."                 selected={homeTemplate === 'brujil'}    onSelect={setHomeTemplate} preview={<BrujilPreview/>}/>
+              <TemplateCard id="auto"      title="Accesorios Auto" desc="Performance, detailing y accesorios."       selected={homeTemplate === 'auto'}      onSelect={setHomeTemplate} preview={<AutoPreview/>}/>
+              <TemplateCard id="fastfood"  title="Comida Rápida" desc="¡Caliente, rápido y delicioso!"                selected={homeTemplate === 'fastfood'}  onSelect={setHomeTemplate} preview={<FastfoodPreview/>}/>
+              <TemplateCard id="japanese"  title="Japonesa"      desc="Minimalismo nipón y calidad."                  selected={homeTemplate === 'japanese'}  onSelect={setHomeTemplate} preview={<JapanesePreview/>}/>
+              <TemplateCard id="fashion"   title="Ropa Boutique" desc="Tendencias y diseño para tu estilo."           selected={homeTemplate === 'fashion'}   onSelect={setHomeTemplate} preview={<FashionPreview/>}/>
+              <TemplateCard id="vintage"   title="Vintage"       desc="Clásicos atemporales con alma."                 selected={homeTemplate === 'vintage'}   onSelect={setHomeTemplate} preview={<VintagePreview/>}/>
+            </div>
+
+            <div className="form-row" style={{marginTop:10}}>
+              <select
+                className="form-select"
+                value={homeTemplate}
+                onChange={(e) => setHomeTemplate(e.target.value)}
+                aria-label="Seleccionar plantilla"
+              >
+                <option value="classic">Clásico</option>
+                <option value="cyberpunk">Cyberpunk</option>
+                <option value="brujil">Brujil</option>
+                <option value="auto">Accesorios Auto</option>
+                <option value="fastfood">Comida Rápida</option>
+                <option value="japanese">Japonesa</option>
+                <option value="fashion">Ropa Boutique</option>
+                <option value="vintage">Vintage</option>
+              </select>
+              <button className="btn btn-primary" onClick={save} disabled={saving}><FiSave/>{saving? ' Guardando…':' Guardar'}</button>
+            </div>
+            <p className="form-hint">La plantilla afecta la vista pública y la previsualización del vendedor.</p>
+          </div>
+
+          {/* Selector de modo de vista */}
+          <div className="form-section">
+            <h3><FiMonitor/> Vista previa</h3>
+            <div className="view-mode-selector">
+              <button className={`view-mode-btn ${viewMode === 'desktop' ? 'active' : ''}`} onClick={() => setViewMode('desktop')} title="Vista desktop">
+                <FiMonitor/><span>Desktop</span>
+              </button>
+              <button className={`view-mode-btn ${viewMode === 'tablet' ? 'active' : ''}`} onClick={() => setViewMode('tablet')} title="Vista tablet">
+                <FiTablet/><span>Tablet</span>
+              </button>
+              <button className={`view-mode-btn ${viewMode === 'mobile' ? 'active' : ''}`} onClick={() => setViewMode('mobile')} title="Vista móvil">
+                <FiSmartphone/><span>Móvil</span>
+              </button>
+            </div>
+          </div>
 
           <div className="form-section">
             <h3><FiLayout/> Plantilla 6×20</h3>
@@ -530,6 +801,10 @@ export default function ConfiguracionVista(){
             <div className="form-row">
               <button className="btn" onClick={resetLayout} title="Volver al layout base"><FiTrash2/> Reset</button>
               <button className="btn" onClick={copyJSON} title="Copiar JSON del diseño"><FiCopy/> Copiar JSON</button>
+            </div>
+            <div className="sidebar-tip">
+              <h4>Atajos</h4>
+              <p><kbd>Del</kbd> eliminar · <kbd>Ctrl/Cmd + D</kbd> duplicar · <kbd>Ctrl/Cmd + Z</kbd> deshacer · <kbd>Ctrl/Cmd + Shift + Z</kbd> rehacer.</p>
             </div>
           </div>
 
@@ -550,8 +825,29 @@ export default function ConfiguracionVista(){
             ))}
             <div className="sidebar-tip">
               <h4>Tips</h4>
-              <p>Arrastra con el mango <FiMove/>. Elimina con <kbd>Del</kbd>, duplica con <kbd>Ctrl/Cmd + D</kbd>.</p>
+              <p>Arrastra con el mango <FiMove/>. Evita arrastrar sobre inputs/selects — el editor lo ignora automáticamente.</p>
             </div>
+          </div>
+
+          {/* Enlaces a otras páginas de configuración */}
+          <div className="form-section">
+            <h3><FiSettings/> Más configuraciones</h3>
+            <a href="/vendedor/perfil" className="sidebar-item">
+              <span className="sidebar-icon"><FiSettings/></span>
+              <span>Configuración de Perfil</span>
+            </a>
+            <a href="/vendedor/productos" className="sidebar-item">
+              <span className="sidebar-icon"><FiPackage/></span>
+              <span>Gestión de Productos</span>
+            </a>
+            <a href="/vendedor/categorias" className="sidebar-item">
+              <span className="sidebar-icon"><FiList/></span>
+              <span>Gestión de Categorías</span>
+            </a>
+            <a href="/vendedor/pedidos" className="sidebar-item">
+              <span className="sidebar-icon"><FiList/></span>
+              <span>Gestión de Pedidos</span>
+            </a>
           </div>
         </aside>
 
@@ -559,8 +855,11 @@ export default function ConfiguracionVista(){
         <section className="content-area">
           <div className="pv-toolbar">
             <div className="pv-left">
-              <button className="btn" onClick={()=>setLeftOpen(true)}><FiLayout/> Bloques</button>
-              <button className="btn" onClick={()=>setPropsOpen(true)}><FiSettings/> Propiedades</button>
+              <button className="btn mobile-only" onClick={()=>setLeftOpen(true)}><FiLayout/> Bloques</button>
+              <button className="btn mobile-only" onClick={()=>setPropsOpen(true)}><FiSettings/> Propiedades</button>
+              <div className="desktop-only">
+                <span className="view-mode-indicator">Vista: {viewMode}</span>
+              </div>
             </div>
             <div className="pv-right">
               {msg ? <div className="notification show" role="status" aria-live="polite">{msg}</div> : null}
@@ -570,7 +869,7 @@ export default function ConfiguracionVista(){
           <div className="pv-canvas">
             <ResponsiveGrid
               className="layout"
-              rowHeight={100}
+              rowHeight={viewMode === 'mobile' ? 80 : 100}
               isDraggable
               isResizable
               isBounded
@@ -580,8 +879,9 @@ export default function ConfiguracionVista(){
               onDragStop={onDragStop}
               onResizeStop={onResizeStop}
               draggableHandle=".pv-handle"
+              draggableCancel=".pv-body input, .pv-body select, .pv-body textarea, .form-input, .form-select"
               breakpoints={{ xl: 1400, lg: 1100, md: 900, sm: 600, xs: 0 }}
-              cols={{ xl: 6, lg: 6, md: 6, sm: 6, xs: 4 }}   // 6 cols (4 en XS)
+              cols={getColsConfig()}
               maxRows={20}
               compactType="vertical"
             >
@@ -612,7 +912,7 @@ export default function ConfiguracionVista(){
         </section>
 
         {/* ----------- Sidebar derecha: propiedades ----------- */}
-        <aside className={`sidebar pv-props ${propsOpen? 'open':'closed'}`}>
+        <aside className={`sidebar pv-props ${propsOpen? 'open':'closed'}`} aria-label="Propiedades del bloque">
           <button className="drawer-close" onClick={() => setPropsOpen(false)} aria-label="Cerrar propiedades">
             <FiX/>
           </button>

@@ -18,6 +18,7 @@ const mapRow = (t) => ({
   categoria: t.categoria,
   ciudad: t.ciudad,
   pais: t.pais,
+  homeTemplate: t.homeTemplate || 'classic', // <-- expuesto con default
   // compat con frontend
   logoUrl: t.logo?.url || null,
   portadaUrl: t.portada?.url || null,
@@ -63,6 +64,7 @@ router.get(['/public', '/'], async (req, res) => {
           categoria: true,
           ciudad: true,
           pais: true,
+          homeTemplate: true, // <-- nuevo
           logo: { select: { url: true } },
           portada: { select: { url: true } },
         },
@@ -124,6 +126,7 @@ router.get('/search', async (req, res) => {
           categoria: true,
           ciudad: true,
           pais: true,
+          homeTemplate: true, // <-- nuevo
           logo: { select: { url: true } },
           portada: { select: { url: true } },
         },

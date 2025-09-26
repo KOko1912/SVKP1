@@ -4,14 +4,15 @@
   "main": "server.js",
   "engines": {
     "node": ">=18 <23"
-  },
-  "scripts": {
+  }, "scripts": {
     "dev": "nodemon server.js",
-    "start": "npx prisma migrate deploy && node server.js",
+    "start": "node server.js",
+    "render-build": "npx prisma generate && npx prisma migrate deploy",
     "prisma:deploy": "prisma migrate deploy",
     "prisma:dev": "prisma migrate dev",
     "prisma:generate": "prisma generate",
-    "prisma:studio": "prisma studio"
+    "prisma:studio": "prisma studio",
+    "postinstall": "prisma generate"
   },
   "dependencies": {
     "@prisma/client": "^6.15.0",

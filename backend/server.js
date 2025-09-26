@@ -2,21 +2,25 @@
 require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
-const app = require('./src/app');
+const express = require('express');
+const app = require('./src/app'); // tu app ya configurada (cors, rutas, etc.)
 
-// === Paths / carpetas ===============================
-const PUBLIC_DIR = path.resolve(process.cwd(), process.env.PUBLIC_DIR || 'public');
+/* === Rutas base seguras respecto a este archivo === */
+const ROOT = path.resolve(__dirname);
+const PUBLIC_DIR = path.resolve(
+  ROOT,
+  process.env.PUBLIC_DIR || 'public'
+);
 
-// Por compatibilidad, si no defines env, guardamos en public/TiendaUploads y public/UserUploads
 const DIR_TIENDA = path.isAbsolute(process.env.TIENDA_UPLOADS_DIR || '')
   ? process.env.TIENDA_UPLOADS_DIR
-  : path.join(process.cwd(), process.env.TIENDA_UPLOADS_DIR || path.join('public', 'TiendaUploads'));
+  : path.join(ROOT, process.env.TIENDA_UPLOADS_DIR || path.join('public', 'TiendaUploads'));
 
 const DIR_USER = path.isAbsolute(process.env.USER_UPLOADS_DIR || '')
   ? process.env.USER_UPLOADS_DIR
-  : path.join(process.cwd(), process.env.USER_UPLOADS_DIR || path.join('public', 'UserUploads'));
+  : path.join(ROOT, process.env.USER_UPLOADS_DIR || path.join('public', 'UserUploads'));
 
-// Crea carpetas requeridas
+/* === Crea carpetas requeridas (Render permite escritura en runtime) === */
 [PUBLIC_DIR, DIR_TIENDA, DIR_USER].forEach((d) => {
   if (!fs.existsSync(d)) {
     fs.mkdirSync(d, { recursive: true });
@@ -24,20 +28,25 @@ const DIR_USER = path.isAbsolute(process.env.USER_UPLOADS_DIR || '')
   }
 });
 
-// === Servir estáticos desde /public =================
-app.use(require('express').static(PUBLIC_DIR));
+/* === Estáticos === */
+app.use(express.static(PUBLIC_DIR));
 
-// === Rutas de subida de branding de tienda =========
+/* === Rutas de uploads de tienda === */
 const tiendaUploadsRoutes = require('./src/modules/tienda/routes.uploads');
 app.use('/api/tienda', tiendaUploadsRoutes);
 
-// === Arranque ======================================
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-  console.log(`✅ Server running at http://localhost:${PORT}`);
+/* === Healthcheck (para Render) === */
+app.get('/health', (_req, res) => res.json({ ok: true }));
+
+/* === Arranque === */
+const PORT = Number(process.env.PORT) || 5000;
+const HOST = '0.0.0.0'; // importante en Render
+
+app.listen(PORT, HOST, () => {
+  console.log(`✅ Server running on port ${PORT}`);
   console.log(`📦 PUBLIC_DIR: ${PUBLIC_DIR}`);
   console.log(`🗂  TIENDA_UPLOADS_DIR: ${DIR_TIENDA}`);
   console.log(`🗂  USER_UPLOADS_DIR:   ${DIR_USER}`);
   console.log(`🔐 ADMIN_SECRET: ${process.env.ADMIN_SECRET ? '[set]' : '[missing]'}`);
-  console.log(`🌐 FRONTEND_URL(S): ${process.env.FRONTEND_URL || process.env.FRONTEND_URLS || 'http://localhost:5173'}`);
+  console.log(`🌐 FRONTEND_URL(S): ${process.env.FRONTEND_URL || process.env.FRONTEND_URLS || '(not set)'}`);
 });
